@@ -1,10 +1,6 @@
-<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="160" height="160" rx="36" fill="white"/>
-  <path d="M58 55C58 50.5817 61.5817 47 66 47H90L102 59V111C102 115.418 98.4183 119 94 119H66C61.5817 119 58 115.418 58 111V55Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M90 47V59H102" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <rect x="67" y="68" width="26" height="16" rx="4" stroke="#5BAA39" stroke-width="6"/>
-  <path d="M113 70H121V80" stroke="#5BAA39" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M119 79C116.5 81 114.5 83.8333 113 87.5" stroke="#5BAA39" stroke-width="6" stroke-linecap="round"/>
-  <path d="M70 96H90" stroke="#5BAA39" stroke-width="6" stroke-linecap="round"/>
-  <path d="M70 107H83" stroke="#5BAA39" stroke-width="6" stroke-linecap="round"/>
+<!-- Source style: lucide-static (ISC) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="#5BAA39" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+  <path d="M9 12h6"/>
+  <path d="M12 9v6"/>
 </svg>

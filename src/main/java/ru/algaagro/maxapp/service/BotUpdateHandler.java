@@ -86,6 +86,9 @@ public class BotUpdateHandler {
         }
 
         BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        if (user.isAdmin() && handleAdminTextCommand(text, user, session)) {
+            return;
+        }
         if (session.getState() == SessionState.IMPORT_WAITING_FILES && user.isAdmin()) {
             if (captureImportFile(update, session)) {
                 maxApiClient.sendToUser(user.getMaxUserId(),
@@ -181,6 +184,69 @@ public class BotUpdateHandler {
                 "html");
     }
 
+    private boolean handleAdminTextCommand(String text, AppUser user, BotSession session) {
+        String normalized = TextUtils.normalizeToken(text);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        switch (normalized) {
+            case "админ панель" -> {
+                openAdminMenu(user);
+                return true;
+            }
+            case "номенклатура" -> {
+                startImportFlow(user, null);
+                return true;
+            }
+            case "заказы" -> {
+                showOrders(user, 0);
+                return true;
+            }
+            case "пользователи" -> {
+                showUsers(user, 0);
+                return true;
+            }
+            case "пост" -> {
+                startPostFlow(user, null);
+                return true;
+            }
+            case "кнопки постов" -> {
+                showButtons(user, null);
+                return true;
+            }
+            case "в меню", "назад" -> {
+                sendWelcome(user.getMaxUserId(), true);
+                return true;
+            }
+            case "добавить кнопку" -> {
+                explainButtonCommand(user, null);
+                return true;
+            }
+            case "готово" -> {
+                if (session.getState() == SessionState.IMPORT_WAITING_FILES) {
+                    runImport(user, null);
+                    return true;
+                }
+                if (session.getState() == SessionState.POST_WAITING_MEDIA) {
+                    askPostText(user, null);
+                    return true;
+                }
+                return false;
+            }
+            case "отмена", "отменить" -> {
+                cancelFlow(user, null);
+                return true;
+            }
+            case "опубликовать" -> {
+                publishPost(user, null);
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
     private boolean captureImportFile(JsonNode update, BotSession session) {
         List<Map<String, Object>> attachments = extractAttachments(update);
         List<Map<String, Object>> filePayload = new ArrayList<>();
@@ -233,10 +299,7 @@ public class BotUpdateHandler {
         }
 
         if ("admin:menu".equals(callbackPayload) && user.isAdmin()) {
-            maxApiClient.sendToUser(user.getMaxUserId(),
-                    "🛠 <b>Админ-панель АЛГА АГРО</b>\nВыберите нужный раздел ниже.",
-                    keyboardFactory.adminMenu(),
-                    "html");
+            openAdminMenu(user);
             maxApiClient.answerCallback(callbackId, "Админка открыта");
             return;
         }
@@ -493,6 +556,13 @@ public class BotUpdateHandler {
                 Здесь мы собрали удобный каталог для агро-товаров: семена, средства защиты, питание и сопутствующие позиции с быстрым подбором по культурам.
                 """;
         maxApiClient.sendToUser(userId, text, keyboardFactory.mainMenu(admin), "html");
+    }
+
+    private void openAdminMenu(AppUser user) {
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "🛠 <b>Админ-панель АЛГА АГРО</b>\nВыберите нужный раздел ниже.",
+                keyboardFactory.adminMenu(),
+                "html");
     }
 
     private boolean isStartCommand(String text) {

@@ -1,11 +1,11 @@
-<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="160" height="160" rx="36" fill="white"/>
-  <path d="M56 112C56 92.1177 66.7452 76 80 76C93.2548 76 104 92.1177 104 112" stroke="#5BAA39" stroke-width="6" stroke-linecap="round"/>
-  <path d="M80 45V118" stroke="#5BAA39" stroke-width="6" stroke-linecap="round"/>
-  <path d="M80 58C72.5 53.5 68 46.5 67 39C74.5 40 80 45 80 52V58Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M80 72C72.5 67.5 68 60.5 67 53C74.5 54 80 59 80 66V72Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M80 86C72.5 81.5 68 74.5 67 67C74.5 68 80 73 80 80V86Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M80 58C87.5 53.5 92 46.5 93 39C85.5 40 80 45 80 52V58Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M80 72C87.5 67.5 92 60.5 93 53C85.5 54 80 59 80 66V72Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M80 86C87.5 81.5 92 74.5 93 67C85.5 68 80 73 80 80V86Z" stroke="#5BAA39" stroke-width="6" stroke-linejoin="round"/>
+<!-- Source style: lucide-static (ISC) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="#5BAA39" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2 22 16 8"/>
+  <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+  <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+  <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+  <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
+  <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+  <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+  <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
 </svg>

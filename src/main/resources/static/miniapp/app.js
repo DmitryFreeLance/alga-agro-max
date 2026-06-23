@@ -72,7 +72,9 @@ const nodes = {
 
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
-state.maxUserId = initDataUnsafe?.user?.user_id || 188421258;
+const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
+const resolvedUserId = initDataUnsafe?.user?.user_id || queryUserId;
+state.maxUserId = resolvedUserId ? Number(resolvedUserId) : null;
 
 bootstrap();
 
@@ -180,6 +182,16 @@ async function loadProducts() {
 }
 
 async function loadProfile() {
+    if (!state.maxUserId) {
+        state.profile = {
+            displayName: "Пользователь MAX",
+            admin: false,
+            ordersCount: 0,
+        };
+        state.profileOrders = [];
+        renderProfile();
+        return;
+    }
     state.profile = await fetchJson(`/api/profile?maxUserId=${state.maxUserId}`);
     state.profileOrders = await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`);
     renderProfile();

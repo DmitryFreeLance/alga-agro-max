@@ -20,29 +20,29 @@ public class KeyboardFactory {
     public List<Map<String, Object>> mainMenu(boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
         if (admin) {
-            rows.add(List.of(callbackButton("🛠 Админ-панель", "admin:menu")));
+            rows.add(List.of(messageButton("🛠 Админ-панель")));
         }
         return rows.isEmpty() ? List.of() : inlineKeyboard(rows);
     }
 
     public List<Map<String, Object>> adminMenu() {
         List<List<Map<String, Object>>> rows = List.of(
-                List.of(callbackButton("📦 Номенклатура", "admin:import"), callbackButton("🧾 Заказы", "admin:orders:0")),
-                List.of(callbackButton("👥 Пользователи", "admin:users:0"), callbackButton("📣 Пост", "admin:post")),
-                List.of(callbackButton("🔗 Кнопки постов", "admin:buttons"), callbackButton("🏠 В меню", "menu:main"))
+                List.of(messageButton("📦 Номенклатура"), messageButton("🧾 Заказы")),
+                List.of(messageButton("👥 Пользователи"), messageButton("📣 Пост")),
+                List.of(messageButton("🔗 Кнопки постов"), messageButton("🏠 В меню"))
         );
         return inlineKeyboard(rows);
     }
 
     public List<Map<String, Object>> importKeyboard() {
         return inlineKeyboard(List.of(
-                List.of(callbackButton("✅ Готово", "import:done"), callbackButton("❌ Отмена", "flow:cancel"))
+                List.of(messageButton("✅ Готово"), messageButton("❌ Отмена"))
         ));
     }
 
     public List<Map<String, Object>> postMediaKeyboard() {
         return inlineKeyboard(List.of(
-                List.of(callbackButton("✅ Готово", "post:media:done"), callbackButton("❌ Отмена", "flow:cancel"))
+                List.of(messageButton("✅ Готово"), messageButton("❌ Отмена"))
         ));
     }
 
@@ -51,13 +51,13 @@ public class KeyboardFactory {
         for (PostButton button : postButtons) {
             rows.add(List.of(linkButton(button.getLabel(), button.getUrl())));
         }
-        rows.add(List.of(callbackButton("🚀 Опубликовать", "post:publish"), callbackButton("🗑 Отменить", "post:cancel")));
+        rows.add(List.of(messageButton("🚀 Опубликовать"), messageButton("🗑 Отменить")));
         return inlineKeyboard(rows);
     }
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(callbackButton("➕ Добавить кнопку", "buttons:add"), callbackButton("🔙 Назад", "admin:menu")));
+        rows.add(List.of(messageButton("➕ Добавить кнопку"), messageButton("🔙 Назад")));
         for (PostButton button : postButtons) {
             rows.add(List.of(callbackButton("🗑 " + button.getLabel(), "buttons:delete:" + button.getId())));
         }
@@ -81,6 +81,13 @@ public class KeyboardFactory {
         button.put("type", "callback");
         button.put("text", text);
         button.put("payload", payload);
+        return button;
+    }
+
+    public Map<String, Object> messageButton(String text) {
+        Map<String, Object> button = new LinkedHashMap<>();
+        button.put("type", "message");
+        button.put("text", text);
         return button;
     }
 
