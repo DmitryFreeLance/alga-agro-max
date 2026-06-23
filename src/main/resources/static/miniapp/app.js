@@ -1,7 +1,7 @@
 const BASE_GROUPS = [
-    { key: "seeds", title: "Семена", icon: "🌾", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
-    { key: "pesticides", title: "Пестициды", icon: "🛡️", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
-    { key: "nutrition", title: "Агропитание", icon: "🧪", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
+    { key: "seeds", title: "Семена", iconPath: "./assets/category-seeds.svg", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
+    { key: "pesticides", title: "Пестициды", iconPath: "./assets/category-pesticides.svg", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
+    { key: "nutrition", title: "Агропитание", iconPath: "./assets/category-nutrition.svg", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
 ];
 
 const state = {
@@ -12,7 +12,7 @@ const state = {
     adminProducts: [],
     filters: { cultures: [], categories: [], tags: [] },
     products: [],
-    selection: { culture: "", category: "", tag: "", search: "", sort: "name", group: "" },
+    selection: { culture: "", category: "", search: "", sort: "name", group: "" },
     cart: [],
     currentPage: "home",
     maxUserId: null,
@@ -22,6 +22,7 @@ const state = {
 const nodes = {
     homePage: document.getElementById("homePage"),
     catalogPage: document.getElementById("catalogPage"),
+    resultsPage: document.getElementById("resultsPage"),
     profilePage: document.getElementById("profilePage"),
     checkoutPage: document.getElementById("checkoutPage"),
     homeNavButton: document.getElementById("homeNavButton"),
@@ -37,10 +38,10 @@ const nodes = {
     catalogModePanel: document.getElementById("catalogModePanel"),
     cartModePanel: document.getElementById("cartModePanel"),
     searchInput: document.getElementById("searchInput"),
+    clearSearchButton: document.getElementById("clearSearchButton"),
+    searchButton: document.getElementById("searchButton"),
     sortSelect: document.getElementById("sortSelect"),
-    resetFilters: document.getElementById("resetFilters"),
     cultureChips: document.getElementById("cultureChips"),
-    tagPills: document.getElementById("tagPills"),
     categoryPills: document.getElementById("categoryPills"),
     groupGrid: document.getElementById("groupGrid"),
     productGrid: document.getElementById("productGrid"),
@@ -101,21 +102,32 @@ function bindEvents() {
     });
     nodes.catalogModeButton.addEventListener("click", () => setCatalogMode("catalog"));
     nodes.cartModeButton.addEventListener("click", () => setCatalogMode("cart"));
-    nodes.resetFilters.addEventListener("click", async () => {
-        state.selection = { culture: "", category: "", tag: "", search: "", sort: "name", group: "" };
-        nodes.searchInput.value = "";
-        nodes.sortSelect.value = "name";
-        renderFilterPills();
-        renderCatalogGroups();
-        await loadProducts();
-    });
-    nodes.searchInput.addEventListener("input", debounce(async event => {
+    nodes.searchInput.addEventListener("input", event => {
         state.selection.search = event.target.value.trim();
-        await loadProducts();
-    }, 250));
+        syncSearchUi();
+    });
+    nodes.searchInput.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            runSearchAndOpenResults();
+        }
+    });
+    nodes.clearSearchButton.addEventListener("click", async () => {
+        state.selection.search = "";
+        nodes.searchInput.value = "";
+        syncSearchUi();
+        if (state.currentPage === "results") {
+            await loadProducts();
+            showPage("results");
+        }
+    });
+    nodes.searchButton.addEventListener("click", () => runSearchAndOpenResults());
     nodes.sortSelect.addEventListener("change", async event => {
         state.selection.sort = event.target.value;
-        await loadProducts();
+        if (state.currentPage === "results") {
+            await loadProducts();
+            showPage("results");
+        }
     });
     nodes.checkoutButton.addEventListener("click", () => {
         if (!state.cart.length) {
@@ -138,6 +150,9 @@ function bindEvents() {
         if (state.currentPage === "checkout") {
             showPage("catalog");
             setCatalogMode("cart");
+        } else if (state.currentPage === "results") {
+            showPage("catalog");
+            setCatalogMode("catalog");
         } else {
             showPage("home");
         }
@@ -157,7 +172,6 @@ async function loadProducts() {
     const query = new URLSearchParams();
     if (state.selection.culture) query.set("culture", state.selection.culture);
     if (state.selection.category) query.set("category", state.selection.category);
-    if (state.selection.tag) query.set("tag", state.selection.tag);
     if (state.selection.search) query.set("search", state.selection.search);
     if (state.selection.sort) query.set("sort", state.selection.sort);
     state.products = await fetchJson(`/api/catalog/products?${query.toString()}`);
@@ -184,14 +198,16 @@ function showPage(page) {
     state.currentPage = page;
     nodes.homePage.classList.toggle("page-active", page === "home");
     nodes.catalogPage.classList.toggle("page-active", page === "catalog");
+    nodes.resultsPage.classList.toggle("page-active", page === "results");
     nodes.profilePage.classList.toggle("page-active", page === "profile");
     nodes.checkoutPage.classList.toggle("page-active", page === "checkout");
     nodes.homeNavButton.classList.toggle("active", page === "home");
-    nodes.catalogBottomButton.classList.toggle("active", page === "catalog");
+    nodes.catalogBottomButton.classList.toggle("active", page === "catalog" || page === "results");
     nodes.profileNavButton.classList.toggle("active", page === "profile");
     const meta = {
         home: ["Главная", ""],
         catalog: ["Каталог", "Подбор товаров по культуре, группе и фильтрам."],
+        results: ["Товары", "Подходящие позиции по выбранным параметрам."],
         profile: ["Профиль", "Ваши заказы и управление данными."],
         checkout: ["Оформление", "Отправка заявки администратору."],
     }[page];
@@ -225,33 +241,32 @@ function buildGroupCard(group, interactive) {
     button.className = "group-card";
     if (state.selection.group === group.key) button.classList.add("active");
     button.innerHTML = `
-        <div class="group-icon">${group.icon}</div>
-        <p class="group-name">${escapeHtml(group.title)}</p>
-        <p class="group-meta">${escapeHtml(group.description)} · ${visibleProducts.length}</p>
+        <div class="group-illustration">
+            <img class="group-icon-asset" src="${escapeAttr(group.iconPath)}" alt="${escapeAttr(group.title)}">
+        </div>
+        <div class="group-card-footer">
+            <p class="group-name">${escapeHtml(group.title)}</p>
+            <span class="group-count">${visibleProducts.length}</span>
+        </div>
     `;
     if (interactive) {
         button.addEventListener("click", async () => {
-            if (state.selection.group === group.key) {
-                state.selection.group = "";
-                if (group.exactCategory) {
-                    state.selection.category = "";
-                }
-            } else {
-                state.selection.group = group.key;
-                state.selection.category = group.exactCategory || "";
-            }
+            state.selection.group = group.key;
+            state.selection.category = group.exactCategory || "";
             renderCatalogGroups();
             renderFilterPills();
             await loadProducts();
+            showPage("results");
         });
     } else {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", async () => {
             showPage("catalog");
             state.selection.group = group.key;
             state.selection.category = group.exactCategory || "";
             renderCatalogGroups();
             renderFilterPills();
-            loadProducts();
+            await loadProducts();
+            showPage("results");
         });
     }
     return button;
@@ -261,19 +276,16 @@ function renderFilterPills() {
     renderSelectableGroup(nodes.cultureChips, ["Все культуры", ...state.filters.cultures], state.selection.culture, value => {
         state.selection.culture = value === "Все культуры" ? "" : value;
         renderFilterPills();
-        loadProducts();
-    });
-    renderSelectableGroup(nodes.tagPills, ["Все", ...state.filters.tags], state.selection.tag, value => {
-        state.selection.tag = value === "Все" ? "" : value;
-        renderFilterPills();
-        loadProducts();
+        if (state.currentPage === "results") {
+            loadProducts();
+        }
     });
     renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, value => {
         state.selection.category = value === "Все категории" ? "" : value;
         state.selection.group = "";
         renderFilterPills();
         renderCatalogGroups();
-        loadProducts();
+        loadProducts().then(() => showPage("results"));
     });
 }
 
@@ -334,6 +346,13 @@ function renderProducts() {
         card.querySelector(".primary-button").addEventListener("click", () => addToCart(product));
         nodes.productGrid.appendChild(card);
     });
+}
+
+async function runSearchAndOpenResults() {
+    state.selection.search = nodes.searchInput.value.trim();
+    syncSearchUi();
+    await loadProducts();
+    showPage("results");
 }
 
 function renderCart() {
@@ -528,7 +547,7 @@ function getGroupDefinitions() {
         .map(category => ({
             key: `dynamic:${slugify(category)}`,
             title: category,
-            icon: iconForCategory(category),
+            iconPath: iconForCategory(category),
             description: "Дополнительная группа",
             categories: [category],
             exactCategory: category,
@@ -568,10 +587,10 @@ function categoryMatchesGroup(category, group) {
 
 function iconForCategory(category) {
     const normalized = normalizeToken(category);
-    if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "🌾";
-    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав")) return "🛡️";
-    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан")) return "🧪";
-    return "📦";
+    if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "./assets/category-seeds.svg";
+    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав")) return "./assets/category-pesticides.svg";
+    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан")) return "./assets/category-nutrition.svg";
+    return "./assets/category-other.svg";
 }
 
 function normalizeToken(value) {
@@ -593,6 +612,10 @@ function addToCart(product) {
     else state.cart.push({ id: product.id, name: product.name, price: Number(product.price || 0), quantity: 1, unitName: product.unitName || "шт" });
     renderCart();
     showToast(`Добавили: ${product.name}`);
+}
+
+function syncSearchUi() {
+    nodes.clearSearchButton.classList.toggle("hidden", !state.selection.search);
 }
 
 function updateQuantity(productId, delta) {
@@ -696,12 +719,4 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
     return escapeHtml(value).replaceAll("'", "&#39;");
-}
-
-function debounce(fn, timeout = 250) {
-    let timer;
-    return (...args) => {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), timeout);
-    };
 }

@@ -68,9 +68,10 @@
                     <label class="search-field">
                         <span class="search-icon">⌕</span>
                         <input id="searchInput" type="search" placeholder="Поиск товаров">
+                        <button class="search-clear hidden" id="clearSearchButton" type="button">×</button>
                     </label>
 
-                    <div class="control-row">
+                    <div class="control-row control-row-compact">
                         <label class="select-field">
                             <span>Сортировка</span>
                             <select id="sortSelect">
@@ -80,17 +81,12 @@
                                 <option value="stock_desc">По наличию</option>
                             </select>
                         </label>
-                        <button class="ghost-button" id="resetFilters" type="button">Сбросить</button>
+                        <button class="primary-button compact-button" id="searchButton" type="button">Искать</button>
                     </div>
 
                     <div class="filter-block filter-block-inline">
                         <p class="filter-title">Культуры</p>
                         <div class="chips" id="cultureChips"></div>
-                    </div>
-
-                    <div class="filter-block filter-block-inline">
-                        <p class="filter-title">Теги</p>
-                        <div class="chips chips-light" id="tagPills"></div>
                     </div>
                 </div>
 
@@ -102,22 +98,6 @@
                         </div>
                     </div>
                     <div class="group-grid" id="groupGrid"></div>
-                </div>
-
-                <div class="content-card">
-                    <div class="section-head section-head-tight">
-                        <div>
-                            <p class="section-kicker">Каталог</p>
-                            <h3 id="catalogTitle">Все товары</h3>
-                        </div>
-                        <p class="catalog-count" id="catalogCount">0 позиций</p>
-                    </div>
-                    <div class="chips chips-light compact" id="categoryPills"></div>
-                    <div class="product-grid" id="productGrid"></div>
-                    <div class="empty-state hidden" id="emptyState">
-                        <h4>Каталог обновляется</h4>
-                        <p>Товары скоро появятся.</p>
-                    </div>
                 </div>
             </div>
 
@@ -138,6 +118,24 @@
                         </div>
                         <button class="primary-button" id="checkoutButton" type="button">Оформить заказ</button>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="page" id="resultsPage">
+            <div class="content-card">
+                <div class="section-head section-head-tight">
+                    <div>
+                        <p class="section-kicker">Результаты</p>
+                        <h3 id="catalogTitle">Все товары</h3>
+                    </div>
+                    <p class="catalog-count" id="catalogCount">0 позиций</p>
+                </div>
+                <div class="chips chips-light compact" id="categoryPills"></div>
+                <div class="product-grid" id="productGrid"></div>
+                <div class="empty-state hidden" id="emptyState">
+                    <h4>Ничего не найдено</h4>
+                    <p>Попробуйте выбрать другую культуру, группу или изменить запрос.</p>
                 </div>
             </div>
         </section>
