@@ -19,11 +19,10 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> mainMenu(boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(openAppButton("🌿 Открыть каталог", appProperties.getMiniAppUrl())));
         if (admin) {
             rows.add(List.of(callbackButton("🛠 Админ-панель", "admin:menu")));
         }
-        return inlineKeyboard(rows);
+        return rows.isEmpty() ? List.of() : inlineKeyboard(rows);
     }
 
     public List<Map<String, Object>> adminMenu() {

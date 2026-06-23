@@ -10,32 +10,34 @@ const state = {
         sort: "name",
     },
     cart: [],
+    currentPage: "catalog",
     maxUserId: null,
 };
 
 const nodes = {
-    totalProducts: document.getElementById("totalProducts"),
-    totalCultures: document.getElementById("totalCultures"),
+    catalogPage: document.getElementById("catalogPage"),
+    cartPage: document.getElementById("cartPage"),
+    checkoutPage: document.getElementById("checkoutPage"),
+    catalogNavButton: document.getElementById("catalogNavButton"),
+    cartNavButton: document.getElementById("cartNavButton"),
     cultureChips: document.getElementById("cultureChips"),
     categoryPills: document.getElementById("categoryPills"),
     tagPills: document.getElementById("tagPills"),
     searchInput: document.getElementById("searchInput"),
     sortSelect: document.getElementById("sortSelect"),
+    resetFilters: document.getElementById("resetFilters"),
     productGrid: document.getElementById("productGrid"),
     emptyState: document.getElementById("emptyState"),
     catalogTitle: document.getElementById("catalogTitle"),
     catalogCount: document.getElementById("catalogCount"),
-    cartButton: document.getElementById("cartButton"),
     cartCount: document.getElementById("cartCount"),
-    cartDrawer: document.getElementById("cartDrawer"),
+    cartSummaryCount: document.getElementById("cartSummaryCount"),
     cartItems: document.getElementById("cartItems"),
     cartTotal: document.getElementById("cartTotal"),
-    overlay: document.getElementById("overlay"),
-    checkoutModal: document.getElementById("checkoutModal"),
-    closeCart: document.getElementById("closeCart"),
     checkoutButton: document.getElementById("checkoutButton"),
-    closeCheckout: document.getElementById("closeCheckout"),
     checkoutForm: document.getElementById("checkoutForm"),
+    backToCart: document.getElementById("backToCart"),
+    backToCatalog: document.getElementById("backToCatalog"),
     toast: document.getElementById("toast"),
 };
 
@@ -49,14 +51,15 @@ async function bootstrap() {
     bindEvents();
     await Promise.all([loadMeta(), loadFilters()]);
     await loadProducts();
+    renderCart();
+    showPage("catalog");
 }
 
 function bindEvents() {
-    document.getElementById("scrollToCatalog").addEventListener("click", () => {
-        document.getElementById("catalog").scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    nodes.catalogNavButton.addEventListener("click", () => showPage("catalog"));
+    nodes.cartNavButton.addEventListener("click", () => showPage("cart"));
 
-    document.getElementById("resetFilters").addEventListener("click", async () => {
+    nodes.resetFilters.addEventListener("click", async () => {
         state.selection = { culture: "", category: "", tag: "", search: "", sort: "name" };
         nodes.searchInput.value = "";
         nodes.sortSelect.value = "name";
@@ -74,16 +77,16 @@ function bindEvents() {
         await loadProducts();
     });
 
-    nodes.cartButton.addEventListener("click", openCart);
-    nodes.closeCart.addEventListener("click", closePanels);
-    nodes.overlay.addEventListener("click", closePanels);
-    nodes.checkoutButton.addEventListener("click", openCheckout);
-    document.getElementById("backToCart").addEventListener("click", () => {
-        nodes.checkoutModal.classList.add("hidden");
-        openCart();
+    nodes.checkoutButton.addEventListener("click", () => {
+        if (!state.cart.length) {
+            showToast("Сначала добавьте товары в корзину");
+            return;
+        }
+        showPage("checkout");
     });
-    nodes.closeCheckout.addEventListener("click", closePanels);
 
+    nodes.backToCart.addEventListener("click", () => showPage("cart"));
+    nodes.backToCatalog.addEventListener("click", () => showPage("catalog"));
     nodes.checkoutForm.addEventListener("submit", submitOrder);
 }
 
@@ -96,8 +99,6 @@ async function loadFilters() {
     const response = await fetch("/api/catalog/filters");
     state.filters = await response.json();
     renderFilterPills();
-    nodes.totalProducts.textContent = state.filters.total || 0;
-    nodes.totalCultures.textContent = state.filters.cultures?.length || 0;
 }
 
 async function loadProducts() {
@@ -111,6 +112,15 @@ async function loadProducts() {
     const response = await fetch(`/api/catalog/products?${query.toString()}`);
     state.products = await response.json();
     renderProducts();
+}
+
+function showPage(page) {
+    state.currentPage = page;
+    nodes.catalogPage.classList.toggle("page-active", page === "catalog");
+    nodes.cartPage.classList.toggle("page-active", page === "cart");
+    nodes.checkoutPage.classList.toggle("page-active", page === "checkout");
+    nodes.catalogNavButton.classList.toggle("active", page === "catalog");
+    nodes.cartNavButton.classList.toggle("active", page === "cart");
 }
 
 function renderFilterPills() {
@@ -151,7 +161,7 @@ function renderProducts() {
     nodes.productGrid.innerHTML = "";
     nodes.catalogCount.textContent = `${state.products.length} позиций`;
     nodes.catalogTitle.textContent = state.selection.culture
-        ? `Подбор для культуры: ${state.selection.culture}`
+        ? state.selection.culture
         : "Все товары";
 
     if (!state.products.length) {
@@ -164,16 +174,16 @@ function renderProducts() {
         const card = document.createElement("article");
         card.className = "product-card";
         card.innerHTML = `
-            <div class="product-visual" style="background: linear-gradient(145deg, ${product.imageStyle.primary}, ${product.imageStyle.secondary});">
+            <div class="product-visual">
                 <div class="product-badges">
-                    <span class="badge">${product.category || "Прочее"}</span>
+                    <span class="badge">${product.category || "Товар"}</span>
                     ${product.subcategory ? `<span class="badge">${product.subcategory}</span>` : ""}
                 </div>
-                <strong>${escapeHtml(product.itemType || product.category || "АГРО")}</strong>
+                <strong>${escapeHtml(product.itemType || product.category || "АЛГА")}</strong>
             </div>
             <div>
-                <h4 class="product-name">${escapeHtml(product.name)}</h4>
-                <p class="product-description">${escapeHtml(product.description || "Позиция готова к подбору по культуре, категории и назначению.")}</p>
+                <h3 class="product-name">${escapeHtml(product.name)}</h3>
+                <p class="product-description">${escapeHtml(product.description || "Товар доступен для заказа.")}</p>
             </div>
             <div class="meta-badges">
                 ${(product.cultures || []).slice(0, 3).map(culture => `<span class="badge">${escapeHtml(culture)}</span>`).join("")}
@@ -184,7 +194,7 @@ function renderProducts() {
                     <span class="stock">${product.stockQuantity == null ? "Наличие уточняется" : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`}</span>
                     <strong>${formatPrice(product.price)}</strong>
                 </div>
-                <button class="primary-button" type="button">В корзину</button>
+                <button class="primary-button" type="button">Добавить в корзину</button>
             </div>
         `;
 
@@ -207,21 +217,22 @@ function addToCart(product) {
         });
     }
     renderCart();
-    showToast(`Добавили в корзину: ${product.name}`);
+    showToast(`Добавили: ${product.name}`);
 }
 
 function renderCart() {
     const totalCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
     const totalPrice = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     nodes.cartCount.textContent = totalCount;
+    nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["товар", "товара", "товаров"])}`;
     nodes.cartTotal.textContent = formatPrice(totalPrice);
     nodes.cartItems.innerHTML = "";
 
     if (!state.cart.length) {
         nodes.cartItems.innerHTML = `
             <div class="empty-state">
-                <h4>Корзина пока пуста</h4>
-                <p>Добавьте товары из каталога, и здесь появится состав заявки.</p>
+                <h3>Корзина пуста</h3>
+                <p>Добавьте нужные товары из каталога.</p>
             </div>
         `;
         return;
@@ -233,7 +244,7 @@ function renderCart() {
         row.innerHTML = `
             <div class="cart-row">
                 <strong>${escapeHtml(item.name)}</strong>
-                <button class="icon-button remove" type="button">🗑</button>
+                <button class="remove-btn" type="button">✕</button>
             </div>
             <div class="cart-row">
                 <span>${formatPrice(item.price)} / ${escapeHtml(item.unitName)}</span>
@@ -246,7 +257,7 @@ function renderCart() {
         `;
         row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -1));
         row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, 1));
-        row.querySelector(".remove").addEventListener("click", () => removeItem(item.id));
+        row.querySelector(".remove-btn").addEventListener("click", () => removeItem(item.id));
         nodes.cartItems.appendChild(row);
     });
 }
@@ -266,33 +277,13 @@ function removeItem(productId) {
     renderCart();
 }
 
-function openCart() {
-    nodes.cartDrawer.classList.add("open");
-    nodes.overlay.classList.remove("hidden");
-}
-
-function openCheckout() {
-    if (!state.cart.length) {
-        showToast("Сначала добавьте товары в корзину");
-        return;
-    }
-    nodes.cartDrawer.classList.remove("open");
-    nodes.checkoutModal.classList.remove("hidden");
-    nodes.overlay.classList.remove("hidden");
-}
-
-function closePanels() {
-    nodes.cartDrawer.classList.remove("open");
-    nodes.checkoutModal.classList.add("hidden");
-    nodes.overlay.classList.add("hidden");
-}
-
 async function submitOrder(event) {
     event.preventDefault();
     if (!state.cart.length) {
         showToast("Корзина пуста");
         return;
     }
+
     const formData = new FormData(nodes.checkoutForm);
     const payload = {
         maxUserId: state.maxUserId,
@@ -322,11 +313,11 @@ async function submitOrder(event) {
             throw new Error("Не удалось отправить заказ");
         }
         const data = await response.json();
-        showToast(`Заказ ${data.orderCode} отправлен`);
         state.cart = [];
         renderCart();
         nodes.checkoutForm.reset();
-        closePanels();
+        showPage("catalog");
+        showToast(`Заказ ${data.orderCode} отправлен`);
     } catch (error) {
         showToast(error.message || "Ошибка при отправке заказа");
     } finally {
@@ -348,6 +339,14 @@ function formatPrice(value) {
         return "По запросу";
     }
     return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number)} ₽`;
+}
+
+function pluralize(value, forms) {
+    const mod10 = value % 10;
+    const mod100 = value % 100;
+    if (mod10 === 1 && mod100 !== 11) return forms[0];
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1];
+    return forms[2];
 }
 
 function escapeHtml(value) {

@@ -94,9 +94,11 @@ public class MaxApiClient {
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             ensureSuccess(response);
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("MAX API request failed: {}", e.getMessage());
+            log.warn("MAX API request interrupted for {}: {}", path, e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            log.warn("MAX API request failed for {}: {}", path, e.getMessage());
         }
     }
 
