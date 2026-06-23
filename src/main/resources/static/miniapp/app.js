@@ -1,8 +1,7 @@
-const MAJOR_GROUPS = [
-    { key: "seeds", title: "Семена", icon: "🌾", categories: ["Семена"], description: "Посевной материал" },
-    { key: "pesticides", title: "Пестициды", icon: "🛡️", categories: ["Пестициды", "Гербициды", "Фунгициды", "Инсектициды", "Протравители", "Десиканты"], description: "Защита и обработка" },
-    { key: "nutrition", title: "Питание", icon: "🧪", categories: ["Удобрения", "Микроэлементы", "Стимуляторы", "Адъюванты"], description: "Подкормка и усиление" },
-    { key: "other", title: "Сопутствующие", icon: "📦", categories: ["Прочее"], description: "Дополнительные позиции" },
+const BASE_GROUPS = [
+    { key: "seeds", title: "Семена", icon: "🌾", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
+    { key: "pesticides", title: "Пестициды", icon: "🛡️", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
+    { key: "nutrition", title: "Агропитание", icon: "🧪", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
 ];
 
 const state = {
@@ -78,8 +77,13 @@ bootstrap();
 
 async function bootstrap() {
     bindEvents();
-    await Promise.all([loadMeta(), loadFilters(), loadProfile()]);
-    await loadProducts();
+    await Promise.all([loadMeta(), loadFilters()]);
+    const initialLoads = await Promise.allSettled([loadProfile(), loadProducts()]);
+    initialLoads.forEach(result => {
+        if (result.status === "rejected") {
+            showToast(result.reason?.message || "Часть данных пока недоступна");
+        }
+    });
     renderHomeGroups();
     renderCatalogGroups();
     renderCart();
@@ -166,8 +170,12 @@ async function loadProfile() {
     state.profileOrders = await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`);
     renderProfile();
     if (state.profile.admin) {
-        state.adminProducts = await fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`);
-        state.adminOrders = await fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`);
+        const [products, orders] = await Promise.all([
+            fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`),
+            fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`),
+        ]);
+        state.adminProducts = products;
+        state.adminOrders = orders;
         renderAdminSection();
     }
 }
@@ -182,13 +190,14 @@ function showPage(page) {
     nodes.catalogBottomButton.classList.toggle("active", page === "catalog");
     nodes.profileNavButton.classList.toggle("active", page === "profile");
     const meta = {
-        home: ["Главная", "Быстрый доступ к подбору товаров, корзине и вашему профилю."],
+        home: ["Главная", ""],
         catalog: ["Каталог", "Подбор товаров по культуре, группе и фильтрам."],
         profile: ["Профиль", "Ваши заказы и управление данными."],
         checkout: ["Оформление", "Отправка заявки администратору."],
     }[page];
     nodes.pageTitle.textContent = meta[0];
     nodes.pageCaption.textContent = meta[1];
+    nodes.pageCaption.classList.toggle("hidden", !meta[1]);
 }
 
 function setCatalogMode(mode) {
@@ -201,12 +210,12 @@ function setCatalogMode(mode) {
 
 function renderHomeGroups() {
     nodes.homeGroupGrid.innerHTML = "";
-    MAJOR_GROUPS.forEach(group => nodes.homeGroupGrid.appendChild(buildGroupCard(group, false)));
+    getGroupDefinitions().forEach(group => nodes.homeGroupGrid.appendChild(buildGroupCard(group, false)));
 }
 
 function renderCatalogGroups() {
     nodes.groupGrid.innerHTML = "";
-    MAJOR_GROUPS.forEach(group => nodes.groupGrid.appendChild(buildGroupCard(group, true)));
+    getGroupDefinitions().forEach(group => nodes.groupGrid.appendChild(buildGroupCard(group, true)));
 }
 
 function buildGroupCard(group, interactive) {
@@ -224,10 +233,12 @@ function buildGroupCard(group, interactive) {
         button.addEventListener("click", async () => {
             if (state.selection.group === group.key) {
                 state.selection.group = "";
-                state.selection.category = "";
+                if (group.exactCategory) {
+                    state.selection.category = "";
+                }
             } else {
                 state.selection.group = group.key;
-                state.selection.category = group.categories[0] === "Прочее" ? "" : group.categories[0];
+                state.selection.category = group.exactCategory || "";
             }
             renderCatalogGroups();
             renderFilterPills();
@@ -237,7 +248,7 @@ function buildGroupCard(group, interactive) {
         button.addEventListener("click", () => {
             showPage("catalog");
             state.selection.group = group.key;
-            state.selection.category = group.categories[0] === "Прочее" ? "" : group.categories[0];
+            state.selection.category = group.exactCategory || "";
             renderCatalogGroups();
             renderFilterPills();
             loadProducts();
@@ -282,8 +293,9 @@ function renderSelectableGroup(container, items, selected, onClick) {
 
 function renderProducts() {
     nodes.productGrid.innerHTML = "";
+    const selectedGroup = getGroupDefinitions().find(group => group.key === state.selection.group);
     const visibleProducts = state.selection.group
-        ? state.products.filter(product => filterProductsByGroup([product], MAJOR_GROUPS.find(group => group.key === state.selection.group)).length)
+        ? state.products.filter(product => filterProductsByGroup([product], selectedGroup).length)
         : state.products;
     nodes.catalogCount.textContent = `${visibleProducts.length} позиций`;
     nodes.catalogTitle.textContent = getCatalogTitle();
@@ -487,16 +499,92 @@ async function deleteAdminProduct(productId) {
 
 function filterProductsByGroup(products, group) {
     if (!group) return products;
-    return products.filter(product => group.categories.includes(product.category) || (group.key === "other" && !group.categories.includes(product.category)));
+    return products.filter(product => categoryMatchesGroup(product.category, group));
 }
 
 function getCatalogTitle() {
     if (state.selection.group) {
-        const group = MAJOR_GROUPS.find(item => item.key === state.selection.group);
+        const group = getGroupDefinitions().find(item => item.key === state.selection.group);
         if (group) return group.title;
     }
     if (state.selection.culture) return state.selection.culture;
     return "Все товары";
+}
+
+function getGroupDefinitions() {
+    const knownCategories = collectKnownCategories();
+    const baseGroups = BASE_GROUPS.map(group => {
+        const categories = knownCategories.filter(category => categoryMatchesGroup(category, group));
+        return {
+            ...group,
+            categories: categories.length ? categories : group.fallbackCategories,
+            exactCategory: null,
+        };
+    }).filter(group => group.categories.length > 0);
+
+    const covered = new Set(baseGroups.flatMap(group => group.categories.map(normalizeToken)));
+    const dynamicGroups = knownCategories
+        .filter(category => !covered.has(normalizeToken(category)))
+        .map(category => ({
+            key: `dynamic:${slugify(category)}`,
+            title: category,
+            icon: iconForCategory(category),
+            description: "Дополнительная группа",
+            categories: [category],
+            exactCategory: category,
+        }));
+
+    return [...baseGroups, ...dynamicGroups];
+}
+
+function collectKnownCategories() {
+    const set = new Set();
+    (state.filters.categories || []).forEach(category => {
+        if (category) {
+            set.add(category);
+        }
+    });
+    (state.products || []).forEach(product => {
+        if (product.category) {
+            set.add(product.category);
+        }
+    });
+    if (!set.size) {
+        BASE_GROUPS.forEach(group => group.fallbackCategories.forEach(category => set.add(category)));
+    }
+    return [...set];
+}
+
+function categoryMatchesGroup(category, group) {
+    if (!group || !category) {
+        return false;
+    }
+    const normalized = normalizeToken(category);
+    if (group.exactCategory) {
+        return normalized === normalizeToken(group.exactCategory);
+    }
+    return (group.matchers || []).some(keyword => normalized.includes(normalizeToken(keyword)));
+}
+
+function iconForCategory(category) {
+    const normalized = normalizeToken(category);
+    if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "🌾";
+    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав")) return "🛡️";
+    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан")) return "🧪";
+    return "📦";
+}
+
+function normalizeToken(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replaceAll("ё", "е")
+        .trim();
+}
+
+function slugify(value) {
+    return normalizeToken(value)
+        .replace(/[^a-zа-я0-9]+/gi, "-")
+        .replace(/^-+|-+$/g, "") || "group";
 }
 
 function addToCart(product) {
@@ -562,7 +650,13 @@ async function submitOrder(event) {
 
 async function fetchJson(url, options) {
     const response = await fetch(url, options);
-    const data = await response.json();
+    const text = await response.text();
+    let data = {};
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch (error) {
+        data = { message: text || "Некорректный ответ сервера" };
+    }
     if (!response.ok) throw new Error(data.message || data.error || "Ошибка запроса");
     return data;
 }

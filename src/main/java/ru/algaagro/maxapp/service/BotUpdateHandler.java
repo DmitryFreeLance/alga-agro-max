@@ -57,10 +57,14 @@ public class BotUpdateHandler {
         Long userId = extractUserId(update);
         Long chatId = extractChatId(update);
         if (userId == null) {
+            log.warn("Skip MAX update without user id. type={}, payload={}", type, update.toString());
             return;
         }
         AppUser user = userService.touchUser(userId, extractDisplayName(update), extractUsername(update));
-        if ("message_callback".equals(type)) {
+        String callbackPayload = extractCallbackPayload(update);
+        String callbackId = extractCallbackId(update);
+        if ("message_callback".equals(type) || type.contains("callback") || callbackPayload != null || callbackId != null) {
+            log.info("Received callback update. type={}, userId={}, payload={}", type, userId, callbackPayload);
             handleCallback(update, user, chatId);
             return;
         }
@@ -217,6 +221,8 @@ public class BotUpdateHandler {
         String callbackPayload = extractCallbackPayload(update);
         String callbackId = extractCallbackId(update);
         if (callbackPayload == null) {
+            log.warn("Callback without payload for userId={}, update={}", user.getMaxUserId(), update.toString());
+            maxApiClient.answerCallback(callbackId, "Не удалось распознать действие кнопки");
             return;
         }
 
@@ -249,7 +255,10 @@ public class BotUpdateHandler {
             case "post:cancel", "flow:cancel" -> cancelFlow(user, callbackId);
             case "admin:buttons" -> showButtons(user, callbackId);
             case "buttons:add" -> explainButtonCommand(user, callbackId);
-            default -> handleDynamicCallback(callbackPayload, callbackId, user, chatId);
+            default -> {
+                log.info("Dispatch dynamic callback. userId={}, payload={}", user.getMaxUserId(), callbackPayload);
+                handleDynamicCallback(callbackPayload, callbackId, user, chatId);
+            }
         }
     }
 
@@ -505,12 +514,15 @@ public class BotUpdateHandler {
                 "/message/sender/user_id",
                 "/message/body/sender/user_id",
                 "/callback/user/user_id",
+                "/callback/user_id",
+                "/callback/sender/user_id",
+                "/sender/user_id",
                 "/user/user_id",
                 "/message/user/user_id");
     }
 
     private Long extractChatId(JsonNode update) {
-        return firstLong(update, "/message/chat_id", "/chat_id", "/callback/chat_id");
+        return firstLong(update, "/message/chat_id", "/chat_id", "/callback/chat_id", "/callback/message/chat_id");
     }
 
     private String extractDisplayName(JsonNode update) {

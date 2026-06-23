@@ -16,7 +16,6 @@
                 <button class="back-button" id="headerBackButton" type="button">← Назад</button>
                 <div class="brand-center">
                     <h1>АЛГА АГРО</h1>
-                    <p>мини-приложение</p>
                 </div>
                 <button class="icon-circle" id="headerActionButton" type="button">⋯</button>
             </div>
@@ -24,29 +23,31 @@
             <div class="header-body">
                 <p class="section-kicker">официальный каталог</p>
                 <h2 id="pageTitle">Главная</h2>
-                <p class="header-caption" id="pageCaption">Быстрый доступ к подбору товаров, корзине и вашему профилю.</p>
+                <p class="header-caption" id="pageCaption"></p>
             </div>
         </header>
 
         <section class="page page-active" id="homePage">
             <div class="content-card hero-card">
-                <div class="hero-mark">AA</div>
+                <div class="hero-mark hero-mark-logo">
+                    <img src="./assets/logo.png" alt="АЛГА АГРО">
+                </div>
                 <div>
                     <p class="section-kicker">Только вперед</p>
                     <h3>Подбор агро-товаров по культурам и задачам.</h3>
-                    <p class="hero-text">Откройте каталог, выберите культуру и соберите заказ из семян, пестицидов, питания и сопутствующих позиций.</p>
+                    <p class="hero-text">Откройте каталог, выберите необходимый товар и оформите заказ в два клика.</p>
                 </div>
                 <div class="hero-actions">
-                    <button class="primary-button" id="openCatalogFromHome" type="button">Перейти в каталог</button>
-                    <button class="ghost-button" id="openCartFromHome" type="button">Открыть корзину</button>
+                    <button class="primary-button" id="openCatalogFromHome" type="button">Каталог</button>
+                    <button class="ghost-button" id="openCartFromHome" type="button">Корзина</button>
                 </div>
             </div>
 
             <div class="content-card">
                 <div class="section-head">
                     <div>
-                        <p class="section-kicker">Направления</p>
-                        <h3>Ключевые группы</h3>
+                        <p class="section-kicker">Каталог</p>
+                        <h3>Основные категории</h3>
                     </div>
                 </div>
                 <div class="home-group-grid" id="homeGroupGrid"></div>
@@ -82,12 +83,12 @@
                         <button class="ghost-button" id="resetFilters" type="button">Сбросить</button>
                     </div>
 
-                    <div class="filter-block">
+                    <div class="filter-block filter-block-inline">
                         <p class="filter-title">Культуры</p>
                         <div class="chips" id="cultureChips"></div>
                     </div>
 
-                    <div class="filter-block">
+                    <div class="filter-block filter-block-inline">
                         <p class="filter-title">Теги</p>
                         <div class="chips chips-light" id="tagPills"></div>
                     </div>
@@ -96,8 +97,8 @@
                 <div class="content-card">
                     <div class="section-head">
                         <div>
-                            <p class="section-kicker">Группы</p>
-                            <h3>Категории</h3>
+                            <p class="section-kicker">Разделы</p>
+                            <h3>Выберите группу</h3>
                         </div>
                     </div>
                     <div class="group-grid" id="groupGrid"></div>

@@ -97,13 +97,13 @@ public class MiniAppApiController {
     @GetMapping("/profile")
     public Map<String, Object> profile(@RequestParam Long maxUserId) {
         var user = userService.findByMaxUserId(maxUserId).orElse(null);
-        return Map.of(
-                "maxUserId", maxUserId,
-                "displayName", user == null ? "Пользователь MAX" : user.getDisplayName(),
-                "username", user == null ? "" : user.getUsername(),
-                "admin", user != null && user.isAdmin(),
-                "ordersCount", orderService.listOrdersForUser(maxUserId).size()
-        );
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("maxUserId", maxUserId);
+        response.put("displayName", user == null || user.getDisplayName() == null || user.getDisplayName().isBlank() ? "Пользователь MAX" : user.getDisplayName());
+        response.put("username", user == null || user.getUsername() == null ? "" : user.getUsername());
+        response.put("admin", user != null && user.isAdmin());
+        response.put("ordersCount", orderService.listOrdersForUser(maxUserId).size());
+        return response;
     }
 
     @GetMapping("/profile/orders")
