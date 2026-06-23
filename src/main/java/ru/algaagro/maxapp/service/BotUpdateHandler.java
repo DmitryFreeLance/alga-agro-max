@@ -135,21 +135,9 @@ public class BotUpdateHandler {
             return;
         }
 
-        if (session.getState() == SessionState.BUTTON_WAITING_TEXT && user.isAdmin()) {
+        if (isButtonFlow(session) && user.isAdmin()) {
             handleButtonDraftMessage(user, session, text);
             return;
-        }
-
-        if (user.isAdmin() && text != null && text.startsWith("/addbutton ")) {
-            String[] parts = text.substring("/addbutton ".length()).split("\\|", 2);
-            if (parts.length == 2) {
-                postButtonService.createButton(parts[0].trim(), parts[1].trim());
-                maxApiClient.sendToUser(user.getMaxUserId(),
-                        "🔗 Кнопка добавлена. Теперь она будет прикрепляться к предпросмотру постов.",
-                        keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                        "html");
-                return;
-            }
         }
 
         if (user.isAdmin() && text != null && text.startsWith("/grant ")) {
@@ -170,14 +158,6 @@ public class BotUpdateHandler {
             return;
         }
 
-        if (user.isAdmin() && text != null && text.startsWith("/addbutton")) {
-            maxApiClient.sendToUser(user.getMaxUserId(),
-                    "Формат команды: `/addbutton Название | https://example.com`",
-                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                    "markdown");
-            return;
-        }
-
         maxApiClient.sendToUser(user.getMaxUserId(),
                 """
                 🌾 <b>ООО «АЛГА АГРО»</b>
@@ -195,62 +175,82 @@ public class BotUpdateHandler {
         if (normalized.isBlank()) {
             return false;
         }
-        switch (normalized) {
-            case "админ панель" -> {
-                openAdminMenu(user);
+        if (normalized.equals("админ панель") || normalized.equals("админка")) {
+            openAdminMenu(user);
+            return true;
+        }
+        if (normalized.equals("номенклатура")) {
+            startImportFlow(user, null);
+            return true;
+        }
+        if (normalized.equals("пользователи")) {
+            showUsers(user, 0);
+            return true;
+        }
+        if (normalized.startsWith("пользователи ")) {
+            Integer page = parseCommandPage(normalized, "пользователи");
+            if (page != null) {
+                showUsers(user, page);
                 return true;
-            }
-            case "номенклатура" -> {
-                startImportFlow(user, null);
-                return true;
-            }
-            case "заказы" -> {
-                showOrders(user, 0);
-                return true;
-            }
-            case "пользователи" -> {
-                showUsers(user, 0);
-                return true;
-            }
-            case "пост" -> {
-                startPostFlow(user, null);
-                return true;
-            }
-            case "кнопки постов" -> {
-                showButtons(user, null);
-                return true;
-            }
-            case "в меню", "назад" -> {
-                sendWelcome(user.getMaxUserId(), true);
-                return true;
-            }
-            case "добавить кнопку" -> {
-                startButtonFlow(user, null);
-                return true;
-            }
-            case "готово" -> {
-                if (session.getState() == SessionState.IMPORT_WAITING_FILES) {
-                    runImport(user, null);
-                    return true;
-                }
-                if (session.getState() == SessionState.POST_WAITING_MEDIA) {
-                    askPostText(user, null);
-                    return true;
-                }
-                return false;
-            }
-            case "отмена", "отменить" -> {
-                cancelFlow(user, null);
-                return true;
-            }
-            case "опубликовать" -> {
-                publishPost(user, null);
-                return true;
-            }
-            default -> {
-                return false;
             }
         }
+        if (normalized.startsWith("назначить админом ")) {
+            Long target = parseCommandLong(normalized, "назначить админом ");
+            if (target != null) {
+                grantAdminFromText(user, target);
+                return true;
+            }
+        }
+        if (normalized.equals("заказы")) {
+            showOrders(user, 0);
+            return true;
+        }
+        if (normalized.startsWith("заказы ")) {
+            Integer page = parseCommandPage(normalized, "заказы");
+            if (page != null) {
+                showOrders(user, page);
+                return true;
+            }
+        }
+        if (normalized.equals("пост")) {
+            startPostFlow(user, null);
+            return true;
+        }
+        if (normalized.equals("кнопки постов")) {
+            showButtons(user, null);
+            return true;
+        }
+        if (normalized.equals("добавить кнопку")) {
+            startButtonFlow(user, null);
+            return true;
+        }
+        if (normalized.startsWith("удалить кнопку ")) {
+            Long buttonId = parseCommandLong(normalized, "удалить кнопку ");
+            if (buttonId != null) {
+                deleteButtonFromText(user, buttonId);
+                return true;
+            }
+        }
+        if (normalized.equals("готово")) {
+            if (session.getState() == SessionState.IMPORT_WAITING_FILES) {
+                runImport(user, null);
+                return true;
+            }
+            if (session.getState() == SessionState.POST_WAITING_MEDIA) {
+                askPostText(user, null);
+                return true;
+            }
+            return false;
+        }
+        if (normalized.equals("отмена") || normalized.equals("отменить")) {
+            cancelFlow(user, null);
+            return true;
+        }
+        if (normalized.equals("опубликовать")) {
+            publishPost(user, null);
+            return true;
+        }
+        return false;
     }
 
     private boolean captureImportFile(JsonNode update, BotSession session) {
@@ -484,9 +484,8 @@ public class BotUpdateHandler {
         if (buttons.isEmpty()) {
             text.append("Пока ни одной кнопки не добавлено.\n");
         } else {
-            buttons.forEach(button -> text.append("• ").append(button.getLabel()).append(" — ").append(button.getUrl()).append("\n"));
+            buttons.forEach(button -> text.append("• #").append(button.getId()).append(" — ").append(button.getLabel()).append(" — ").append(button.getUrl()).append("\n"));
         }
-        text.append("\nЧтобы быстро добавить кнопку, отправьте команду:\n<code>/addbutton Группа | https://max.ru/...</code>");
         maxApiClient.sendToUser(user.getMaxUserId(),
                 text.toString(),
                 keyboardFactory.buttonsManagementKeyboard(buttons),
@@ -507,17 +506,22 @@ public class BotUpdateHandler {
                 .append(item.getUsername() == null ? "" : "@" + item.getUsername() + "\n")
                 .append("\n"));
         text.append("Страница ").append(page + 1).append(" из ").append(Math.max(users.getTotalPages(), 1))
-                .append("\nВсего пользователей: ").append(userService.countUsers())
-                .append("\n\nДля выдачи прав можно нажать кнопку у пользователя или отправить <code>/grant ID</code>.");
+                .append("\nВсего пользователей: ").append(userService.countUsers());
         List<List<Map<String, Object>>> rows = new ArrayList<>();
         for (AppUser item : users.getContent()) {
             if (!item.isAdmin()) {
-                rows.add(List.of(keyboardFactory.callbackButton("⭐ " + TextUtils.trimTo(item.getDisplayName(), 22), "admin:grant:" + item.getMaxUserId())));
+                rows.add(List.of(keyboardFactory.messageButton("⭐ Назначить админом " + item.getMaxUserId())));
             }
         }
-        rows.add(List.of(keyboardFactory.callbackButton("⬅️", "admin:users:" + Math.max(page - 1, 0)),
-                keyboardFactory.callbackButton("🔙 Админка", "admin:menu"),
-                keyboardFactory.callbackButton("➡️", "admin:users:" + Math.min(page + 1, Math.max(users.getTotalPages() - 1, 0)))));
+        List<Map<String, Object>> pager = new ArrayList<>();
+        if (page > 0) {
+            pager.add(keyboardFactory.messageButton("⬅️ Пользователи " + page));
+        }
+        pager.add(keyboardFactory.messageButton("🛠 Админка"));
+        if (page + 1 < Math.max(users.getTotalPages(), 1)) {
+            pager.add(keyboardFactory.messageButton("➡️ Пользователи " + (page + 2)));
+        }
+        rows.add(pager);
         maxApiClient.sendToUser(user.getMaxUserId(), text.toString(), keyboardFactory.inlineKeyboard(rows), "html");
     }
 
@@ -535,9 +539,17 @@ public class BotUpdateHandler {
         }
         text.append("\nСтраница ").append(page + 1).append(" из ").append(Math.max(orders.getTotalPages(), 1))
                 .append("\nВсего заказов: ").append(orderService.countOrders());
+        List<Map<String, Object>> pager = new ArrayList<>();
+        if (page > 0) {
+            pager.add(keyboardFactory.messageButton("⬅️ Заказы " + page));
+        }
+        pager.add(keyboardFactory.messageButton("🛠 Админка"));
+        if (page + 1 < Math.max(orders.getTotalPages(), 1)) {
+            pager.add(keyboardFactory.messageButton("➡️ Заказы " + (page + 2)));
+        }
         maxApiClient.sendToUser(user.getMaxUserId(),
                 text.toString(),
-                keyboardFactory.pager("admin:orders", page, page > 0, page + 1 < orders.getTotalPages()),
+                keyboardFactory.inlineKeyboard(List.of(pager)),
                 "html");
     }
 
@@ -569,7 +581,9 @@ public class BotUpdateHandler {
 
     private void startButtonFlow(AppUser user, String callbackId) {
         BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
-        botSessionService.update(session, SessionState.BUTTON_WAITING_TEXT, new HashMap<>());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("mode", "button_waiting");
+        botSessionService.update(session, SessionState.IDLE, payload);
         maxApiClient.sendToUser(user.getMaxUserId(),
                 """
                 🔗 <b>Новая кнопка для постов</b>
@@ -602,6 +616,47 @@ public class BotUpdateHandler {
         botSessionService.reset(user.getMaxUserId());
         maxApiClient.sendToUser(user.getMaxUserId(),
                 "✅ Кнопка добавлена.",
+                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+    }
+
+    private boolean isButtonFlow(BotSession session) {
+        return "button_waiting".equals(String.valueOf(botSessionService.getPayload(session).get("mode")));
+    }
+
+    private Integer parseCommandPage(String normalizedText, String prefix) {
+        String tail = normalizedText.substring(prefix.length()).trim();
+        if (tail.isBlank()) {
+            return 0;
+        }
+        try {
+            return Math.max(Integer.parseInt(tail) - 1, 0);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Long parseCommandLong(String normalizedText, String prefix) {
+        String tail = normalizedText.substring(prefix.length()).trim();
+        try {
+            return Long.parseLong(tail);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void grantAdminFromText(AppUser user, Long targetUserId) {
+        boolean granted = userService.grantAdmin(targetUserId);
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                granted ? "⭐ Права администратора выданы." : "Пользователь еще не запускал бота.",
+                keyboardFactory.adminMenu(),
+                "html");
+    }
+
+    private void deleteButtonFromText(AppUser user, Long buttonId) {
+        boolean deleted = postButtonService.deleteButton(buttonId);
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                deleted ? "🗑 Кнопка удалена." : "Кнопка не найдена.",
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                 "html");
     }

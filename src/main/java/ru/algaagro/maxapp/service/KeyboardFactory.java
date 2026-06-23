@@ -27,9 +27,10 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> adminMenu() {
         List<List<Map<String, Object>>> rows = List.of(
-                List.of(messageButton("📦 Номенклатура"), messageButton("🧾 Заказы")),
-                List.of(messageButton("👥 Пользователи"), messageButton("📣 Пост")),
-                List.of(messageButton("🔗 Кнопки постов"), messageButton("🏠 В меню"))
+                List.of(messageButton("📦 Номенклатура")),
+                List.of(messageButton("👥 Пользователи")),
+                List.of(messageButton("🧾 Заказы"), messageButton("📣 Пост")),
+                List.of(messageButton("🔗 Кнопки постов"))
         );
         return inlineKeyboard(rows);
     }
@@ -57,23 +58,11 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(messageButton("➕ Добавить кнопку"), messageButton("🔙 Назад")));
+        rows.add(List.of(messageButton("➕ Добавить кнопку")));
         for (PostButton button : postButtons) {
-            rows.add(List.of(callbackButton("🗑 " + button.getLabel(), "buttons:delete:" + button.getId())));
+            rows.add(List.of(messageButton("🗑 Удалить кнопку " + button.getId())));
         }
         return inlineKeyboard(rows);
-    }
-
-    public List<Map<String, Object>> pager(String prefix, int currentPage, boolean hasPrev, boolean hasNext) {
-        List<Map<String, Object>> row = new ArrayList<>();
-        if (hasPrev) {
-            row.add(callbackButton("⬅️", prefix + ":" + (currentPage - 1)));
-        }
-        row.add(callbackButton("🔙 Админка", "admin:menu"));
-        if (hasNext) {
-            row.add(callbackButton("➡️", prefix + ":" + (currentPage + 1)));
-        }
-        return inlineKeyboard(List.of(row));
     }
 
     public Map<String, Object> callbackButton(String text, String payload) {
