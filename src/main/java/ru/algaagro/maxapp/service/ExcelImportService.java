@@ -27,6 +27,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.model.ImportJob;
 import ru.algaagro.maxapp.model.ImportStatus;
 import ru.algaagro.maxapp.repository.ImportJobRepository;
@@ -41,7 +42,11 @@ public class ExcelImportService {
     private final ProductService productService;
     private final AiClassificationService aiClassificationService;
     private final JsonHelper jsonHelper;
-    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    private final AppProperties appProperties;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(20))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
     private final DataFormatter dataFormatter = new DataFormatter(Locale.forLanguageTag("ru-RU"));
 
     public ExcelImportService(
@@ -49,13 +54,15 @@ public class ExcelImportService {
             ImportJobRepository importJobRepository,
             ProductService productService,
             AiClassificationService aiClassificationService,
-            JsonHelper jsonHelper
+            JsonHelper jsonHelper,
+            AppProperties appProperties
     ) {
         this.importExecutorService = importExecutorService;
         this.importJobRepository = importJobRepository;
         this.productService = productService;
         this.aiClassificationService = aiClassificationService;
         this.jsonHelper = jsonHelper;
+        this.appProperties = appProperties;
     }
 
     @Transactional
@@ -171,11 +178,14 @@ public class ExcelImportService {
 
     private byte[] download(String url) {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(60))
-                    .GET()
-                    .build();
+                    .GET();
+            if (isMaxHostedUrl(url) && appProperties.getMax().getBotToken() != null && !appProperties.getMax().getBotToken().isBlank()) {
+                requestBuilder.header("Authorization", appProperties.getMax().getBotToken());
+            }
+            HttpRequest request = requestBuilder.build();
             HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() / 100 != 2) {
                 throw new IllegalStateException("Ошибка скачивания файла: " + response.statusCode());
@@ -184,6 +194,22 @@ public class ExcelImportService {
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Не удалось скачать файл", e);
+        }
+    }
+
+    private boolean isMaxHostedUrl(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            if (host == null) {
+                return false;
+            }
+            String normalized = host.toLowerCase(Locale.ROOT);
+            return normalized.endsWith(".max.ru")
+                    || normalized.endsWith(".oneme.ru")
+                    || normalized.contains("max.ru")
+                    || normalized.contains("oneme.ru");
+        } catch (Exception e) {
+            return false;
         }
     }
 

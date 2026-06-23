@@ -1,11 +1,28 @@
-<!-- Source style: lucide-static (ISC) -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="#5BAA39" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M2 22 16 8"/>
-  <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-  <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-  <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-  <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
-  <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-  <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-  <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="seedsBag" x1="30" y1="27" x2="89" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7ED957"/>
+      <stop offset="1" stop-color="#4B982F"/>
+    </linearGradient>
+    <linearGradient id="seedsLeaf" x1="64" y1="34" x2="64" y2="84" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#74D346"/>
+      <stop offset="1" stop-color="#2E7D1E"/>
+    </linearGradient>
+  </defs>
+  <path d="M26 88C26 80.268 32.268 74 40 74H88C95.732 74 102 80.268 102 88V93C102 100.732 95.732 107 88 107H40C32.268 107 26 100.732 26 93V88Z" fill="#E5F6D9"/>
+  <path d="M35 36C35 28.82 40.82 23 48 23H80C87.18 23 93 28.82 93 36V84C93 91.18 87.18 97 80 97H48C40.82 97 35 91.18 35 84V36Z" fill="url(#seedsBag)"/>
+  <path d="M40 35C40 30.582 43.582 27 48 27H80C84.418 27 88 30.582 88 35V42H40V35Z" fill="#F5FFE9" fill-opacity="0.54"/>
+  <path d="M48 23H80C83.866 23 87 26.134 87 30V35H41V30C41 26.134 44.134 23 48 23Z" fill="#F4FFE8"/>
+  <path d="M64 41V82" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <path d="M64 50C58.668 42.374 51.574 39.361 43 38C42.409 45.98 45.232 52.555 51.628 56.285C56.409 59.074 60.888 58.372 64 50Z" fill="url(#seedsLeaf)"/>
+  <path d="M64 63C70.195 55.074 77.139 52.602 85 52C85.751 60.213 82.586 66.789 75.839 70.236C70.819 72.801 66.394 71.674 64 63Z" fill="url(#seedsLeaf)"/>
+  <path d="M64 63C58.309 56.256 52.207 54.532 45 54C44.29 61.771 46.994 68.058 53.056 71.446C57.441 73.897 61.41 73.102 64 63Z" fill="url(#seedsLeaf)"/>
+  <path d="M64 76C68.544 70.474 73.624 68.874 79.5 69C79.668 75.241 77.401 80.068 72.452 82.667C68.746 84.613 65.434 83.993 64 76Z" fill="url(#seedsLeaf)"/>
+  <path d="M64 76C60.078 71.298 55.76 69.926 50.5 70C50.308 76.022 52.475 80.691 57.01 83.228C60.42 85.136 63.5 84.563 64 76Z" fill="url(#seedsLeaf)"/>
+  <path d="M47 87C53.667 82.333 60.333 82.333 67 87" stroke="#DFF5D0" stroke-width="3" stroke-linecap="round"/>
+  <path d="M73 87C76.333 84.333 79.667 84 83 86.5" stroke="#DFF5D0" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="48" cy="101" r="3" fill="#66B73E"/>
+  <circle cx="58" cy="104" r="2.5" fill="#5EA635"/>
+  <circle cx="71" cy="102" r="3.2" fill="#75C848"/>
+  <circle cx="81" cy="100" r="2.8" fill="#539D31"/>
 </svg>

@@ -1,6 +1,27 @@
-<!-- Source style: lucide-static (ISC) -->
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="#5BAA39" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
-  <path d="M9 12h6"/>
-  <path d="M12 9v6"/>
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pesticideCan" x1="41" y1="28" x2="88" y2="97" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7AD54F"/>
+      <stop offset="1" stop-color="#4A962E"/>
+    </linearGradient>
+    <linearGradient id="pesticideShield" x1="64" y1="46" x2="64" y2="84" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EAF7E1"/>
+    </linearGradient>
+  </defs>
+  <path d="M36 90C36 82.268 42.268 76 50 76H78C85.732 76 92 82.268 92 90V95C92 102.732 85.732 109 78 109H50C42.268 109 36 102.732 36 95V90Z" fill="#E5F5DB"/>
+  <path d="M50 24H70C73.314 24 76 26.686 76 30V37H56V30C56 26.686 53.314 24 50 24Z" fill="#D2EDC2"/>
+  <path d="M78 34H84C88.418 34 92 37.582 92 42V47H86V42C86 40.895 85.105 40 84 40H78V34Z" fill="#5AA837"/>
+  <path d="M45 36C45 30.477 49.477 26 55 26H73C78.523 26 83 30.477 83 36V89C83 94.523 78.523 99 73 99H55C49.477 99 45 94.523 45 89V36Z" fill="url(#pesticideCan)"/>
+  <path d="M50 38C50 34.686 52.686 32 56 32H72C75.314 32 78 34.686 78 38V45H50V38Z" fill="#F4FFE8" fill-opacity="0.48"/>
+  <path d="M55 49C55 47.343 56.343 46 58 46H70C71.657 46 73 47.343 73 49V73C73 76.314 70.314 79 67 79H61C57.686 79 55 76.314 55 73V49Z" fill="url(#pesticideShield)"/>
+  <path d="M64 53C67.247 57.634 70.911 60.174 75.5 60.62C74.976 66.849 72.057 72.016 66.742 75.233L64 76.893L61.258 75.233C55.943 72.016 53.024 66.849 52.5 60.62C57.089 60.174 60.753 57.634 64 53Z" fill="#58A935"/>
+  <path d="M64 58V70" stroke="#F2FFE8" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M64 60C61.711 56.952 58.999 55.467 56 55.2C56.392 58.774 57.985 61.738 60.626 63.561C62.601 64.924 64.44 64.518 64 60Z" fill="#F2FFE8"/>
+  <path d="M64 66C66.559 63.03 69.197 61.8 72 61.8C71.535 65.267 69.964 68.029 67.434 69.723C65.56 70.979 63.944 70.542 64 66Z" fill="#F2FFE8"/>
+  <path d="M53 100V106" stroke="#5A9E35" stroke-width="4" stroke-linecap="round"/>
+  <path d="M75 100V106" stroke="#5A9E35" stroke-width="4" stroke-linecap="round"/>
+  <path d="M84 49H95.5C98.537 49 101 51.463 101 54.5V57" stroke="#5AA837" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="97" cy="63" r="5" fill="#7AD54F"/>
+  <circle cx="97" cy="63" r="2.2" fill="#F4FFE8"/>
 </svg>

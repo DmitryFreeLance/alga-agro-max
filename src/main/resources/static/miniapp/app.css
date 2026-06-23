@@ -161,32 +161,52 @@ button { border: none; cursor: pointer; }
 }
 
 .group-card {
-    padding: 0.85rem;
-    border-radius: 22px;
-    border: 1px solid rgba(38, 107, 29, 0.1);
-    background: var(--white);
+    position: relative;
+    overflow: hidden;
+    padding: 0.9rem;
+    border-radius: 24px;
+    border: 1px solid rgba(38, 107, 29, 0.08);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdf9 100%);
     text-align: left;
-    box-shadow: 0 12px 28px rgba(38, 107, 29, 0.08);
+    box-shadow: 0 16px 34px rgba(38, 107, 29, 0.08);
 }
 
 .group-card.active {
-    background: linear-gradient(160deg, rgba(98,182,61,0.11), rgba(98,182,61,0.04));
-    border-color: rgba(69, 148, 42, 0.26);
+    background: linear-gradient(160deg, rgba(98,182,61,0.14), rgba(255,255,255,0.92));
+    border-color: rgba(69, 148, 42, 0.22);
+    box-shadow: 0 18px 36px rgba(69, 148, 42, 0.14);
 }
 
 .group-illustration {
-    min-height: 8.6rem;
-    border-radius: 18px;
+    position: relative;
+    min-height: 9.4rem;
+    border-radius: 20px;
     display: grid;
     place-items: center;
-    background: linear-gradient(180deg, #ffffff 0%, #fbfdf9 100%);
-    border: 1px solid rgba(38, 107, 29, 0.07);
+    background:
+        radial-gradient(circle at 22% 18%, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.9) 16%, transparent 42%),
+        radial-gradient(circle at 78% 82%, rgba(98,182,61,0.14) 0%, transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #f5faef 100%);
+    border: 1px solid rgba(38, 107, 29, 0.05);
+}
+
+.group-illustration::after {
+    content: "";
+    position: absolute;
+    inset: auto -1.2rem -2.3rem auto;
+    width: 6.5rem;
+    height: 6.5rem;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(98,182,61,0.12) 0%, rgba(98,182,61,0.02) 68%, transparent 72%);
 }
 
 .group-icon-asset {
-    width: 5.1rem;
-    height: 5.1rem;
+    position: relative;
+    z-index: 1;
+    width: 6.1rem;
+    height: 6.1rem;
     object-fit: contain;
+    filter: drop-shadow(0 10px 22px rgba(47, 107, 29, 0.12));
 }
 
 .group-card-footer {
@@ -205,8 +225,15 @@ button { border: none; cursor: pointer; }
 }
 
 .group-count {
-    color: var(--muted);
-    font-size: 0.92rem;
+    min-width: 1.9rem;
+    height: 1.9rem;
+    padding: 0 0.5rem;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 999px;
+    background: rgba(98,182,61,0.11);
+    color: var(--green-deep);
+    font-size: 0.88rem;
     font-weight: 700;
 }
 

@@ -262,13 +262,58 @@ public class BotUpdateHandler {
         for (Map<String, Object> attachment : attachments) {
             String type = String.valueOf(attachment.getOrDefault("type", ""));
             Map<String, Object> payload = castMap(attachment.get("payload"));
-            String fileName = firstNonBlank(payload, "file_name", "name", "title");
-            String url = firstNonBlank(payload, "url", "download_url", "file_url");
-            if ("file".equals(type) && fileName != null && fileName.toLowerCase().endsWith(".xlsx") && url != null) {
-                filePayload.add(Map.of("name", fileName, "url", url));
+            Map<String, Object> file = castMap(attachment.get("file"));
+            Map<String, Object> media = castMap(attachment.get("media"));
+            String fileName = firstNonBlank(
+                    attachment,
+                    "file_name", "name", "title", "filename"
+            );
+            if (fileName == null) {
+                fileName = firstNonBlank(payload, "file_name", "name", "title", "filename");
             }
+            if (fileName == null) {
+                fileName = firstNonBlank(file, "file_name", "name", "title", "filename");
+            }
+            if (fileName == null) {
+                fileName = firstNonBlank(media, "file_name", "name", "title", "filename");
+            }
+            String mimeType = firstNonBlank(
+                    payload,
+                    "mime_type", "content_type", "type"
+            );
+            if (mimeType == null) {
+                mimeType = firstNonBlank(attachment, "mime_type", "content_type");
+            }
+            if (mimeType == null) {
+                mimeType = firstNonBlank(file, "mime_type", "content_type");
+            }
+            String url = firstNonBlank(attachment, "url", "download_url", "file_url", "downloadUrl", "fileUrl");
+            if (url == null) {
+                url = firstNonBlank(payload, "url", "download_url", "file_url", "downloadUrl", "fileUrl", "src");
+            }
+            if (url == null) {
+                url = firstNonBlank(file, "url", "download_url", "file_url", "downloadUrl", "fileUrl", "src");
+            }
+            if (url == null) {
+                url = firstNonBlank(media, "url", "download_url", "file_url", "downloadUrl", "fileUrl", "src");
+            }
+            boolean excelByName = fileName != null && (fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xlsm"));
+            boolean excelByMime = mimeType != null && mimeType.toLowerCase().contains("spreadsheet");
+            boolean fileLikeType = type.equalsIgnoreCase("file") || type.equalsIgnoreCase("document") || type.isBlank();
+            if (fileLikeType && (excelByName || excelByMime) && url != null) {
+                filePayload.add(Map.of("name", fileName == null ? "import.xlsx" : fileName, "url", url));
+                continue;
+            }
+            log.info("Skipped import attachment. type={}, fileName={}, mimeType={}, hasUrl={}, keys={}, payloadKeys={}",
+                    type,
+                    fileName,
+                    mimeType,
+                    url != null,
+                    attachment.keySet(),
+                    payload.keySet());
         }
         if (filePayload.isEmpty()) {
+            log.info("No importable Excel attachment found. attachments={}, update={}", attachments, update.toString());
             return false;
         }
         Map<String, Object> payload = botSessionService.getPayload(session);
@@ -738,14 +783,44 @@ public class BotUpdateHandler {
 
     private List<Map<String, Object>> extractAttachments(JsonNode update) {
         List<Map<String, Object>> attachments = new ArrayList<>();
-        JsonNode node = update.at("/message/body/attachments");
-        if (!node.isArray()) {
-            node = update.at("/message/attachments");
-        }
-        if (node.isArray()) {
+        JsonNode node = firstArrayNode(update,
+                "/message/body/attachments",
+                "/message/attachments",
+                "/body/attachments",
+                "/attachments");
+        if (node != null && node.isArray()) {
             node.forEach(item -> attachments.add(new com.fasterxml.jackson.databind.ObjectMapper().convertValue(item, Map.class)));
+        } else {
+            JsonNode single = firstObjectNode(update,
+                    "/message/body/attachment",
+                    "/message/attachment",
+                    "/body/attachment",
+                    "/attachment");
+            if (single != null && single.isObject()) {
+                attachments.add(new com.fasterxml.jackson.databind.ObjectMapper().convertValue(single, Map.class));
+            }
         }
         return attachments;
+    }
+
+    private JsonNode firstArrayNode(JsonNode root, String... pointers) {
+        for (String pointer : pointers) {
+            JsonNode node = root.at(pointer);
+            if (node.isArray()) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private JsonNode firstObjectNode(JsonNode root, String... pointers) {
+        for (String pointer : pointers) {
+            JsonNode node = root.at(pointer);
+            if (node.isObject()) {
+                return node;
+            }
+        }
+        return null;
     }
 
     private String firstText(JsonNode root, String... pointers) {
