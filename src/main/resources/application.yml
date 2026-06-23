@@ -1,0 +1,43 @@
+server:
+  port: ${SERVER_PORT:8080}
+spring:
+  application:
+    name: alga-agro-max
+  datasource:
+    url: jdbc:sqlite:${APP_DB_PATH:/data/alga-agro.db}
+    driver-class-name: org.sqlite.JDBC
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+        format_sql: false
+  jackson:
+    time-zone: Europe/Moscow
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:https://algaagro.ru}
+  mini-app-url: ${APP_MINI_APP_URL:https://algaagro.ru/miniapp/}
+  startup-admin-user-ids: ${APP_STARTUP_ADMIN_USER_IDS:}
+  max:
+    api-base-url: ${MAX_API_BASE_URL:https://platform-api.max.ru}
+    bot-token: ${MAX_BOT_TOKEN:}
+    poll-timeout-seconds: ${MAX_POLL_TIMEOUT_SECONDS:30}
+    poll-limit: ${MAX_POLL_LIMIT:100}
+    post-target-chat-id: ${MAX_POST_TARGET_CHAT_ID:}
+  ai:
+    kie-base-url: ${KIE_BASE_URL:https://api.kie.ai}
+    kie-api-key: ${KIE_API_KEY:}
+    kie-model: ${KIE_MODEL:gpt-5-5}
+    kie-timeout-seconds: ${KIE_TIMEOUT_SECONDS:150}
+    kie-gemini-api-key: ${KIE_GEMINI_API_KEY:${KIE_API_KEY:}}
+    kie-gemini-model: ${KIE_GEMINI_MODEL:gemini-3-5-flash-openai}
+    kie-gemini-endpoint: ${KIE_GEMINI_ENDPOINT:/gemini-3-5-flash-openai/v1/chat/completions}
+    gemini-timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:200}

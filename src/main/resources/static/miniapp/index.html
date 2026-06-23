@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>АЛГА АГРО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+    <div class="grain grain-left"></div>
+    <div class="grain grain-right"></div>
+
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">AA</div>
+            <div>
+                <p class="brand-kicker">официальный мини апп</p>
+                <h1>АЛГА АГРО</h1>
+            </div>
+        </div>
+
+        <button class="cart-button" id="cartButton" type="button" aria-label="Открыть корзину">
+            <span>🧺</span>
+            <span class="cart-label">Корзина</span>
+            <span class="cart-count" id="cartCount">0</span>
+        </button>
+    </header>
+
+    <main class="layout">
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="hero-kicker">Каталог для полей, сезона и результата</p>
+                <h2>Подбирайте семена, защиту и питание по культуре за пару касаний.</h2>
+                <p class="hero-text">
+                    Сначала выбираете культуру, например пшеницу, а дальше каталог собирает все релевантные позиции:
+                    семена, пестициды, микроэлементы, стимуляторы и сопутствующие товары.
+                </p>
+                <div class="hero-actions">
+                    <button class="ghost-button" id="scrollToCatalog" type="button">🌾 Перейти в каталог</button>
+                    <button class="ghost-button secondary" id="resetFilters" type="button">♻️ Сбросить фильтры</button>
+                </div>
+            </div>
+
+            <div class="hero-panel">
+                <div class="stat-card">
+                    <span class="stat-label">Товаров в каталоге</span>
+                    <strong id="totalProducts">0</strong>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Культур в подборе</span>
+                    <strong id="totalCultures">0</strong>
+                </div>
+                <div class="stat-card accent">
+                    <span class="stat-label">Логика фильтра</span>
+                    <strong>культура → все для нее</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="culture-strip" id="catalog">
+            <div class="section-head">
+                <div>
+                    <p class="eyebrow">Быстрый выбор</p>
+                    <h3>Подбор по культуре</h3>
+                </div>
+                <p class="section-note">Нажмите на культуру, и каталог перестроится автоматически.</p>
+            </div>
+            <div class="chip-cloud" id="cultureChips"></div>
+        </section>
+
+        <section class="workspace">
+            <aside class="filters">
+                <div class="filter-card">
+                    <p class="eyebrow">Поиск</p>
+                    <label class="field">
+                        <span>Название или назначение</span>
+                        <input id="searchInput" type="search" placeholder="Например, фунгицид для пшеницы">
+                    </label>
+                </div>
+
+                <div class="filter-card">
+                    <p class="eyebrow">Категория</p>
+                    <div class="pill-list" id="categoryPills"></div>
+                </div>
+
+                <div class="filter-card">
+                    <p class="eyebrow">Назначение и теги</p>
+                    <div class="pill-list compact" id="tagPills"></div>
+                </div>
+
+                <div class="filter-card">
+                    <p class="eyebrow">Сортировка</p>
+                    <label class="field">
+                        <span>Порядок вывода</span>
+                        <select id="sortSelect">
+                            <option value="name">По названию</option>
+                            <option value="price_asc">Сначала дешевле</option>
+                            <option value="price_desc">Сначала дороже</option>
+                            <option value="stock_desc">По наличию</option>
+                        </select>
+                    </label>
+                </div>
+            </aside>
+
+            <section class="catalog">
+                <div class="catalog-toolbar">
+                    <div>
+                        <p class="eyebrow">Каталог</p>
+                        <h3 id="catalogTitle">Все товары</h3>
+                    </div>
+                    <p class="catalog-count" id="catalogCount">0 позиций</p>
+                </div>
+
+                <div class="product-grid" id="productGrid"></div>
+                <div class="empty-state hidden" id="emptyState">
+                    <h4>Каталог пока пуст</h4>
+                    <p>Загрузите Excel-файлы через админ-панель бота, и товары появятся здесь с автоматически расставленными фильтрами.</p>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <aside class="cart-drawer" id="cartDrawer">
+        <div class="cart-head">
+            <div>
+                <p class="eyebrow">Корзина</p>
+                <h3>Ваш заказ</h3>
+            </div>
+            <button class="icon-button" id="closeCart" type="button">✕</button>
+        </div>
+
+        <div class="cart-items" id="cartItems"></div>
+
+        <div class="cart-footer">
+            <div class="cart-summary">
+                <span>Итого</span>
+                <strong id="cartTotal">0 ₽</strong>
+            </div>
+            <button class="primary-button" id="checkoutButton" type="button">Оформить заказ</button>
+        </div>
+    </aside>
+
+    <div class="overlay hidden" id="overlay"></div>
+
+    <section class="checkout-modal hidden" id="checkoutModal">
+        <div class="modal-head">
+            <div>
+                <p class="eyebrow">Оформление</p>
+                <h3>Отправка заявки администратору</h3>
+            </div>
+            <button class="icon-button" id="closeCheckout" type="button">✕</button>
+        </div>
+
+        <form id="checkoutForm" class="checkout-form">
+            <label class="field">
+                <span>Имя</span>
+                <input name="name" type="text" required placeholder="Как к вам обращаться">
+            </label>
+
+            <label class="field">
+                <span>Телефон</span>
+                <input name="phone" type="tel" required placeholder="+7 (___) ___-__-__">
+            </label>
+
+            <label class="field">
+                <span>Компания</span>
+                <input name="company" type="text" placeholder="ООО / ИП / хозяйство">
+            </label>
+
+            <label class="field">
+                <span>Комментарий</span>
+                <textarea name="comment" rows="4" placeholder="Уточните объем, срочность, условия доставки"></textarea>
+            </label>
+
+            <label class="field">
+                <span>Контекст заказа</span>
+                <textarea name="deliveryNote" rows="3" placeholder="Например: нужна консультация по пшенице и быстрый расчет по наличию"></textarea>
+            </label>
+
+            <div class="checkout-actions">
+                <button class="ghost-button secondary" id="backToCart" type="button">Назад в корзину</button>
+                <button class="primary-button" type="submit">Отправить заказ</button>
+            </div>
+        </form>
+    </section>
+
+    <div class="toast hidden" id="toast"></div>
+
+    <script src="./app.js" type="module"></script>
+</body>
+</html>
