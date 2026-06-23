@@ -1,31 +1,49 @@
+const MAJOR_GROUPS = [
+    { key: "seeds", title: "Семена", icon: "🌾", categories: ["Семена"], description: "Посевной материал" },
+    { key: "pesticides", title: "Пестициды", icon: "🛡️", categories: ["Пестициды", "Гербициды", "Фунгициды", "Инсектициды", "Протравители", "Десиканты"], description: "Защита и обработка" },
+    { key: "nutrition", title: "Питание", icon: "🧪", categories: ["Удобрения", "Микроэлементы", "Стимуляторы", "Адъюванты"], description: "Подкормка и усиление" },
+    { key: "other", title: "Сопутствующие", icon: "📦", categories: ["Прочее"], description: "Дополнительные позиции" },
+];
+
 const state = {
     meta: null,
+    profile: null,
+    profileOrders: [],
+    adminOrders: [],
+    adminProducts: [],
     filters: { cultures: [], categories: [], tags: [] },
     products: [],
-    selection: {
-        culture: "",
-        category: "",
-        tag: "",
-        search: "",
-        sort: "name",
-    },
+    selection: { culture: "", category: "", tag: "", search: "", sort: "name", group: "" },
     cart: [],
-    currentPage: "catalog",
+    currentPage: "home",
     maxUserId: null,
+    catalogMode: "catalog",
 };
 
 const nodes = {
+    homePage: document.getElementById("homePage"),
     catalogPage: document.getElementById("catalogPage"),
-    cartPage: document.getElementById("cartPage"),
+    profilePage: document.getElementById("profilePage"),
     checkoutPage: document.getElementById("checkoutPage"),
-    catalogNavButton: document.getElementById("catalogNavButton"),
-    cartNavButton: document.getElementById("cartNavButton"),
-    cultureChips: document.getElementById("cultureChips"),
-    categoryPills: document.getElementById("categoryPills"),
-    tagPills: document.getElementById("tagPills"),
+    homeNavButton: document.getElementById("homeNavButton"),
+    catalogBottomButton: document.getElementById("catalogBottomButton"),
+    profileNavButton: document.getElementById("profileNavButton"),
+    pageTitle: document.getElementById("pageTitle"),
+    pageCaption: document.getElementById("pageCaption"),
+    openCatalogFromHome: document.getElementById("openCatalogFromHome"),
+    openCartFromHome: document.getElementById("openCartFromHome"),
+    homeGroupGrid: document.getElementById("homeGroupGrid"),
+    catalogModeButton: document.getElementById("catalogModeButton"),
+    cartModeButton: document.getElementById("cartModeButton"),
+    catalogModePanel: document.getElementById("catalogModePanel"),
+    cartModePanel: document.getElementById("cartModePanel"),
     searchInput: document.getElementById("searchInput"),
     sortSelect: document.getElementById("sortSelect"),
     resetFilters: document.getElementById("resetFilters"),
+    cultureChips: document.getElementById("cultureChips"),
+    tagPills: document.getElementById("tagPills"),
+    categoryPills: document.getElementById("categoryPills"),
+    groupGrid: document.getElementById("groupGrid"),
     productGrid: document.getElementById("productGrid"),
     emptyState: document.getElementById("emptyState"),
     catalogTitle: document.getElementById("catalogTitle"),
@@ -38,45 +56,63 @@ const nodes = {
     checkoutForm: document.getElementById("checkoutForm"),
     backToCart: document.getElementById("backToCart"),
     backToCatalog: document.getElementById("backToCatalog"),
+    profileAvatar: document.getElementById("profileAvatar"),
+    profileName: document.getElementById("profileName"),
+    profileRole: document.getElementById("profileRole"),
+    profileOrdersCount: document.getElementById("profileOrdersCount"),
+    profileStatus: document.getElementById("profileStatus"),
+    profileOrders: document.getElementById("profileOrders"),
+    adminSection: document.getElementById("adminSection"),
+    adminProducts: document.getElementById("adminProducts"),
+    adminOrders: document.getElementById("adminOrders"),
+    addProductButton: document.getElementById("addProductButton"),
+    headerBackButton: document.getElementById("headerBackButton"),
     toast: document.getElementById("toast"),
 };
 
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
-state.maxUserId = initDataUnsafe?.user?.user_id || null;
+state.maxUserId = initDataUnsafe?.user?.user_id || 188421258;
 
 bootstrap();
 
 async function bootstrap() {
     bindEvents();
-    await Promise.all([loadMeta(), loadFilters()]);
+    await Promise.all([loadMeta(), loadFilters(), loadProfile()]);
     await loadProducts();
+    renderHomeGroups();
+    renderCatalogGroups();
     renderCart();
-    showPage("catalog");
+    showPage("home");
 }
 
 function bindEvents() {
-    nodes.catalogNavButton.addEventListener("click", () => showPage("catalog"));
-    nodes.cartNavButton.addEventListener("click", () => showPage("cart"));
-
+    nodes.homeNavButton.addEventListener("click", () => showPage("home"));
+    nodes.catalogBottomButton.addEventListener("click", () => showPage("catalog"));
+    nodes.profileNavButton.addEventListener("click", () => showPage("profile"));
+    nodes.openCatalogFromHome.addEventListener("click", () => showPage("catalog"));
+    nodes.openCartFromHome.addEventListener("click", () => {
+        showPage("catalog");
+        setCatalogMode("cart");
+    });
+    nodes.catalogModeButton.addEventListener("click", () => setCatalogMode("catalog"));
+    nodes.cartModeButton.addEventListener("click", () => setCatalogMode("cart"));
     nodes.resetFilters.addEventListener("click", async () => {
-        state.selection = { culture: "", category: "", tag: "", search: "", sort: "name" };
+        state.selection = { culture: "", category: "", tag: "", search: "", sort: "name", group: "" };
         nodes.searchInput.value = "";
         nodes.sortSelect.value = "name";
         renderFilterPills();
+        renderCatalogGroups();
         await loadProducts();
     });
-
     nodes.searchInput.addEventListener("input", debounce(async event => {
         state.selection.search = event.target.value.trim();
         await loadProducts();
-    }, 260));
-
+    }, 250));
     nodes.sortSelect.addEventListener("change", async event => {
         state.selection.sort = event.target.value;
         await loadProducts();
     });
-
     nodes.checkoutButton.addEventListener("click", () => {
         if (!state.cart.length) {
             showToast("Сначала добавьте товары в корзину");
@@ -84,20 +120,32 @@ function bindEvents() {
         }
         showPage("checkout");
     });
-
-    nodes.backToCart.addEventListener("click", () => showPage("cart"));
-    nodes.backToCatalog.addEventListener("click", () => showPage("catalog"));
+    nodes.backToCart.addEventListener("click", () => {
+        showPage("catalog");
+        setCatalogMode("cart");
+    });
+    nodes.backToCatalog.addEventListener("click", () => {
+        showPage("catalog");
+        setCatalogMode("catalog");
+    });
     nodes.checkoutForm.addEventListener("submit", submitOrder);
+    nodes.addProductButton?.addEventListener("click", () => renderProductEditor(null));
+    nodes.headerBackButton.addEventListener("click", () => {
+        if (state.currentPage === "checkout") {
+            showPage("catalog");
+            setCatalogMode("cart");
+        } else {
+            showPage("home");
+        }
+    });
 }
 
 async function loadMeta() {
-    const response = await fetch("/api/meta");
-    state.meta = await response.json();
+    state.meta = await fetchJson("/api/meta");
 }
 
 async function loadFilters() {
-    const response = await fetch("/api/catalog/filters");
-    state.filters = await response.json();
+    state.filters = await fetchJson("/api/catalog/filters");
     renderFilterPills();
 }
 
@@ -108,19 +156,94 @@ async function loadProducts() {
     if (state.selection.tag) query.set("tag", state.selection.tag);
     if (state.selection.search) query.set("search", state.selection.search);
     if (state.selection.sort) query.set("sort", state.selection.sort);
-
-    const response = await fetch(`/api/catalog/products?${query.toString()}`);
-    state.products = await response.json();
+    state.products = await fetchJson(`/api/catalog/products?${query.toString()}`);
     renderProducts();
+    renderCatalogGroups();
+}
+
+async function loadProfile() {
+    state.profile = await fetchJson(`/api/profile?maxUserId=${state.maxUserId}`);
+    state.profileOrders = await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`);
+    renderProfile();
+    if (state.profile.admin) {
+        state.adminProducts = await fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`);
+        state.adminOrders = await fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`);
+        renderAdminSection();
+    }
 }
 
 function showPage(page) {
     state.currentPage = page;
+    nodes.homePage.classList.toggle("page-active", page === "home");
     nodes.catalogPage.classList.toggle("page-active", page === "catalog");
-    nodes.cartPage.classList.toggle("page-active", page === "cart");
+    nodes.profilePage.classList.toggle("page-active", page === "profile");
     nodes.checkoutPage.classList.toggle("page-active", page === "checkout");
-    nodes.catalogNavButton.classList.toggle("active", page === "catalog");
-    nodes.cartNavButton.classList.toggle("active", page === "cart");
+    nodes.homeNavButton.classList.toggle("active", page === "home");
+    nodes.catalogBottomButton.classList.toggle("active", page === "catalog");
+    nodes.profileNavButton.classList.toggle("active", page === "profile");
+    const meta = {
+        home: ["Главная", "Быстрый доступ к подбору товаров, корзине и вашему профилю."],
+        catalog: ["Каталог", "Подбор товаров по культуре, группе и фильтрам."],
+        profile: ["Профиль", "Ваши заказы и управление данными."],
+        checkout: ["Оформление", "Отправка заявки администратору."],
+    }[page];
+    nodes.pageTitle.textContent = meta[0];
+    nodes.pageCaption.textContent = meta[1];
+}
+
+function setCatalogMode(mode) {
+    state.catalogMode = mode;
+    nodes.catalogModeButton.classList.toggle("active", mode === "catalog");
+    nodes.cartModeButton.classList.toggle("active", mode === "cart");
+    nodes.catalogModePanel.classList.toggle("mode-panel-active", mode === "catalog");
+    nodes.cartModePanel.classList.toggle("mode-panel-active", mode === "cart");
+}
+
+function renderHomeGroups() {
+    nodes.homeGroupGrid.innerHTML = "";
+    MAJOR_GROUPS.forEach(group => nodes.homeGroupGrid.appendChild(buildGroupCard(group, false)));
+}
+
+function renderCatalogGroups() {
+    nodes.groupGrid.innerHTML = "";
+    MAJOR_GROUPS.forEach(group => nodes.groupGrid.appendChild(buildGroupCard(group, true)));
+}
+
+function buildGroupCard(group, interactive) {
+    const visibleProducts = filterProductsByGroup(state.products, group);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "group-card";
+    if (state.selection.group === group.key) button.classList.add("active");
+    button.innerHTML = `
+        <div class="group-icon">${group.icon}</div>
+        <p class="group-name">${escapeHtml(group.title)}</p>
+        <p class="group-meta">${escapeHtml(group.description)} · ${visibleProducts.length}</p>
+    `;
+    if (interactive) {
+        button.addEventListener("click", async () => {
+            if (state.selection.group === group.key) {
+                state.selection.group = "";
+                state.selection.category = "";
+            } else {
+                state.selection.group = group.key;
+                state.selection.category = group.categories[0] === "Прочее" ? "" : group.categories[0];
+            }
+            renderCatalogGroups();
+            renderFilterPills();
+            await loadProducts();
+        });
+    } else {
+        button.addEventListener("click", () => {
+            showPage("catalog");
+            state.selection.group = group.key;
+            state.selection.category = group.categories[0] === "Прочее" ? "" : group.categories[0];
+            renderCatalogGroups();
+            renderFilterPills();
+            loadProducts();
+        });
+    }
+    return button;
 }
 
 function renderFilterPills() {
@@ -128,29 +251,29 @@ function renderFilterPills() {
         state.selection.culture = value === "Все культуры" ? "" : value;
         renderFilterPills();
         loadProducts();
-    }, true);
-
-    renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, value => {
-        state.selection.category = value === "Все категории" ? "" : value;
+    });
+    renderSelectableGroup(nodes.tagPills, ["Все", ...state.filters.tags], state.selection.tag, value => {
+        state.selection.tag = value === "Все" ? "" : value;
         renderFilterPills();
         loadProducts();
     });
-
-    renderSelectableGroup(nodes.tagPills, ["Все теги", ...state.filters.tags], state.selection.tag, value => {
-        state.selection.tag = value === "Все теги" ? "" : value;
+    renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, value => {
+        state.selection.category = value === "Все категории" ? "" : value;
+        state.selection.group = "";
         renderFilterPills();
+        renderCatalogGroups();
         loadProducts();
     });
 }
 
-function renderSelectableGroup(container, items, selected, onClick, isCulture = false) {
+function renderSelectableGroup(container, items, selected, onClick) {
     container.innerHTML = "";
     items.forEach(item => {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = isCulture ? "chip" : "pill";
+        button.className = "chip";
         button.textContent = item;
-        const active = (selected || "") === item || (!selected && item.startsWith("Все "));
+        const active = (selected || "") === item || (!selected && ["Все культуры", "Все", "Все категории"].includes(item));
         if (active) button.classList.add("active");
         button.addEventListener("click", () => onClick(item));
         container.appendChild(button);
@@ -159,18 +282,17 @@ function renderSelectableGroup(container, items, selected, onClick, isCulture = 
 
 function renderProducts() {
     nodes.productGrid.innerHTML = "";
-    nodes.catalogCount.textContent = `${state.products.length} позиций`;
-    nodes.catalogTitle.textContent = state.selection.culture
-        ? state.selection.culture
-        : "Все товары";
-
-    if (!state.products.length) {
+    const visibleProducts = state.selection.group
+        ? state.products.filter(product => filterProductsByGroup([product], MAJOR_GROUPS.find(group => group.key === state.selection.group)).length)
+        : state.products;
+    nodes.catalogCount.textContent = `${visibleProducts.length} позиций`;
+    nodes.catalogTitle.textContent = getCatalogTitle();
+    if (!visibleProducts.length) {
         nodes.emptyState.classList.remove("hidden");
         return;
     }
     nodes.emptyState.classList.add("hidden");
-
-    state.products.forEach(product => {
+    visibleProducts.forEach(product => {
         const card = document.createElement("article");
         card.className = "product-card";
         card.innerHTML = `
@@ -182,42 +304,24 @@ function renderProducts() {
                 <strong>${escapeHtml(product.itemType || product.category || "АЛГА")}</strong>
             </div>
             <div>
-                <h3 class="product-name">${escapeHtml(product.name)}</h3>
+                <h4 class="product-name">${escapeHtml(product.name)}</h4>
                 <p class="product-description">${escapeHtml(product.description || "Товар доступен для заказа.")}</p>
             </div>
             <div class="meta-badges">
-                ${(product.cultures || []).slice(0, 3).map(culture => `<span class="badge">${escapeHtml(culture)}</span>`).join("")}
-                ${(product.tags || []).slice(0, 2).map(tag => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}
+                ${(product.cultures || []).slice(0, 2).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("")}
+                ${(product.tags || []).slice(0, 2).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("")}
             </div>
             <div class="product-bottom">
                 <div class="price">
                     <span class="stock">${product.stockQuantity == null ? "Наличие уточняется" : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`}</span>
                     <strong>${formatPrice(product.price)}</strong>
                 </div>
-                <button class="primary-button" type="button">Добавить в корзину</button>
+                <button class="primary-button small-button" type="button">Добавить</button>
             </div>
         `;
-
         card.querySelector(".primary-button").addEventListener("click", () => addToCart(product));
         nodes.productGrid.appendChild(card);
     });
-}
-
-function addToCart(product) {
-    const existing = state.cart.find(item => item.id === product.id);
-    if (existing) {
-        existing.quantity += 1;
-    } else {
-        state.cart.push({
-            id: product.id,
-            name: product.name,
-            price: Number(product.price || 0),
-            quantity: 1,
-            unitName: product.unitName || "шт",
-        });
-    }
-    renderCart();
-    showToast(`Добавили: ${product.name}`);
 }
 
 function renderCart() {
@@ -227,17 +331,10 @@ function renderCart() {
     nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["товар", "товара", "товаров"])}`;
     nodes.cartTotal.textContent = formatPrice(totalPrice);
     nodes.cartItems.innerHTML = "";
-
     if (!state.cart.length) {
-        nodes.cartItems.innerHTML = `
-            <div class="empty-state">
-                <h3>Корзина пуста</h3>
-                <p>Добавьте нужные товары из каталога.</p>
-            </div>
-        `;
+        nodes.cartItems.innerHTML = `<div class="empty-state"><h4>Корзина пуста</h4><p>Добавьте товары из каталога.</p></div>`;
         return;
     }
-
     state.cart.forEach(item => {
         const row = document.createElement("div");
         row.className = "cart-item";
@@ -262,13 +359,159 @@ function renderCart() {
     });
 }
 
+function renderProfile() {
+    nodes.profileName.textContent = state.profile.displayName || "Пользователь MAX";
+    nodes.profileRole.textContent = state.profile.admin ? "Администратор каталога" : "Личный кабинет клиента";
+    nodes.profileOrdersCount.textContent = state.profile.ordersCount || 0;
+    nodes.profileStatus.textContent = state.profile.admin ? "Админ" : "Клиент";
+    nodes.profileAvatar.textContent = initials(state.profile.displayName || "AA");
+    renderOrdersList(nodes.profileOrders, state.profileOrders, "У вас пока нет заказов.");
+}
+
+function renderAdminSection() {
+    nodes.adminSection.classList.remove("hidden");
+    renderAdminProducts();
+    renderOrdersList(nodes.adminOrders, state.adminOrders, "Заказов пока нет.");
+}
+
+function renderAdminProducts() {
+    nodes.adminProducts.innerHTML = "";
+    if (!state.adminProducts.length) {
+        nodes.adminProducts.innerHTML = `<div class="empty-state"><h4>Товаров пока нет</h4><p>Добавьте первую позицию.</p></div>`;
+        return;
+    }
+    state.adminProducts.forEach(product => nodes.adminProducts.appendChild(buildAdminProductCard(product)));
+}
+
+function buildAdminProductCard(product) {
+    const card = document.createElement("div");
+    card.className = "admin-product-card";
+    card.innerHTML = `
+        <div class="order-head">
+            <strong>${escapeHtml(product.name || "Новый товар")}</strong>
+            <span>${formatPrice(product.price)}</span>
+        </div>
+        <form class="admin-product-form">
+            <input name="name" value="${escapeAttr(product.name || "")}" placeholder="Название">
+            <input name="category" value="${escapeAttr(product.category || "")}" placeholder="Категория">
+            <input name="price" value="${escapeAttr(product.price ?? "")}" placeholder="Цена">
+            <input name="stockQuantity" value="${escapeAttr(product.stockQuantity ?? "")}" placeholder="Количество">
+            <input class="full" name="cultures" value="${escapeAttr((product.cultures || []).join(", "))}" placeholder="Культуры через запятую">
+            <input class="full" name="tags" value="${escapeAttr((product.tags || []).join(", "))}" placeholder="Теги через запятую">
+            <textarea class="full" name="description" placeholder="Описание">${escapeHtml(product.description || "")}</textarea>
+        </form>
+        <div class="admin-product-actions">
+            <button class="ghost-button small-button" type="button" data-action="save">Сохранить</button>
+            <button class="ghost-button small-button" type="button" data-action="delete">Удалить</button>
+        </div>
+    `;
+    card.querySelector('[data-action="save"]').addEventListener("click", () => saveAdminProduct(product.id, card));
+    card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteAdminProduct(product.id));
+    return card;
+}
+
+function renderProductEditor(product) {
+    const draft = product || { name: "", category: "", price: "", stockQuantity: "", cultures: [], tags: [], description: "" };
+    state.adminProducts = [draft, ...state.adminProducts];
+    renderAdminProducts();
+}
+
+function renderOrdersList(container, orders, emptyText) {
+    container.innerHTML = "";
+    if (!orders.length) {
+        container.innerHTML = `<div class="empty-state"><h4>${emptyText}</h4></div>`;
+        return;
+    }
+    orders.forEach(order => {
+        const card = document.createElement("div");
+        card.className = "order-card";
+        card.innerHTML = `
+            <div class="order-head">
+                <strong>${escapeHtml(order.publicCode)}</strong>
+                <span>${formatPrice(order.totalPrice)}</span>
+            </div>
+            <div>👤 ${escapeHtml(order.customerName || "")}</div>
+            <div>📞 ${escapeHtml(order.customerPhone || "")}</div>
+            <div>📦 ${order.items.length} позиций</div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+async function saveAdminProduct(productId, card) {
+    const form = card.querySelector(".admin-product-form");
+    const payload = {
+        name: form.name.value.trim(),
+        category: form.category.value.trim(),
+        price: form.price.value ? Number(form.price.value) : null,
+        stockQuantity: form.stockQuantity.value ? Number(form.stockQuantity.value) : null,
+        cultures: form.cultures.value.trim(),
+        tags: form.tags.value.trim(),
+        description: form.description.value.trim(),
+        unitName: "шт",
+        subcategory: "",
+        itemType: form.category.value.trim() || "Товар",
+        brand: "АЛГА АГРО",
+        purposes: "",
+        active: true,
+    };
+    const url = productId ? `/api/admin/products/${productId}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
+    const method = productId ? "PUT" : "POST";
+    const saved = await fetchJson(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (productId) {
+        state.adminProducts = state.adminProducts.map(item => item.id === productId ? saved : item);
+    } else {
+        state.adminProducts = [saved, ...state.adminProducts.filter(item => item.id)];
+    }
+    await Promise.all([loadFilters(), loadProducts()]);
+    renderAdminProducts();
+    showToast("Товар сохранен");
+}
+
+async function deleteAdminProduct(productId) {
+    if (!productId) {
+        state.adminProducts = state.adminProducts.filter(item => item.id);
+        renderAdminProducts();
+        return;
+    }
+    await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
+    state.adminProducts = state.adminProducts.filter(item => item.id !== productId);
+    await Promise.all([loadFilters(), loadProducts()]);
+    renderAdminProducts();
+    showToast("Товар удален");
+}
+
+function filterProductsByGroup(products, group) {
+    if (!group) return products;
+    return products.filter(product => group.categories.includes(product.category) || (group.key === "other" && !group.categories.includes(product.category)));
+}
+
+function getCatalogTitle() {
+    if (state.selection.group) {
+        const group = MAJOR_GROUPS.find(item => item.key === state.selection.group);
+        if (group) return group.title;
+    }
+    if (state.selection.culture) return state.selection.culture;
+    return "Все товары";
+}
+
+function addToCart(product) {
+    const existing = state.cart.find(item => item.id === product.id);
+    if (existing) existing.quantity += 1;
+    else state.cart.push({ id: product.id, name: product.name, price: Number(product.price || 0), quantity: 1, unitName: product.unitName || "шт" });
+    renderCart();
+    showToast(`Добавили: ${product.name}`);
+}
+
 function updateQuantity(productId, delta) {
     const item = state.cart.find(entry => entry.id === productId);
     if (!item) return;
     item.quantity += delta;
-    if (item.quantity <= 0) {
-        state.cart = state.cart.filter(entry => entry.id !== productId);
-    }
+    if (item.quantity <= 0) state.cart = state.cart.filter(entry => entry.id !== productId);
     renderCart();
 }
 
@@ -283,7 +526,6 @@ async function submitOrder(event) {
         showToast("Корзина пуста");
         return;
     }
-
     const formData = new FormData(nodes.checkoutForm);
     const payload = {
         maxUserId: state.maxUserId,
@@ -293,30 +535,22 @@ async function submitOrder(event) {
         comment: formData.get("comment"),
         culture: state.selection.culture || null,
         deliveryNote: formData.get("deliveryNote"),
-        items: state.cart.map(item => ({
-            productId: item.id,
-            quantity: item.quantity,
-        })),
+        items: state.cart.map(item => ({ productId: item.id, quantity: item.quantity })),
     };
-
     const submitButton = nodes.checkoutForm.querySelector('button[type="submit"]');
     submitButton.disabled = true;
     submitButton.textContent = "Отправляем...";
-
     try {
-        const response = await fetch("/api/orders", {
+        const data = await fetchJson("/api/orders", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
         });
-        if (!response.ok) {
-            throw new Error("Не удалось отправить заказ");
-        }
-        const data = await response.json();
         state.cart = [];
         renderCart();
         nodes.checkoutForm.reset();
-        showPage("catalog");
+        await loadProfile();
+        showPage("profile");
         showToast(`Заказ ${data.orderCode} отправлен`);
     } catch (error) {
         showToast(error.message || "Ошибка при отправке заказа");
@@ -324,6 +558,13 @@ async function submitOrder(event) {
         submitButton.disabled = false;
         submitButton.textContent = "Отправить заказ";
     }
+}
+
+async function fetchJson(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || data.error || "Ошибка запроса");
+    return data;
 }
 
 function showToast(message) {
@@ -335,10 +576,12 @@ function showToast(message) {
 
 function formatPrice(value) {
     const number = Number(value || 0);
-    if (!Number.isFinite(number) || number <= 0) {
-        return "По запросу";
-    }
+    if (!Number.isFinite(number) || number <= 0) return "По запросу";
     return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number)} ₽`;
+}
+
+function initials(value) {
+    return String(value).split(" ").filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "AA";
 }
 
 function pluralize(value, forms) {
@@ -355,6 +598,10 @@ function escapeHtml(value) {
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(value) {
+    return escapeHtml(value).replaceAll("'", "&#39;");
 }
 
 function debounce(fn, timeout = 250) {

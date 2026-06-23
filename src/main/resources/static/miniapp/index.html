@@ -10,151 +10,245 @@
     <link rel="stylesheet" href="./app.css">
 </head>
 <body>
-    <div class="glow glow-left"></div>
-    <div class="glow glow-right"></div>
-
-    <header class="topbar">
-        <div class="brand">
-            <div class="brand-mark">AA</div>
-            <div class="brand-copy">
-                <p class="brand-kicker">официальный каталог</p>
-                <h1>АЛГА АГРО</h1>
-            </div>
-        </div>
-
-        <nav class="topnav">
-            <button class="nav-button active" id="catalogNavButton" type="button">Каталог</button>
-            <button class="nav-button" id="cartNavButton" type="button">
-                Корзина
-                <span class="cart-count" id="cartCount">0</span>
-            </button>
-        </nav>
-    </header>
-
-    <main class="shell">
-        <section class="page page-active" id="catalogPage">
-            <div class="toolbar">
-                <div class="toolbar-search">
-                    <label class="field field-inline">
-                        <span>Поиск</span>
-                        <input id="searchInput" type="search" placeholder="Семена, фунгициды, пшеница, кукуруза">
-                    </label>
+    <main class="app-shell">
+        <header class="app-header">
+            <div class="app-header-top">
+                <button class="back-button" id="headerBackButton" type="button">← Назад</button>
+                <div class="brand-center">
+                    <h1>АЛГА АГРО</h1>
+                    <p>мини-приложение</p>
                 </div>
+                <button class="icon-circle" id="headerActionButton" type="button">⋯</button>
+            </div>
 
-                <div class="toolbar-controls">
-                    <label class="field field-inline field-small">
-                        <span>Сортировка</span>
-                        <select id="sortSelect">
-                            <option value="name">По названию</option>
-                            <option value="price_asc">Сначала дешевле</option>
-                            <option value="price_desc">Сначала дороже</option>
-                            <option value="stock_desc">По наличию</option>
-                        </select>
-                    </label>
-                    <button class="secondary-button" id="resetFilters" type="button">Сбросить</button>
+            <div class="header-body">
+                <p class="section-kicker">официальный каталог</p>
+                <h2 id="pageTitle">Главная</h2>
+                <p class="header-caption" id="pageCaption">Быстрый доступ к подбору товаров, корзине и вашему профилю.</p>
+            </div>
+        </header>
+
+        <section class="page page-active" id="homePage">
+            <div class="content-card hero-card">
+                <div class="hero-mark">AA</div>
+                <div>
+                    <p class="section-kicker">Только вперед</p>
+                    <h3>Подбор агро-товаров по культурам и задачам.</h3>
+                    <p class="hero-text">Откройте каталог, выберите культуру и соберите заказ из семян, пестицидов, питания и сопутствующих позиций.</p>
+                </div>
+                <div class="hero-actions">
+                    <button class="primary-button" id="openCatalogFromHome" type="button">Перейти в каталог</button>
+                    <button class="ghost-button" id="openCartFromHome" type="button">Открыть корзину</button>
                 </div>
             </div>
 
-            <section class="filters-panel">
-                <div class="filter-group">
-                    <p class="filter-title">Культуры</p>
-                    <div class="chip-cloud" id="cultureChips"></div>
-                </div>
-
-                <div class="filter-group">
-                    <p class="filter-title">Категории</p>
-                    <div class="pill-list" id="categoryPills"></div>
-                </div>
-
-                <div class="filter-group">
-                    <p class="filter-title">Назначение</p>
-                    <div class="pill-list compact" id="tagPills"></div>
-                </div>
-            </section>
-
-            <section class="catalog-panel">
-                <div class="catalog-toolbar">
+            <div class="content-card">
+                <div class="section-head">
                     <div>
-                        <p class="eyebrow">Каталог</p>
-                        <h2 id="catalogTitle">Все товары</h2>
+                        <p class="section-kicker">Направления</p>
+                        <h3>Ключевые группы</h3>
                     </div>
-                    <p class="catalog-count" id="catalogCount">0 позиций</p>
                 </div>
-
-                <div class="product-grid" id="productGrid"></div>
-
-                <div class="empty-state hidden" id="emptyState">
-                    <h3>Каталог обновляется</h3>
-                    <p>Скоро здесь появятся доступные товары.</p>
-                </div>
-            </section>
+                <div class="home-group-grid" id="homeGroupGrid"></div>
+            </div>
         </section>
 
-        <section class="page" id="cartPage">
-            <div class="page-card">
-                <div class="page-head">
-                    <div>
-                        <p class="eyebrow">Корзина</p>
-                        <h2>Ваш заказ</h2>
+        <section class="page" id="catalogPage">
+            <div class="catalog-switcher">
+                <button class="switcher-button active" id="catalogModeButton" type="button">Каталог</button>
+                <button class="switcher-button" id="cartModeButton" type="button">
+                    Корзина
+                    <span class="badge-count" id="cartCount">0</span>
+                </button>
+            </div>
+
+            <div class="mode-panel mode-panel-active" id="catalogModePanel">
+                <div class="content-card search-card">
+                    <label class="search-field">
+                        <span class="search-icon">⌕</span>
+                        <input id="searchInput" type="search" placeholder="Поиск товаров">
+                    </label>
+
+                    <div class="control-row">
+                        <label class="select-field">
+                            <span>Сортировка</span>
+                            <select id="sortSelect">
+                                <option value="name">По названию</option>
+                                <option value="price_asc">Сначала дешевле</option>
+                                <option value="price_desc">Сначала дороже</option>
+                                <option value="stock_desc">По наличию</option>
+                            </select>
+                        </label>
+                        <button class="ghost-button" id="resetFilters" type="button">Сбросить</button>
                     </div>
-                    <p class="catalog-count" id="cartSummaryCount">0 товаров</p>
+
+                    <div class="filter-block">
+                        <p class="filter-title">Культуры</p>
+                        <div class="chips" id="cultureChips"></div>
+                    </div>
+
+                    <div class="filter-block">
+                        <p class="filter-title">Теги</p>
+                        <div class="chips chips-light" id="tagPills"></div>
+                    </div>
                 </div>
 
-                <div class="cart-items" id="cartItems"></div>
-
-                <div class="cart-footer">
-                    <div class="cart-summary">
-                        <span>Итого</span>
-                        <strong id="cartTotal">0 ₽</strong>
+                <div class="content-card">
+                    <div class="section-head">
+                        <div>
+                            <p class="section-kicker">Группы</p>
+                            <h3>Категории</h3>
+                        </div>
                     </div>
-                    <button class="primary-button" id="checkoutButton" type="button">Оформить заказ</button>
+                    <div class="group-grid" id="groupGrid"></div>
+                </div>
+
+                <div class="content-card">
+                    <div class="section-head section-head-tight">
+                        <div>
+                            <p class="section-kicker">Каталог</p>
+                            <h3 id="catalogTitle">Все товары</h3>
+                        </div>
+                        <p class="catalog-count" id="catalogCount">0 позиций</p>
+                    </div>
+                    <div class="chips chips-light compact" id="categoryPills"></div>
+                    <div class="product-grid" id="productGrid"></div>
+                    <div class="empty-state hidden" id="emptyState">
+                        <h4>Каталог обновляется</h4>
+                        <p>Товары скоро появятся.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mode-panel" id="cartModePanel">
+                <div class="content-card">
+                    <div class="section-head section-head-tight">
+                        <div>
+                            <p class="section-kicker">Корзина</p>
+                            <h3>Ваш заказ</h3>
+                        </div>
+                        <p class="catalog-count" id="cartSummaryCount">0 товаров</p>
+                    </div>
+                    <div class="cart-items" id="cartItems"></div>
+                    <div class="cart-footer">
+                        <div class="cart-summary">
+                            <span>Итого</span>
+                            <strong id="cartTotal">0 ₽</strong>
+                        </div>
+                        <button class="primary-button" id="checkoutButton" type="button">Оформить заказ</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="page" id="profilePage">
+            <div class="content-card profile-card">
+                <div class="profile-head">
+                    <div class="profile-avatar" id="profileAvatar">AA</div>
+                    <div>
+                        <h3 id="profileName">Пользователь MAX</h3>
+                        <p class="profile-note" id="profileRole">Личный кабинет</p>
+                    </div>
+                </div>
+                <div class="profile-stats">
+                    <div class="stat-box">
+                        <span>Заказы</span>
+                        <strong id="profileOrdersCount">0</strong>
+                    </div>
+                    <div class="stat-box">
+                        <span>Статус</span>
+                        <strong id="profileStatus">Клиент</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content-card">
+                <div class="section-head section-head-tight">
+                    <div>
+                        <p class="section-kicker">Мои заказы</p>
+                        <h3>История заявок</h3>
+                    </div>
+                </div>
+                <div class="orders-list" id="profileOrders"></div>
+            </div>
+
+            <div class="admin-section hidden" id="adminSection">
+                <div class="content-card">
+                    <div class="section-head section-head-tight">
+                        <div>
+                            <p class="section-kicker">Админ</p>
+                            <h3>Управление товарами</h3>
+                        </div>
+                        <button class="primary-button small-button" id="addProductButton" type="button">Добавить товар</button>
+                    </div>
+                    <div class="admin-products" id="adminProducts"></div>
+                </div>
+
+                <div class="content-card">
+                    <div class="section-head section-head-tight">
+                        <div>
+                            <p class="section-kicker">Админ</p>
+                            <h3>Все заказы</h3>
+                        </div>
+                    </div>
+                    <div class="orders-list" id="adminOrders"></div>
                 </div>
             </div>
         </section>
 
         <section class="page" id="checkoutPage">
-            <div class="page-card page-card-wide">
-                <div class="page-head">
+            <div class="content-card content-card-wide">
+                <div class="section-head section-head-tight">
                     <div>
-                        <p class="eyebrow">Оформление</p>
-                        <h2>Заявка администратору</h2>
+                        <p class="section-kicker">Оформление</p>
+                        <h3>Отправка заявки</h3>
                     </div>
-                    <button class="secondary-button" id="backToCart" type="button">Назад</button>
+                    <button class="ghost-button" id="backToCart" type="button">Назад</button>
                 </div>
 
                 <form id="checkoutForm" class="checkout-form">
-                    <label class="field">
+                    <label class="input-field">
                         <span>Имя</span>
                         <input name="name" type="text" required placeholder="Как к вам обращаться">
                     </label>
-
-                    <label class="field">
+                    <label class="input-field">
                         <span>Телефон</span>
                         <input name="phone" type="tel" required placeholder="+7 (___) ___-__-__">
                     </label>
-
-                    <label class="field">
+                    <label class="input-field">
                         <span>Компания</span>
                         <input name="company" type="text" placeholder="ООО / ИП / хозяйство">
                     </label>
-
-                    <label class="field field-full">
+                    <label class="input-field input-field-full">
                         <span>Комментарий</span>
-                        <textarea name="comment" rows="4" placeholder="Уточните объем, срочность или пожелания по заказу"></textarea>
+                        <textarea name="comment" rows="4" placeholder="Уточните объем заказа, сроки или пожелания"></textarea>
                     </label>
-
-                    <label class="field field-full">
+                    <label class="input-field input-field-full">
                         <span>Дополнительно</span>
-                        <textarea name="deliveryNote" rows="3" placeholder="Например: нужны рекомендации по культуре и актуальные остатки"></textarea>
+                        <textarea name="deliveryNote" rows="3" placeholder="Например: нужен подбор под конкретную культуру"></textarea>
                     </label>
-
                     <div class="checkout-actions">
-                        <button class="secondary-button" id="backToCatalog" type="button">В каталог</button>
+                        <button class="ghost-button" id="backToCatalog" type="button">В каталог</button>
                         <button class="primary-button" type="submit">Отправить заказ</button>
                     </div>
                 </form>
             </div>
         </section>
+
+        <nav class="bottom-nav">
+            <button class="bottom-nav-button active" id="homeNavButton" type="button">
+                <span class="bottom-icon">⌂</span>
+                <span>Главная</span>
+            </button>
+            <button class="bottom-nav-button" id="catalogBottomButton" type="button">
+                <span class="bottom-icon">▦</span>
+                <span>Каталог</span>
+            </button>
+            <button class="bottom-nav-button" id="profileNavButton" type="button">
+                <span class="bottom-icon">◌</span>
+                <span>Профиль</span>
+            </button>
+        </nav>
     </main>
 
     <div class="toast hidden" id="toast"></div>

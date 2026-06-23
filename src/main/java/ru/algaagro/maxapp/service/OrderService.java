@@ -70,6 +70,13 @@ public class OrderService {
         return catalogOrderRepository.count();
     }
 
+    public List<CatalogOrder> listOrdersForUser(Long maxUserId) {
+        if (maxUserId == null) {
+            return List.of();
+        }
+        return catalogOrderRepository.findAllByCustomerMaxUserIdOrderByCreatedAtDesc(maxUserId);
+    }
+
     public String buildAdminSummary(CatalogOrder order) {
         StringBuilder builder = new StringBuilder();
         builder.append("🛒 <b>Новый заказ ").append(order.getPublicCode()).append("</b>\n")
@@ -96,6 +103,27 @@ public class OrderService {
     private String generatePublicCode() {
         return "AG-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("ddMM")) + "-"
                 + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    }
+
+    public Map<String, Object> toDto(CatalogOrder order) {
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("id", order.getId());
+        dto.put("publicCode", order.getPublicCode());
+        dto.put("customerMaxUserId", order.getCustomerMaxUserId());
+        dto.put("customerName", order.getCustomerName());
+        dto.put("customerPhone", order.getCustomerPhone());
+        dto.put("customerCompany", order.getCustomerCompany());
+        dto.put("comment", order.getComment());
+        dto.put("status", order.getStatus().name());
+        dto.put("totalPrice", order.getTotalPrice());
+        dto.put("createdAt", order.getCreatedAt());
+        dto.put("items", order.getItems().stream().map(item -> Map.of(
+                "productId", item.getProductId(),
+                "productName", item.getProductName(),
+                "quantity", item.getQuantity(),
+                "unitPrice", item.getUnitPrice()
+        )).toList());
+        return dto;
     }
 
     public record CreateOrderCommand(

@@ -38,6 +38,13 @@ public class ProductService {
         return catalogProductRepository.findById(id);
     }
 
+    public List<Map<String, Object>> getAdminProducts() {
+        return catalogProductRepository.findAll().stream()
+                .sorted(Comparator.comparing(CatalogProduct::getUpdatedAt, Comparator.reverseOrder()))
+                .map(this::toAdminDto)
+                .toList();
+    }
+
     public List<CatalogProduct> findFiltered(String culture, String category, String search, String tag, String sort) {
         Comparator<CatalogProduct> comparator = switch (sort == null ? "" : sort) {
             case "price_desc" -> Comparator.comparing(CatalogProduct::getPrice, Comparator.nullsLast(Comparator.reverseOrder()));
@@ -130,6 +137,71 @@ public class ProductService {
         return dto;
     }
 
+    public Map<String, Object> toAdminDto(CatalogProduct product) {
+        Map<String, Object> dto = new LinkedHashMap<>(toMiniAppDto(product));
+        dto.put("externalId", product.getExternalId());
+        dto.put("sourceFile", product.getSourceFile());
+        dto.put("sku", product.getSku());
+        dto.put("active", product.isActive());
+        dto.put("updatedAt", product.getUpdatedAt());
+        return dto;
+    }
+
+    @Transactional
+    public CatalogProduct createManualProduct(AdminProductPayload payload) {
+        CatalogProduct product = new CatalogProduct();
+        applyPayload(product, payload);
+        if (product.getName() == null || product.getName().isBlank()) {
+            throw new IllegalArgumentException("Название товара обязательно");
+        }
+        if (product.getExternalId() == null || product.getExternalId().isBlank()) {
+            product.setExternalId("manual-" + System.currentTimeMillis());
+        }
+        return catalogProductRepository.save(product);
+    }
+
+    @Transactional
+    public CatalogProduct updateProduct(Long id, AdminProductPayload payload) {
+        CatalogProduct product = catalogProductRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
+        applyPayload(product, payload);
+        return catalogProductRepository.save(product);
+    }
+
+    @Transactional
+    public void deleteProduct(Long id) {
+        CatalogProduct product = catalogProductRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
+        catalogProductRepository.delete(product);
+    }
+
+    private void applyPayload(CatalogProduct product, AdminProductPayload payload) {
+        product.setExternalId(payload.externalId());
+        product.setSourceFile(payload.sourceFile());
+        product.setSku(payload.sku());
+        product.setName(payload.name());
+        product.setDescription(payload.description());
+        product.setBrand(payload.brand());
+        product.setCategory(payload.category());
+        product.setSubcategory(payload.subcategory());
+        product.setItemType(payload.itemType());
+        product.setUnitName(payload.unitName());
+        product.setPrice(payload.price());
+        product.setStockQuantity(payload.stockQuantity());
+        product.setActive(payload.active() == null || payload.active());
+        List<String> cultures = payload.cultures() == null ? List.of() : payload.cultures();
+        List<String> purposes = payload.purposes() == null ? List.of() : payload.purposes();
+        List<String> tags = payload.tags() == null ? List.of() : payload.tags();
+        product.setCulturesJson(jsonHelper.writeValue(cultures));
+        product.setPurposesJson(jsonHelper.writeValue(purposes));
+        product.setTagsJson(jsonHelper.writeValue(tags));
+        product.setCulturesIndex(TextUtils.toIndex(cultures));
+        product.setPurposesIndex(TextUtils.toIndex(purposes));
+        product.setTagsIndex(TextUtils.toIndex(tags));
+        product.setFilterMapJson(jsonHelper.writeValue(payload.filterMap() == null ? Map.of() : payload.filterMap()));
+        product.setRawDataJson(jsonHelper.writeValue(payload.rawData() == null ? Map.of() : payload.rawData()));
+    }
+
     private String buildSearchText(CatalogProduct product) {
         return String.join(" ",
                 Objects.toString(product.getName(), ""),
@@ -176,5 +248,27 @@ public class ProductService {
             filterMap = filterMap == null ? new LinkedHashMap<>() : filterMap;
             rawData = rawData == null ? new LinkedHashMap<>() : rawData;
         }
+    }
+
+    public record AdminProductPayload(
+            String externalId,
+            String sourceFile,
+            String sku,
+            String name,
+            String description,
+            String brand,
+            String category,
+            String subcategory,
+            String itemType,
+            String unitName,
+            BigDecimal price,
+            BigDecimal stockQuantity,
+            List<String> cultures,
+            List<String> purposes,
+            List<String> tags,
+            Map<String, Object> filterMap,
+            Map<String, Object> rawData,
+            Boolean active
+    ) {
     }
 }
