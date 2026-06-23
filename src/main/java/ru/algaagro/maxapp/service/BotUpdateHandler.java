@@ -145,6 +145,9 @@ public class BotUpdateHandler {
             try {
                 long targetUserId = Long.parseLong(idText);
                 boolean granted = userService.grantAdmin(targetUserId);
+                if (granted) {
+                    notifyNewAdmin(targetUserId);
+                }
                 maxApiClient.sendToUser(user.getMaxUserId(),
                         granted ? "⭐ Права администратора выданы." : "Пользователь еще не запускал бота.",
                         keyboardFactory.adminMenu(),
@@ -645,6 +648,9 @@ public class BotUpdateHandler {
 
     private void grantAdminFromText(AppUser user, Long targetUserId) {
         boolean granted = userService.grantAdmin(targetUserId);
+        if (granted) {
+            notifyNewAdmin(targetUserId);
+        }
         maxApiClient.sendToUser(user.getMaxUserId(),
                 granted ? "⭐ Права администратора выданы." : "Пользователь еще не запускал бота.",
                 keyboardFactory.adminMenu(),
@@ -656,6 +662,17 @@ public class BotUpdateHandler {
         maxApiClient.sendToUser(user.getMaxUserId(),
                 deleted ? "🗑 Кнопка удалена." : "Кнопка не найдена.",
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+    }
+
+    private void notifyNewAdmin(Long targetUserId) {
+        maxApiClient.sendToUser(targetUserId,
+                """
+                ⭐ <b>Вам выданы права администратора</b>
+
+                Теперь вам доступна панель управления ботом.
+                """,
+                keyboardFactory.mainMenu(true),
                 "html");
     }
 
