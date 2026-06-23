@@ -62,6 +62,7 @@ public class KeyboardFactory {
         for (PostButton button : postButtons) {
             rows.add(List.of(messageButton("🗑 Удалить кнопку " + button.getId())));
         }
+        rows.add(List.of(messageButton("🛠 Админка")));
         return inlineKeyboard(rows);
     }
 
