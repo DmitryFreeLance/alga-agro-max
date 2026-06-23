@@ -73,7 +73,7 @@ const nodes = {
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
-const resolvedUserId = initDataUnsafe?.user?.user_id || queryUserId;
+const resolvedUserId = initDataUnsafe?.user?.id || initDataUnsafe?.user?.user_id || queryUserId;
 state.maxUserId = resolvedUserId ? Number(resolvedUserId) : null;
 
 bootstrap();

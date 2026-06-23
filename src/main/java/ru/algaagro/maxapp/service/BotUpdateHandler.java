@@ -1,6 +1,7 @@
 package ru.algaagro.maxapp.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -134,6 +135,11 @@ public class BotUpdateHandler {
             return;
         }
 
+        if (session.getState() == SessionState.BUTTON_WAITING_TEXT && user.isAdmin()) {
+            handleButtonDraftMessage(user, session, text);
+            return;
+        }
+
         if (user.isAdmin() && text != null && text.startsWith("/addbutton ")) {
             String[] parts = text.substring("/addbutton ".length()).split("\\|", 2);
             if (parts.length == 2) {
@@ -219,7 +225,7 @@ public class BotUpdateHandler {
                 return true;
             }
             case "добавить кнопку" -> {
-                explainButtonCommand(user, null);
+                startButtonFlow(user, null);
                 return true;
             }
             case "готово" -> {
@@ -489,11 +495,7 @@ public class BotUpdateHandler {
     }
 
     private void explainButtonCommand(AppUser user, String callbackId) {
-        maxApiClient.sendToUser(user.getMaxUserId(),
-                "Отправьте команду вида:\n<code>/addbutton Группа | https://max.ru/...</code>",
-                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                "html");
-        maxApiClient.answerCallback(callbackId, "Жду команду");
+        startButtonFlow(user, callbackId);
     }
 
     private void showUsers(AppUser user, int page) {
@@ -563,6 +565,55 @@ public class BotUpdateHandler {
                 "🛠 <b>Админ-панель АЛГА АГРО</b>\nВыберите нужный раздел ниже.",
                 keyboardFactory.adminMenu(),
                 "html");
+    }
+
+    private void startButtonFlow(AppUser user, String callbackId) {
+        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        botSessionService.update(session, SessionState.BUTTON_WAITING_TEXT, new HashMap<>());
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                """
+                🔗 <b>Новая кнопка для постов</b>
+
+                Отправьте текст в формате:
+                <code>Название кнопки - https://example.com</code>
+                """,
+                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Жду текст кнопки");
+    }
+
+    private void handleButtonDraftMessage(AppUser user, BotSession session, String text) {
+        if (text == null || text.isBlank()) {
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "Нужен текст в формате:\n<code>Название кнопки - https://example.com</code>",
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            return;
+        }
+        String[] parts = text.split("\\s+-\\s+", 2);
+        if (parts.length != 2 || parts[0].isBlank() || !isValidUrl(parts[1])) {
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "Не получилось распознать формат. Отправьте так:\n<code>Группа - https://max.ru/...</code>",
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            return;
+        }
+        postButtonService.createButton(parts[0].trim(), parts[1].trim());
+        botSessionService.reset(user.getMaxUserId());
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "✅ Кнопка добавлена.",
+                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+    }
+
+    private boolean isValidUrl(String value) {
+        try {
+            URI uri = URI.create(value.trim());
+            return uri.getScheme() != null && (uri.getScheme().equalsIgnoreCase("http") || uri.getScheme().equalsIgnoreCase("https"))
+                    && uri.getHost() != null && !uri.getHost().isBlank();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private boolean isStartCommand(String text) {
