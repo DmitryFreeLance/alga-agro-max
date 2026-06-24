@@ -42,3 +42,15 @@ app:
     kie-gemini-model: ${KIE_GEMINI_MODEL:gemini-3-flash}
     kie-gemini-endpoint: ${KIE_GEMINI_ENDPOINT:/gemini-3-flash/v1/chat/completions}
     gemini-timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:300}
+  bitrix:
+    webhook-base-url: ${BITRIX_WEBHOOK_BASE_URL:}
+    sync-enabled: ${BITRIX_SYNC_ENABLED:true}
+    catalog-id: ${BITRIX_CATALOG_ID:}
+    base-price-type-id: ${BITRIX_BASE_PRICE_TYPE_ID:}
+    currency-id: ${BITRIX_CURRENCY_ID:RUB}
+    poll-interval-ms: ${BITRIX_POLL_INTERVAL_MS:180000}
+    initial-sync-delay-ms: ${BITRIX_INITIAL_SYNC_DELAY_MS:45000}
+    lead-title-prefix: ${BITRIX_LEAD_TITLE_PREFIX:Заказ из Alga Agro MAX}
+    lead-assigned-by-id: ${BITRIX_LEAD_ASSIGNED_BY_ID:}
+    lead-source-id: ${BITRIX_LEAD_SOURCE_ID:}
+    originator-id: ${BITRIX_ORIGINATOR_ID:ALGA_AGRO_MAX}

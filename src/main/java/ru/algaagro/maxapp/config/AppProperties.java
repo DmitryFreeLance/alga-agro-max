@@ -12,6 +12,7 @@ public class AppProperties {
     private List<Long> startupAdminUserIds = new ArrayList<>();
     private final MaxProperties max = new MaxProperties();
     private final AiProperties ai = new AiProperties();
+    private final BitrixProperties bitrix = new BitrixProperties();
 
     public String getPublicBaseUrl() {
         return publicBaseUrl;
@@ -43,6 +44,10 @@ public class AppProperties {
 
     public AiProperties getAi() {
         return ai;
+    }
+
+    public BitrixProperties getBitrix() {
+        return bitrix;
     }
 
     public static class MaxProperties {
@@ -174,6 +179,108 @@ public class AppProperties {
 
         public void setGeminiTimeoutSeconds(int geminiTimeoutSeconds) {
             this.geminiTimeoutSeconds = geminiTimeoutSeconds;
+        }
+    }
+
+    public static class BitrixProperties {
+        private String webhookBaseUrl;
+        private boolean syncEnabled = true;
+        private Integer catalogId;
+        private Integer basePriceTypeId;
+        private String currencyId = "RUB";
+        private long pollIntervalMs = 180_000L;
+        private long initialSyncDelayMs = 45_000L;
+        private String leadTitlePrefix = "Заказ из Alga Agro MAX";
+        private Integer leadAssignedById;
+        private String leadSourceId;
+        private String originatorId = "ALGA_AGRO_MAX";
+
+        public String getWebhookBaseUrl() {
+            return webhookBaseUrl;
+        }
+
+        public void setWebhookBaseUrl(String webhookBaseUrl) {
+            this.webhookBaseUrl = webhookBaseUrl;
+        }
+
+        public boolean isSyncEnabled() {
+            return syncEnabled;
+        }
+
+        public void setSyncEnabled(boolean syncEnabled) {
+            this.syncEnabled = syncEnabled;
+        }
+
+        public Integer getCatalogId() {
+            return catalogId;
+        }
+
+        public void setCatalogId(Integer catalogId) {
+            this.catalogId = catalogId;
+        }
+
+        public Integer getBasePriceTypeId() {
+            return basePriceTypeId;
+        }
+
+        public void setBasePriceTypeId(Integer basePriceTypeId) {
+            this.basePriceTypeId = basePriceTypeId;
+        }
+
+        public String getCurrencyId() {
+            return currencyId;
+        }
+
+        public void setCurrencyId(String currencyId) {
+            this.currencyId = currencyId;
+        }
+
+        public long getPollIntervalMs() {
+            return pollIntervalMs;
+        }
+
+        public void setPollIntervalMs(long pollIntervalMs) {
+            this.pollIntervalMs = pollIntervalMs;
+        }
+
+        public long getInitialSyncDelayMs() {
+            return initialSyncDelayMs;
+        }
+
+        public void setInitialSyncDelayMs(long initialSyncDelayMs) {
+            this.initialSyncDelayMs = initialSyncDelayMs;
+        }
+
+        public String getLeadTitlePrefix() {
+            return leadTitlePrefix;
+        }
+
+        public void setLeadTitlePrefix(String leadTitlePrefix) {
+            this.leadTitlePrefix = leadTitlePrefix;
+        }
+
+        public Integer getLeadAssignedById() {
+            return leadAssignedById;
+        }
+
+        public void setLeadAssignedById(Integer leadAssignedById) {
+            this.leadAssignedById = leadAssignedById;
+        }
+
+        public String getLeadSourceId() {
+            return leadSourceId;
+        }
+
+        public void setLeadSourceId(String leadSourceId) {
+            this.leadSourceId = leadSourceId;
+        }
+
+        public String getOriginatorId() {
+            return originatorId;
+        }
+
+        public void setOriginatorId(String originatorId) {
+            this.originatorId = originatorId;
         }
     }
 }

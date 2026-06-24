@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.model.CatalogOrder;
+import ru.algaagro.maxapp.service.BitrixSyncService;
 import ru.algaagro.maxapp.service.MaxApiClient;
 import ru.algaagro.maxapp.service.OrderService;
 import ru.algaagro.maxapp.service.ProductService;
@@ -37,13 +38,22 @@ public class MiniAppApiController {
     private final MaxApiClient maxApiClient;
     private final AppProperties appProperties;
     private final UserService userService;
+    private final BitrixSyncService bitrixSyncService;
 
-    public MiniAppApiController(ProductService productService, OrderService orderService, MaxApiClient maxApiClient, AppProperties appProperties, UserService userService) {
+    public MiniAppApiController(
+            ProductService productService,
+            OrderService orderService,
+            MaxApiClient maxApiClient,
+            AppProperties appProperties,
+            UserService userService,
+            BitrixSyncService bitrixSyncService
+    ) {
         this.productService = productService;
         this.orderService = orderService;
         this.maxApiClient = maxApiClient;
         this.appProperties = appProperties;
         this.userService = userService;
+        this.bitrixSyncService = bitrixSyncService;
     }
 
     @GetMapping("/meta")
@@ -91,10 +101,16 @@ public class MiniAppApiController {
         if (order.getCustomerMaxUserId() != null) {
             maxApiClient.sendToUser(order.getCustomerMaxUserId(), orderService.buildCustomerSummary(order), null, "html");
         }
+        try {
+            bitrixSyncService.syncOrderToLead(order);
+        } catch (RuntimeException e) {
+            // Keep checkout successful even if CRM sync is temporarily unavailable.
+        }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("orderCode", order.getPublicCode());
         response.put("message", "Заказ отправлен администраторам.");
         response.put("adminSummary", summary);
+        response.put("bitrixLeadId", order.getBitrixLeadId());
         return ResponseEntity.ok(response);
     }
 

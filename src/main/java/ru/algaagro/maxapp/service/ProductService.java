@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.algaagro.maxapp.model.CatalogProduct;
@@ -36,10 +37,16 @@ public class ProductService {
 
     private final CatalogProductRepository catalogProductRepository;
     private final JsonHelper jsonHelper;
+    private final ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider;
 
-    public ProductService(CatalogProductRepository catalogProductRepository, JsonHelper jsonHelper) {
+    public ProductService(
+            CatalogProductRepository catalogProductRepository,
+            JsonHelper jsonHelper,
+            ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider
+    ) {
         this.catalogProductRepository = catalogProductRepository;
         this.jsonHelper = jsonHelper;
+        this.bitrixSyncServiceProvider = bitrixSyncServiceProvider;
     }
 
     public List<CatalogProduct> getActiveProducts() {
@@ -104,6 +111,11 @@ public class ProductService {
 
     @Transactional
     public UpsertResult upsertProduct(ImportedProduct importedProduct) {
+        return upsertProduct(importedProduct, true);
+    }
+
+    @Transactional
+    public UpsertResult upsertProduct(ImportedProduct importedProduct, boolean syncToBitrix) {
         CatalogProduct product = importedProduct.externalId() == null
                 ? null
                 : catalogProductRepository.findByExternalId(importedProduct.externalId()).orElse(null);
@@ -144,7 +156,11 @@ public class ProductService {
         product.setFilterMapJson(jsonHelper.writeValue(importedProduct.filterMap()));
         product.setRawDataJson(jsonHelper.writeValue(importedProduct.rawData()));
         product.setActive(true);
-        return new UpsertResult(catalogProductRepository.save(product), created);
+        CatalogProduct saved = catalogProductRepository.save(product);
+        if (syncToBitrix) {
+            syncProductWithBitrix(saved.getId());
+        }
+        return new UpsertResult(saved, created);
     }
 
     public List<String> getStringList(String json) {
@@ -308,7 +324,9 @@ public class ProductService {
         if (product.getExternalId() == null || product.getExternalId().isBlank()) {
             product.setExternalId("manual-" + System.currentTimeMillis());
         }
-        return catalogProductRepository.save(product);
+        CatalogProduct saved = catalogProductRepository.save(product);
+        syncProductWithBitrix(saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -316,18 +334,26 @@ public class ProductService {
         CatalogProduct product = catalogProductRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
         applyPayload(product, payload);
-        return catalogProductRepository.save(product);
+        CatalogProduct saved = catalogProductRepository.save(product);
+        syncProductWithBitrix(saved.getId());
+        return saved;
     }
 
     @Transactional
     public void deleteProduct(Long id) {
         CatalogProduct product = catalogProductRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
+        deleteProductInBitrix(product);
         catalogProductRepository.delete(product);
     }
 
     @Transactional
     public int deactivateMissingSourceProducts(String sourceFile, Set<String> keepExternalIds) {
+        return deactivateMissingSourceProducts(sourceFile, keepExternalIds, true);
+    }
+
+    @Transactional
+    public int deactivateMissingSourceProducts(String sourceFile, Set<String> keepExternalIds, boolean syncToBitrix) {
         if (sourceFile == null || sourceFile.isBlank()) {
             return 0;
         }
@@ -339,11 +365,21 @@ public class ProductService {
             }
             if (product.isActive()) {
                 product.setActive(false);
-                catalogProductRepository.save(product);
+                CatalogProduct saved = catalogProductRepository.save(product);
+                if (syncToBitrix) {
+                    syncProductWithBitrix(saved.getId());
+                }
                 deactivated++;
             }
         }
         return deactivated;
+    }
+
+    public void syncAllProductsToBitrix() {
+        BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
+        if (bitrixSyncService != null) {
+            bitrixSyncService.syncAllLocalProducts();
+        }
     }
 
     private void applyPayload(CatalogProduct product, AdminProductPayload payload) {
@@ -720,6 +756,20 @@ public class ProductService {
             return "кг";
         }
         return blankToNull(value) == null ? "шт" : value.trim();
+    }
+
+    private void syncProductWithBitrix(Long productId) {
+        BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
+        if (bitrixSyncService != null && productId != null) {
+            bitrixSyncService.syncLocalProduct(productId);
+        }
+    }
+
+    private void deleteProductInBitrix(CatalogProduct product) {
+        BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
+        if (bitrixSyncService != null) {
+            bitrixSyncService.deleteRemoteProduct(product);
+        }
     }
 
     public record ImportedProduct(

@@ -39,6 +39,12 @@ public class CatalogProduct {
     private String unitName;
     private String packageType;
     private String packageDescription;
+    private Long bitrixProductId;
+    private Long bitrixPriceId;
+    private String bitrixSyncHash;
+
+    @Column
+    private Instant bitrixSyncedAt;
 
     @Column(precision = 14, scale = 2)
     private BigDecimal price;
@@ -195,6 +201,38 @@ public class CatalogProduct {
 
     public void setPackageDescription(String packageDescription) {
         this.packageDescription = packageDescription;
+    }
+
+    public Long getBitrixProductId() {
+        return bitrixProductId;
+    }
+
+    public void setBitrixProductId(Long bitrixProductId) {
+        this.bitrixProductId = bitrixProductId;
+    }
+
+    public Long getBitrixPriceId() {
+        return bitrixPriceId;
+    }
+
+    public void setBitrixPriceId(Long bitrixPriceId) {
+        this.bitrixPriceId = bitrixPriceId;
+    }
+
+    public String getBitrixSyncHash() {
+        return bitrixSyncHash;
+    }
+
+    public void setBitrixSyncHash(String bitrixSyncHash) {
+        this.bitrixSyncHash = bitrixSyncHash;
+    }
+
+    public Instant getBitrixSyncedAt() {
+        return bitrixSyncedAt;
+    }
+
+    public void setBitrixSyncedAt(Instant bitrixSyncedAt) {
+        this.bitrixSyncedAt = bitrixSyncedAt;
     }
 
     public BigDecimal getPrice() {

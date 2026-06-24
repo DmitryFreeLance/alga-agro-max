@@ -44,6 +44,8 @@ public class CatalogOrder {
     @Column(precision = 14, scale = 2, nullable = false)
     private BigDecimal totalPrice = BigDecimal.ZERO;
 
+    private Long bitrixLeadId;
+
     @Lob
     private String payloadJson = "{}";
 
@@ -129,6 +131,14 @@ public class CatalogOrder {
 
     public void setTotalPrice(BigDecimal totalPrice) {
         this.totalPrice = totalPrice;
+    }
+
+    public Long getBitrixLeadId() {
+        return bitrixLeadId;
+    }
+
+    public void setBitrixLeadId(Long bitrixLeadId) {
+        this.bitrixLeadId = bitrixLeadId;
     }
 
     public String getPayloadJson() {

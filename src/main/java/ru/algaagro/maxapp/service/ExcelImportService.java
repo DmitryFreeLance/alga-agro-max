@@ -1200,7 +1200,7 @@ public class ExcelImportService {
             importedExternalIdsBySource
                     .computeIfAbsent(item.sourceFile(), key -> new LinkedHashSet<>())
                     .add(item.externalId());
-            ProductService.UpsertResult saveResult = productService.upsertProduct(product);
+            ProductService.UpsertResult saveResult = productService.upsertProduct(product, false);
             if (saveResult.created()) {
                 created++;
             } else {
@@ -1208,8 +1208,9 @@ public class ExcelImportService {
             }
         }
         for (Map.Entry<String, Set<String>> entry : importedExternalIdsBySource.entrySet()) {
-            deactivated += productService.deactivateMissingSourceProducts(entry.getKey(), entry.getValue());
+            deactivated += productService.deactivateMissingSourceProducts(entry.getKey(), entry.getValue(), false);
         }
+        productService.syncAllProductsToBitrix();
         return new AppliedImportResult(created, updated, deactivated);
     }
 
