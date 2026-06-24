@@ -248,6 +248,27 @@
         </nav>
     </main>
 
+    <div class="product-modal hidden" id="productModal">
+        <div class="product-modal-backdrop" id="productModalBackdrop"></div>
+        <div class="product-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="productModalTitle">
+            <button class="product-modal-close" id="productModalClose" type="button">×</button>
+            <div class="product-modal-visual">
+                <div class="product-badges" id="productModalBadges"></div>
+                <strong id="productModalType">Товар</strong>
+            </div>
+            <div class="product-modal-body">
+                <h3 id="productModalTitle">Название товара</h3>
+                <p class="product-modal-description" id="productModalDescription"></p>
+                <div class="meta-badges product-modal-tags" id="productModalTags"></div>
+                <div class="price product-modal-price">
+                    <span class="stock" id="productModalStock"></span>
+                    <strong id="productModalPrice"></strong>
+                </div>
+                <button class="primary-button" id="productModalAddButton" type="button">Добавить в корзину</button>
+            </div>
+        </div>
+    </div>
+
     <div class="toast hidden" id="toast"></div>
 
     <script src="https://st.max.ru/js/max-web-app.js"></script>

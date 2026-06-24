@@ -68,6 +68,17 @@ const nodes = {
     addProductButton: document.getElementById("addProductButton"),
     headerBackButton: document.getElementById("headerBackButton"),
     toast: document.getElementById("toast"),
+    productModal: document.getElementById("productModal"),
+    productModalBackdrop: document.getElementById("productModalBackdrop"),
+    productModalClose: document.getElementById("productModalClose"),
+    productModalBadges: document.getElementById("productModalBadges"),
+    productModalType: document.getElementById("productModalType"),
+    productModalTitle: document.getElementById("productModalTitle"),
+    productModalDescription: document.getElementById("productModalDescription"),
+    productModalTags: document.getElementById("productModalTags"),
+    productModalStock: document.getElementById("productModalStock"),
+    productModalPrice: document.getElementById("productModalPrice"),
+    productModalAddButton: document.getElementById("productModalAddButton"),
 };
 
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
@@ -172,6 +183,21 @@ function bindEvents() {
             setCatalogMode("catalog");
         } else {
             showPage("home");
+        }
+    });
+    nodes.productModalBackdrop.addEventListener("click", closeProductModal);
+    nodes.productModalClose.addEventListener("click", closeProductModal);
+    nodes.productModalAddButton.addEventListener("click", () => {
+        const productId = Number(nodes.productModalAddButton.dataset.productId);
+        const product = state.products.find(item => item.id === productId);
+        if (product) {
+            addToCart(product);
+            closeProductModal();
+        }
+    });
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !nodes.productModal.classList.contains("hidden")) {
+            closeProductModal();
         }
     });
 }
@@ -402,6 +428,7 @@ function renderProducts() {
     visibleProducts.forEach(product => {
         const card = document.createElement("article");
         card.className = "product-card";
+        card.tabIndex = 0;
         card.innerHTML = `
             <div class="product-visual">
                 <div class="product-badges">
@@ -410,11 +437,11 @@ function renderProducts() {
                 </div>
                 <strong>${escapeHtml(product.itemType || product.category || "АЛГА")}</strong>
             </div>
-            <div>
+            <div class="product-copy">
                 <h4 class="product-name">${escapeHtml(product.name)}</h4>
                 <p class="product-description">${escapeHtml(product.description || "Товар доступен для заказа.")}</p>
             </div>
-            <div class="meta-badges">
+            <div class="meta-badges product-meta-row">
                 ${(product.cultures || []).slice(0, 2).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("")}
                 ${(product.tags || []).slice(0, 2).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("")}
             </div>
@@ -423,12 +450,55 @@ function renderProducts() {
                     <span class="stock">${product.stockQuantity == null ? "Наличие уточняется" : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`}</span>
                     <strong>${formatPrice(product.price)}${product.unitName ? `/${escapeHtml(product.unitName)}` : ""}</strong>
                 </div>
-                <button class="primary-button small-button" type="button">Добавить</button>
+                <div class="product-actions">
+                    <button class="ghost-button small-button details-button" type="button">Подробнее</button>
+                    <button class="primary-button small-button" type="button">Добавить</button>
+                </div>
             </div>
         `;
-        card.querySelector(".primary-button").addEventListener("click", () => addToCart(product));
+        card.addEventListener("click", () => openProductModal(product));
+        card.addEventListener("keydown", event => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openProductModal(product);
+            }
+        });
+        card.querySelector(".details-button").addEventListener("click", event => {
+            event.stopPropagation();
+            openProductModal(product);
+        });
+        card.querySelector(".primary-button").addEventListener("click", event => {
+            event.stopPropagation();
+            addToCart(product);
+        });
         nodes.productGrid.appendChild(card);
     });
+}
+
+function openProductModal(product) {
+    nodes.productModalBadges.innerHTML = `
+        <span class="badge">${escapeHtml(product.category || "Товар")}</span>
+        ${product.subcategory ? `<span class="badge">${escapeHtml(product.subcategory)}</span>` : ""}
+    `;
+    nodes.productModalType.textContent = product.itemType || product.category || "Товар";
+    nodes.productModalTitle.textContent = product.name || "Товар";
+    nodes.productModalDescription.textContent = product.description || "Товар доступен для заказа.";
+    nodes.productModalTags.innerHTML = [
+        ...(product.cultures || []).slice(0, 4),
+        ...(product.tags || []).slice(0, 4),
+    ].map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("");
+    nodes.productModalStock.textContent = product.stockQuantity == null
+        ? "Наличие уточняется"
+        : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`;
+    nodes.productModalPrice.textContent = `${formatPrice(product.price)}${product.unitName ? `/${product.unitName}` : ""}`;
+    nodes.productModalAddButton.dataset.productId = String(product.id);
+    nodes.productModal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+}
+
+function closeProductModal() {
+    nodes.productModal.classList.add("hidden");
+    document.body.style.overflow = "";
 }
 
 async function runSearchAndOpenResults() {
