@@ -25,11 +25,11 @@ management:
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL:https://algaagro.ru}
   mini-app-url: ${APP_MINI_APP_URL:https://algaagro.ru/miniapp/}
-  manager-contact-url: ${APP_MANAGER_CONTACT_URL:max://max.ru/id27849376}
+  manager-contact-url: ${APP_MANAGER_CONTACT_URL:https://max.ru/id27849376}
   storage-dir: ${APP_STORAGE_DIR:/data/storage}
   startup-admin-user-ids: ${APP_STARTUP_ADMIN_USER_IDS:}
   max:
-    api-base-url: ${MAX_API_BASE_URL:https://platform-api.max.ru}
+    api-base-url: ${MAX_API_BASE_URL:https://platform-api2.max.ru}
     bot-token: ${MAX_BOT_TOKEN:}
     poll-timeout-seconds: ${MAX_POLL_TIMEOUT_SECONDS:30}
     poll-limit: ${MAX_POLL_LIMIT:100}

@@ -658,14 +658,28 @@ public class BitrixSyncService {
             return;
         }
 
-        CatalogProduct local = findFirstByBitrixProductId(remoteId);
         String externalId = firstNonBlank(
                 propertyValue(productNode, context, PROPERTY_EXTERNAL_ID),
                 productNode.path("xmlId").asText(""),
                 "bitrix-" + remoteId
         );
-        if (local == null && externalId != null && !externalId.isBlank()) {
-            local = findFirstByExternalId(externalId);
+        CatalogProduct localByBitrix = findFirstByBitrixProductId(remoteId);
+        CatalogProduct localByExternal = externalId == null || externalId.isBlank()
+                ? null
+                : findFirstByExternalId(externalId);
+
+        CatalogProduct local = localByBitrix != null ? localByBitrix : localByExternal;
+        if (localByBitrix != null && localByExternal != null && !Objects.equals(localByBitrix.getId(), localByExternal.getId())) {
+            log.warn("Resolved Bitrix/local collision for bitrixProductId={}, externalId={}, using externalId record id={}",
+                    remoteId,
+                    externalId,
+                    localByExternal.getId());
+            localByBitrix.setBitrixProductId(null);
+            localByBitrix.setBitrixPriceId(null);
+            localByBitrix.setBitrixSyncHash(null);
+            localByBitrix.setBitrixSyncedAt(Instant.now());
+            catalogProductRepository.save(localByBitrix);
+            local = localByExternal;
         }
         if (local == null) {
             String normalizedName = TextUtils.normalizeToken(productNode.path("name").asText(""));

@@ -20,7 +20,7 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> mainMenu(boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(openAppButton("📦 Открыть каталог", appProperties.getMiniAppUrl())));
+        rows.add(List.of(linkButton("📦 Открыть каталог", normalizeHttpLink(appProperties.getMiniAppUrl()))));
         rows.add(List.of(linkButton("💬 Связаться с менеджером", normalizeHttpLink(appProperties.getManagerContactUrl()))));
         if (admin) {
             rows.add(List.of(messageButton("🛠 Админ панель")));
