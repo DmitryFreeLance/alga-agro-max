@@ -41,7 +41,6 @@ const nodes = {
     cartModePanel: document.getElementById("cartModePanel"),
     searchInput: document.getElementById("searchInput"),
     searchScrollButton: document.getElementById("searchScrollButton"),
-    searchReturnButton: document.getElementById("searchReturnButton"),
     clearSearchButton: document.getElementById("clearSearchButton"),
     sortSelect: document.getElementById("sortSelect"),
     cultureChips: document.getElementById("cultureChips"),
@@ -177,16 +176,6 @@ function bindEvents() {
         if (hasActiveCatalogQuery()) {
             nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
         }
-    });
-    nodes.searchReturnButton?.addEventListener("click", async () => {
-        state.selection.group = "";
-        state.selection.category = "";
-        state.selection.search = "";
-        nodes.searchInput.value = "";
-        syncSearchUi();
-        renderCatalogGroups();
-        renderFilterPills();
-        await refreshCatalogPresentation();
     });
     nodes.clearSearchButton.addEventListener("click", async () => {
         state.selection.search = "";
@@ -461,7 +450,6 @@ function syncCatalogResultsVisibility() {
     const shouldShow = hasActiveCatalogQuery() && !shouldKeepCatalogPageOpen();
     nodes.catalogResultsCard?.classList.toggle("hidden", !shouldShow);
     nodes.catalogGroupsCard?.classList.toggle("hidden", shouldShow);
-    nodes.searchReturnButton?.classList.toggle("hidden", !shouldShow);
 }
 
 function shouldKeepCatalogPageOpen() {
