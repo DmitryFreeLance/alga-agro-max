@@ -39,8 +39,13 @@ public class AiClassificationService {
         log.info("AI classification started. rows={}, requests={}, batchSize={}", rows.size(), chunks.size(), batchSize);
         for (List<ExcelImportService.ImportRow> chunk : chunks) {
             String prompt = buildPrompt(chunk, knownCultures);
+            log.info("Trying Gemini classification first. model={}, endpoint={}",
+                    appProperties.getAi().getKieGeminiModel(),
+                    appProperties.getAi().getKieGeminiEndpoint());
             String rawResponse = callGemini(prompt);
             if (rawResponse == null) {
+                log.warn("Gemini classification failed, switching to GPT fallback. model={}",
+                        appProperties.getAi().getKieModel());
                 rawResponse = callKie(prompt);
             }
             if (rawResponse == null) {
@@ -126,13 +131,22 @@ public class AiClassificationService {
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
-                log.warn("Gemini returned status {}", response.statusCode());
+                log.warn("Gemini returned status {}. body={}", response.statusCode(), TextUtils.trimTo(response.body(), 1200));
                 return null;
             }
+            log.info("Gemini classification response received. status={}, bodyPreview={}",
+                    response.statusCode(),
+                    TextUtils.trimTo(response.body(), 600));
             JsonNode json = jsonHelper.readTree(response.body());
             JsonNode content = json.path("choices").path(0).path("message").path("content");
             if (content.isTextual() && !content.asText().isBlank()) {
                 return content.asText();
+            }
+            if (content.isArray()) {
+                String extracted = extractTextFromContentArray(content);
+                if (!extracted.isBlank()) {
+                    return extracted;
+                }
             }
             return response.body();
         } catch (InterruptedException e) {
@@ -142,18 +156,17 @@ public class AiClassificationService {
         } catch (IOException e) {
             log.warn("Gemini request failed: {}", e.getMessage());
             return null;
+        } catch (Exception e) {
+            log.warn("Gemini request parsing failed: {}", e.getMessage());
+            return null;
         }
     }
 
     private List<ClassificationResult> parseResponse(String rawResponse, List<ExcelImportService.ImportRow> chunk) {
-        String sanitized = rawResponse.trim()
-                .replace("```json", "")
-                .replace("```", "")
-                .trim();
-        JsonNode root = jsonHelper.readTree(sanitized);
-        JsonNode items = root.has("products") ? root.path("products") : root;
+        JsonNode items = extractProductsNode(rawResponse);
         List<ClassificationResult> results = new ArrayList<>();
         if (!items.isArray()) {
+            log.warn("AI response is not an array after normalization. payload={}", TextUtils.trimTo(rawResponse, 1500));
             throw new IllegalStateException("AI response is not an array");
         }
         for (JsonNode item : items) {
@@ -195,6 +208,173 @@ public class AiClassificationService {
         return results;
     }
 
+    private JsonNode extractProductsNode(String rawResponse) {
+        String sanitized = sanitizeResponse(rawResponse);
+        JsonNode root = tryReadJsonNode(sanitized);
+        if (root == null) {
+            String jsonFragment = extractFirstJsonFragment(sanitized);
+            root = tryReadJsonNode(jsonFragment);
+        }
+        if (root == null) {
+            throw new IllegalStateException("AI response is not valid JSON");
+        }
+        JsonNode resolved = resolveProductsNode(root);
+        if (resolved != null) {
+            return resolved;
+        }
+        if (root.isTextual()) {
+            JsonNode nested = extractProductsNode(root.asText());
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return root;
+    }
+
+    private JsonNode resolveProductsNode(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isArray()) {
+            return node;
+        }
+        if (node.isObject()) {
+            JsonNode productsNode = node.path("products");
+            if (productsNode.isArray()) {
+                return productsNode;
+            }
+            if (productsNode.isTextual()) {
+                JsonNode parsedProducts = tryReadJsonNode(sanitizeResponse(productsNode.asText()));
+                JsonNode nested = resolveProductsNode(parsedProducts);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+            JsonNode choicesContent = node.path("choices").path(0).path("message").path("content");
+            if (choicesContent.isTextual()) {
+                JsonNode nested = extractProductsNode(choicesContent.asText());
+                if (nested != null) {
+                    return nested;
+                }
+            }
+            if (choicesContent.isArray()) {
+                String extracted = extractTextFromContentArray(choicesContent);
+                if (!extracted.isBlank()) {
+                    JsonNode nested = extractProductsNode(extracted);
+                    if (nested != null) {
+                        return nested;
+                    }
+                }
+            }
+            if (node.hasNonNull("output_text")) {
+                JsonNode nested = extractProductsNode(node.path("output_text").asText());
+                if (nested != null) {
+                    return nested;
+                }
+            }
+            JsonNode dataNode = node.path("data");
+            JsonNode nestedData = resolveProductsNode(dataNode);
+            if (nestedData != null) {
+                return nestedData;
+            }
+            JsonNode itemsNode = node.path("items");
+            if (itemsNode.isArray()) {
+                return itemsNode;
+            }
+        }
+        return null;
+    }
+
+    private String sanitizeResponse(String rawResponse) {
+        return rawResponse == null ? "" : rawResponse.trim()
+                .replace("```json", "")
+                .replace("```", "")
+                .trim();
+    }
+
+    private JsonNode tryReadJsonNode(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return null;
+        }
+        try {
+            return jsonHelper.readTree(payload);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String extractTextFromContentArray(JsonNode contentArray) {
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode part : contentArray) {
+            if (part.isTextual()) {
+                builder.append(part.asText());
+                continue;
+            }
+            String text = part.path("text").asText("");
+            if (!text.isBlank()) {
+                builder.append(text);
+                continue;
+            }
+            String content = part.path("content").asText("");
+            if (!content.isBlank()) {
+                builder.append(content);
+            }
+        }
+        return builder.toString().trim();
+    }
+
+    private String extractFirstJsonFragment(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        int objectStart = text.indexOf('{');
+        int arrayStart = text.indexOf('[');
+        int start;
+        char open;
+        char close;
+        if (objectStart == -1 && arrayStart == -1) {
+            return "";
+        }
+        if (objectStart == -1 || (arrayStart != -1 && arrayStart < objectStart)) {
+            start = arrayStart;
+            open = '[';
+            close = ']';
+        } else {
+            start = objectStart;
+            open = '{';
+            close = '}';
+        }
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else if (ch == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (ch == '"') {
+                inString = true;
+                continue;
+            }
+            if (ch == open) {
+                depth++;
+            } else if (ch == close) {
+                depth--;
+                if (depth == 0) {
+                    return text.substring(start, i + 1);
+                }
+            }
+        }
+        return "";
+    }
+
     private Object toSimpleValue(JsonNode value) {
         if (value.isArray()) {
             return readStringArray(value);
@@ -226,6 +406,7 @@ public class AiClassificationService {
         builder.append("""
                 Ты классифицируешь агро-товары для каталога.
                 Верни строго JSON без markdown.
+                Не добавляй пояснения до или после JSON.
                 Формат ответа:
                 {
                   "products": [

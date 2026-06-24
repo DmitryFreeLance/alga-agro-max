@@ -16,7 +16,7 @@ Java/Spring Boot проект для:
 - выдача прав админа
 - список заказов с пагинацией
 - сценарий загрузки Excel-файлов
-- AI-классификация строк через Kie.ai `gemini-3-flash-openai`
+- AI-классификация строк через Kie.ai `gemini-3-flash`
 - fallback через Kie.ai `gpt-5-2`
 - сценарий постов: сбор медиа, ввод текста, предпросмотр, публикация
 - постоянные кнопки к постам
@@ -53,8 +53,8 @@ Java/Spring Boot проект для:
 - `KIE_MODEL` — fallback-модель, по умолчанию `gpt-5-2`
 - `KIE_BASE_URL` — по умолчанию `https://api.kie.ai`
 - `KIE_GEMINI_API_KEY` — необязательно, по умолчанию берет `KIE_API_KEY`
-- `KIE_GEMINI_MODEL` — основная модель, по умолчанию `gemini-3-flash-openai`
-- `KIE_GEMINI_ENDPOINT` — по умолчанию `/gemini-3-flash-openai/v1/chat/completions`
+- `KIE_GEMINI_MODEL` — основная модель, по умолчанию `gemini-3-flash`
+- `KIE_GEMINI_ENDPOINT` — по умолчанию `/gemini-3-flash/v1/chat/completions`
 
 Дополнительно:
 
@@ -137,7 +137,7 @@ server {
 
 1. Бот собирает строки из всех `.xlsx`.
 2. Делит их на пачки.
-3. Сначала отправляет строки в Kie.ai `gemini-3-flash-openai`.
+3. Сначала отправляет строки в Kie.ai `gemini-3-flash`.
 4. Если ответа нет или API упал, автоматически идет fallback на Kie.ai `gpt-5-2`.
 5. ИИ возвращает:
    - категорию

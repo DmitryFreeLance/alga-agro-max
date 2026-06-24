@@ -100,8 +100,8 @@ public class AppProperties {
         private int kieTimeoutSeconds = 300;
         private int kieBatchSize = 500;
         private String kieGeminiApiKey;
-        private String kieGeminiModel = "gemini-3-flash-openai";
-        private String kieGeminiEndpoint = "/gemini-3-flash-openai/v1/chat/completions";
+        private String kieGeminiModel = "gemini-3-flash";
+        private String kieGeminiEndpoint = "/gemini-3-flash/v1/chat/completions";
         private int geminiTimeoutSeconds = 300;
 
         public String getKieBaseUrl() {
