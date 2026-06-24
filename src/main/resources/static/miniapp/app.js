@@ -40,6 +40,8 @@ const nodes = {
     catalogModePanel: document.getElementById("catalogModePanel"),
     cartModePanel: document.getElementById("cartModePanel"),
     searchInput: document.getElementById("searchInput"),
+    searchScrollButton: document.getElementById("searchScrollButton"),
+    searchReturnButton: document.getElementById("searchReturnButton"),
     clearSearchButton: document.getElementById("clearSearchButton"),
     sortSelect: document.getElementById("sortSelect"),
     cultureChips: document.getElementById("cultureChips"),
@@ -170,6 +172,21 @@ function bindEvents() {
             event.preventDefault();
             runSearchAndOpenResults();
         }
+    });
+    nodes.searchScrollButton?.addEventListener("click", () => {
+        if (hasActiveCatalogQuery()) {
+            nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    });
+    nodes.searchReturnButton?.addEventListener("click", async () => {
+        state.selection.group = "";
+        state.selection.category = "";
+        state.selection.search = "";
+        nodes.searchInput.value = "";
+        syncSearchUi();
+        renderCatalogGroups();
+        renderFilterPills();
+        await refreshCatalogPresentation();
     });
     nodes.clearSearchButton.addEventListener("click", async () => {
         state.selection.search = "";
@@ -444,6 +461,7 @@ function syncCatalogResultsVisibility() {
     const shouldShow = hasActiveCatalogQuery() && !shouldKeepCatalogPageOpen();
     nodes.catalogResultsCard?.classList.toggle("hidden", !shouldShow);
     nodes.catalogGroupsCard?.classList.toggle("hidden", shouldShow);
+    nodes.searchReturnButton?.classList.toggle("hidden", !shouldShow);
 }
 
 function shouldKeepCatalogPageOpen() {
@@ -481,7 +499,6 @@ function buildGroupCard(group, interactive) {
     if (state.selection.group === group.key) button.classList.add("active");
     button.innerHTML = `
         <div class="group-illustration">
-            <span class="group-visual-tag">${escapeHtml(group.visualLabel || shortGroupLabel(group.title))}</span>
             <img class="group-icon-asset" src="${escapeAttr(group.iconPath)}" alt="${escapeAttr(group.title)}">
         </div>
         <div class="group-card-footer">
@@ -813,7 +830,7 @@ function buildAdminProductCard(product) {
         </div>
         <div class="admin-product-summary">
             <strong>${escapeHtml(product.name || "Новый товар")}</strong>
-            <p>${escapeHtml(compactDescription(product.description || "Нажмите, чтобы открыть карточку товара.", 96))}</p>
+            <p>${escapeHtml(product.description || "Нажмите, чтобы открыть карточку товара.")}</p>
         </div>
         <div class="admin-product-meta">
             <span>${product.stockQuantity == null ? "Остаток не указан" : `Остаток: ${formatQuantityInput(product.stockQuantity)} ${escapeHtml(product.unitName || "шт")}`}</span>

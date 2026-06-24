@@ -55,11 +55,15 @@
         <section class="page" id="catalogPage">
             <div class="mode-panel mode-panel-active" id="catalogModePanel">
                 <div class="content-card search-card">
-                    <label class="search-field">
-                        <span class="search-icon">⌕</span>
+                    <div class="search-toolbar">
+                        <button class="search-return hidden" id="searchReturnButton" type="button">↩</button>
+                        <label class="search-field">
+                            <button class="search-icon-button" id="searchScrollButton" type="button" aria-label="Показать товары">⌕</button>
+                            <span class="search-icon hidden">⌕</span>
                         <input id="searchInput" type="search" placeholder="Поиск товаров">
                         <button class="search-clear hidden" id="clearSearchButton" type="button">×</button>
-                    </label>
+                        </label>
+                    </div>
 
                     <div class="control-row control-row-compact">
                         <label class="select-field">
