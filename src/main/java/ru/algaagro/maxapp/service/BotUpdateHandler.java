@@ -122,6 +122,10 @@ public class BotUpdateHandler {
             sendWelcome(user.getMaxUserId(), user.isAdmin());
             return;
         }
+        if (isManagerContactCommand(text)) {
+            sendManagerContact(user.getMaxUserId(), user.isAdmin());
+            return;
+        }
 
         BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
         if (user.isAdmin() && handleAdminTextCommand(text, user, session)) {
@@ -206,7 +210,7 @@ public class BotUpdateHandler {
                 Чтобы перейти в каталог, воспользуйтесь системной кнопкой мини-приложения внизу слева внутри MAX.
                 Нажмите «Начать» в любой момент, чтобы вернуться в главное меню.
                 """,
-                keyboardFactory.mainMenu(user.isAdmin()),
+                keyboardFactory.mainMenu(user.getMaxUserId(), user.isAdmin()),
                 "html");
     }
 
@@ -730,8 +734,18 @@ public class BotUpdateHandler {
         if (logoAttachment != null) {
             attachments.add(logoAttachment);
         }
-        attachments.addAll(keyboardFactory.mainMenu(admin));
+        attachments.addAll(keyboardFactory.mainMenu(userId, admin));
         maxApiClient.sendToUser(userId, text, attachments, "html");
+    }
+
+    private void sendManagerContact(Long userId, boolean admin) {
+        String text = """
+                💬 <b>Связь с менеджером</b>
+
+                Написать в MAX: <a href="%s">Марат ООО АЛГА АГРО ГРУПП</a>
+                Телефон: <a href="tel:+79175955143">+7 917 595-51-43</a>
+                """.formatted(appProperties.getManagerDeepLink());
+        maxApiClient.sendToUser(userId, text, keyboardFactory.mainMenu(userId, admin), "html");
     }
 
     private void openAdminMenu(AppUser user) {
@@ -852,7 +866,7 @@ public class BotUpdateHandler {
 
                 Теперь вам доступна панель управления ботом.
                 """,
-                keyboardFactory.mainMenu(true),
+                keyboardFactory.mainMenu(targetUserId, true),
                 "html");
     }
 
@@ -872,6 +886,16 @@ public class BotUpdateHandler {
         }
         String normalized = TextUtils.normalizeToken(text);
         return normalized.equals("/start") || normalized.equals("start") || normalized.equals("начать");
+    }
+
+    private boolean isManagerContactCommand(String text) {
+        if (text == null) {
+            return false;
+        }
+        String normalized = TextUtils.normalizeToken(text);
+        return normalized.equals("связаться с менеджером")
+                || normalized.equals("написать менеджеру")
+                || normalized.equals("менеджер");
     }
 
     private Long extractUserId(JsonNode update) {

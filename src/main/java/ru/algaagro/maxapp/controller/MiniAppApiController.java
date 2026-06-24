@@ -83,7 +83,8 @@ public class MiniAppApiController {
                 "totalProducts", productService.getActiveProducts().size(),
                 "managerName", "Марат",
                 "managerPhone", "+7 917 595-51-43",
-                "managerMaxLink", appProperties.getManagerContactUrl()
+                "managerMaxLink", appProperties.getManagerDeepLink(),
+                "managerExternalLink", appProperties.getManagerContactUrl()
         );
     }
 
@@ -203,7 +204,8 @@ public class MiniAppApiController {
         response.put("email", latestOrder == null ? "" : latestOrder.getCustomerEmail());
         response.put("managerName", "Марат");
         response.put("managerPhone", "+7 917 595-51-43");
-        response.put("managerMaxLink", appProperties.getManagerContactUrl());
+        response.put("managerMaxLink", appProperties.getManagerDeepLink());
+        response.put("managerExternalLink", appProperties.getManagerContactUrl());
         return response;
     }
 

@@ -5,6 +5,8 @@ import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import org.springframework.stereotype.Component;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.model.PostButton;
@@ -18,10 +20,10 @@ public class KeyboardFactory {
         this.appProperties = appProperties;
     }
 
-    public List<Map<String, Object>> mainMenu(boolean admin) {
+    public List<Map<String, Object>> mainMenu(Long userId, boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(linkButton("📦 Открыть каталог", normalizeHttpLink(appProperties.getMiniAppUrl()))));
-        rows.add(List.of(linkButton("💬 Связаться с менеджером", normalizeHttpLink(appProperties.getManagerContactUrl()))));
+        rows.add(List.of(openAppButton("📋 Открыть каталог", buildMiniAppUrl(userId))));
+        rows.add(List.of(messageButton("💬 Связаться с менеджером")));
         if (admin) {
             rows.add(List.of(messageButton("🛠 Админ панель")));
         }
@@ -106,10 +108,23 @@ public class KeyboardFactory {
         return button;
     }
 
+    private String buildMiniAppUrl(Long userId) {
+        String baseUrl = normalizeHttpLink(appProperties.getMiniAppUrl(), "https://algaagro.ru/miniapp/");
+        if (userId == null || userId <= 0) {
+            return baseUrl;
+        }
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        return baseUrl + separator + "maxUserId=" + URLEncoder.encode(String.valueOf(userId), StandardCharsets.UTF_8);
+    }
+
     private String normalizeHttpLink(String rawUrl) {
+        return normalizeHttpLink(rawUrl, "https://max.ru/id27849376");
+    }
+
+    private String normalizeHttpLink(String rawUrl, String fallbackUrl) {
         String value = rawUrl == null ? "" : rawUrl.trim();
         if (value.isBlank()) {
-            return "https://max.ru/id27849376";
+            return fallbackUrl;
         }
         String normalized = value.replace("max://", "https://");
         String lowercase = normalized.toLowerCase(Locale.ROOT);
@@ -119,7 +134,7 @@ public class KeyboardFactory {
         if (lowercase.startsWith("max.ru/")) {
             return "https://" + normalized;
         }
-        return "https://max.ru/id27849376";
+        return fallbackUrl;
     }
 
     public List<Map<String, Object>> inlineKeyboard(List<List<Map<String, Object>>> buttons) {

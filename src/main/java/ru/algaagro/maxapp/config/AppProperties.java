@@ -10,6 +10,7 @@ public class AppProperties {
     private String publicBaseUrl;
     private String miniAppUrl;
     private String managerContactUrl = "https://max.ru/id27849376";
+    private String managerDeepLink = "max://user/27849376";
     private List<Long> startupAdminUserIds = new ArrayList<>();
     private final MaxProperties max = new MaxProperties();
     private final AiProperties ai = new AiProperties();
@@ -37,6 +38,14 @@ public class AppProperties {
 
     public void setManagerContactUrl(String managerContactUrl) {
         this.managerContactUrl = managerContactUrl;
+    }
+
+    public String getManagerDeepLink() {
+        return managerDeepLink;
+    }
+
+    public void setManagerDeepLink(String managerDeepLink) {
+        this.managerDeepLink = managerDeepLink;
     }
 
     public List<Long> getStartupAdminUserIds() {

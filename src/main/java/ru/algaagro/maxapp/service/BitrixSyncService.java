@@ -120,7 +120,6 @@ public class BitrixSyncService {
             return;
         }
         try {
-            syncAllLocalProducts();
             syncFromBitrix();
         } catch (RuntimeException e) {
             log.warn("Initial Bitrix24 sync failed: {}", e.getMessage());
@@ -138,7 +137,6 @@ public class BitrixSyncService {
             return;
         }
         try {
-            syncAllLocalProducts();
             syncFromBitrix();
         } catch (RuntimeException e) {
             log.warn("Bitrix24 scheduled sync failed: {}", e.getMessage());
@@ -283,17 +281,36 @@ public class BitrixSyncService {
         }
         PortalContext context = ensurePortalContext();
         Set<Long> remoteIds = new LinkedHashSet<>();
+        Set<Long> seenPageFirstIds = new LinkedHashSet<>();
         int start = 0;
-        int total = Integer.MAX_VALUE;
-        while (start < total) {
+        int total = -1;
+        int pageSize = 50;
+        boolean fullScanCompleted = true;
+        while (true) {
             JsonNode result = call("catalog.product.list", Map.of(
                     "select", buildProductSelect(context),
-                    "filter", Map.of("iblockId", context.catalogId()),
+                    "filter", Map.of("iblockId", context.iblockId()),
                     "order", Map.of("id", "asc"),
                     "start", start
             ));
             JsonNode productsNode = result.path("products");
-            if (!productsNode.isArray() || productsNode.isEmpty()) {
+            if (!productsNode.isArray()) {
+                fullScanCompleted = false;
+                log.warn("Bitrix24 inbound sync returned non-array products page at start={}", start);
+                break;
+            }
+            if (productsNode.isEmpty()) {
+                if (total > 0 && remoteIds.size() < total) {
+                    fullScanCompleted = false;
+                    log.warn("Bitrix24 inbound sync stopped early: empty page at start={}, scanned={}, expected={}",
+                            start, remoteIds.size(), total);
+                }
+                break;
+            }
+            long firstId = productsNode.get(0).path("id").asLong(0L);
+            if (firstId > 0 && !seenPageFirstIds.add(firstId)) {
+                fullScanCompleted = false;
+                log.warn("Bitrix24 inbound sync detected repeated page starting from product id={}, start={}", firstId, start);
                 break;
             }
             List<Long> productIds = new ArrayList<>();
@@ -308,11 +325,32 @@ public class BitrixSyncService {
             for (JsonNode productNode : productsNode) {
                 applyRemoteProduct(context, productNode, prices.get(productNode.path("id").asLong()));
             }
-            total = result.path("total").asInt(start + productsNode.size());
-            start += 50;
+            total = result.path("total").asInt(total);
+            JsonNode nextNode = result.get("next");
+            if (nextNode != null && nextNode.canConvertToInt()) {
+                int next = nextNode.asInt();
+                if (next <= start) {
+                    fullScanCompleted = false;
+                    log.warn("Bitrix24 inbound sync returned non-increasing next offset: start={}, next={}", start, next);
+                    break;
+                }
+                start = next;
+                continue;
+            }
+            if (total > 0 && remoteIds.size() >= total) {
+                break;
+            }
+            if (productsNode.size() < pageSize) {
+                break;
+            }
+            start += productsNode.size();
         }
-        deactivateProductsMissingInBitrix(remoteIds);
-        log.info("Bitrix24 inbound sync completed, {} remote products scanned", remoteIds.size());
+        if (fullScanCompleted) {
+            deactivateProductsMissingInBitrix(remoteIds);
+            log.info("Bitrix24 inbound sync completed, {} remote products scanned", remoteIds.size());
+        } else {
+            log.warn("Bitrix24 inbound sync finished without full catalog scan, skipped local deactivation. scanned={}", remoteIds.size());
+        }
     }
 
     private PortalContext ensurePortalContext() {
@@ -325,16 +363,30 @@ public class BitrixSyncService {
                 return portalContext;
             }
             Integer catalogId = appProperties.getBitrix().getCatalogId();
-            if (catalogId == null) {
-                JsonNode result = call("catalog.catalog.list", Map.of(
-                        "select", List.of("id", "name", "iblockId"),
-                        "start", 0
-                ));
-                JsonNode catalogs = result.path("catalogs");
-                if (!catalogs.isArray() || catalogs.isEmpty()) {
-                    throw new IllegalStateException("Не удалось получить торговый каталог Bitrix24");
+            Integer iblockId = null;
+            JsonNode catalogsResult = call("catalog.catalog.list", Map.of(
+                    "select", List.of("id", "name", "iblockId"),
+                    "start", 0
+            ));
+            JsonNode catalogs = catalogsResult.path("catalogs");
+            if (!catalogs.isArray() || catalogs.isEmpty()) {
+                throw new IllegalStateException("Не удалось получить торговый каталог Bitrix24");
+            }
+            JsonNode selectedCatalog = catalogs.get(0);
+            if (catalogId != null) {
+                for (JsonNode node : catalogs) {
+                    int remoteCatalogId = node.path("id").asInt();
+                    int remoteIblockId = node.path("iblockId").asInt();
+                    if (remoteCatalogId == catalogId || remoteIblockId == catalogId) {
+                        selectedCatalog = node;
+                        break;
+                    }
                 }
-                catalogId = catalogs.get(0).path("id").asInt();
+            }
+            catalogId = selectedCatalog.path("id").asInt();
+            iblockId = selectedCatalog.path("iblockId").asInt();
+            if (iblockId <= 0) {
+                throw new IllegalStateException("Не удалось определить iblockId торгового каталога Bitrix24");
             }
 
             Integer basePriceTypeId = appProperties.getBitrix().getBasePriceTypeId();
@@ -354,10 +406,10 @@ public class BitrixSyncService {
                 }
             }
 
-            Map<String, Integer> propertyIds = ensureProperties(catalogId);
+            Map<String, Integer> propertyIds = ensureProperties(iblockId);
             Map<String, Integer> measureIdsByUnit = loadMeasureIdsByUnit();
             Map<Integer, String> unitNamesByMeasureId = invertMeasureMap(measureIdsByUnit);
-            portalContext = new PortalContext(catalogId, basePriceTypeId, propertyIds, measureIdsByUnit, unitNamesByMeasureId);
+            portalContext = new PortalContext(catalogId, iblockId, basePriceTypeId, propertyIds, measureIdsByUnit, unitNamesByMeasureId);
             return portalContext;
         }
     }
@@ -445,7 +497,7 @@ public class BitrixSyncService {
             JsonNode result = call("catalog.product.list", Map.of(
                     "select", List.of("id", "iblockId", "xmlId", "name"),
                     "filter", Map.of(
-                            "iblockId", context.catalogId(),
+                            "iblockId", context.iblockId(),
                             "xmlId", externalId
                     ),
                     "start", 0
@@ -462,7 +514,7 @@ public class BitrixSyncService {
             JsonNode result = call("catalog.product.list", Map.of(
                     "select", List.of("id", "iblockId", "name"),
                     "filter", Map.of(
-                            "iblockId", context.catalogId(),
+                            "iblockId", context.iblockId(),
                             "name", product.getName()
                     ),
                     "start", 0
@@ -480,7 +532,7 @@ public class BitrixSyncService {
 
     private Map<String, Object> buildProductFields(PortalContext context, CatalogProduct product) {
         Map<String, Object> fields = new LinkedHashMap<>();
-        fields.put("iblockId", context.catalogId());
+        fields.put("iblockId", context.iblockId());
         fields.put("name", product.getName());
         fields.put("active", product.isActive() ? "Y" : "N");
         fields.put("xmlId", firstNonBlank(product.getExternalId(), "app-" + product.getId()));
@@ -1083,6 +1135,7 @@ public class BitrixSyncService {
 
     private record PortalContext(
             int catalogId,
+            int iblockId,
             int basePriceTypeId,
             Map<String, Integer> propertyIds,
             Map<String, Integer> measureIdsByUnit,

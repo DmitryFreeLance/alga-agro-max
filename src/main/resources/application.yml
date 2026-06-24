@@ -26,6 +26,7 @@ app:
   public-base-url: ${APP_PUBLIC_BASE_URL:https://algaagro.ru}
   mini-app-url: ${APP_MINI_APP_URL:https://algaagro.ru/miniapp/}
   manager-contact-url: ${APP_MANAGER_CONTACT_URL:https://max.ru/id27849376}
+  manager-deep-link: ${APP_MANAGER_DEEP_LINK:max://user/27849376}
   storage-dir: ${APP_STORAGE_DIR:/data/storage}
   startup-admin-user-ids: ${APP_STARTUP_ADMIN_USER_IDS:}
   max:

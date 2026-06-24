@@ -1,6 +1,7 @@
 const root = document.getElementById("appRoot");
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
+const bridgeUserId = parseMaxUserIdFromBridgeInitData();
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
 
 const SECTION_VISUALS = [
@@ -541,13 +542,13 @@ function renderProfilePage() {
                         </div>
                         <span class="cell-arrow">›</span>
                     </a>
-                    <a class="link-tile" href="${escapeAttr(state.meta?.managerMaxLink || "#")}">
+                    <button class="link-tile" data-action="open-manager">
                         <div class="link-tile-text">
                             <strong>Написать в MAX</strong>
                             <p>${escapeHtml(state.meta?.managerName || "Менеджер")}</p>
                         </div>
                         <span class="cell-arrow">›</span>
-                    </a>
+                    </button>
                 </div>
             </div>
         </section>
@@ -2070,6 +2071,7 @@ function resolveMaxUserId() {
     const candidates = [
         initDataUnsafe?.user?.id,
         initDataUnsafe?.user?.user_id,
+        bridgeUserId,
         queryUserId,
         window.localStorage?.getItem("algaAgroMaxUserId"),
     ];
@@ -2080,6 +2082,30 @@ function resolveMaxUserId() {
         }
     }
     return null;
+}
+
+function parseMaxUserIdFromBridgeInitData() {
+    const raw = maxBridge?.initData;
+    if (!raw || typeof raw !== "string") {
+        return null;
+    }
+    try {
+        const params = new URLSearchParams(raw);
+        const directCandidate = Number(params.get("user_id") || params.get("userId") || "");
+        if (Number.isFinite(directCandidate) && directCandidate > 0) {
+            return directCandidate;
+        }
+        const userJson = params.get("user");
+        if (!userJson) {
+            return null;
+        }
+        const parsedUser = JSON.parse(userJson);
+        const nestedCandidate = Number(parsedUser?.id || parsedUser?.user_id || 0);
+        return Number.isFinite(nestedCandidate) && nestedCandidate > 0 ? nestedCandidate : null;
+    } catch (error) {
+        console.warn("Failed to parse MAX initData", error);
+        return null;
+    }
 }
 
 function rememberMaxUserId(userId) {
@@ -2096,12 +2122,14 @@ function shouldShowBackButton() {
 }
 
 function openManagerLink() {
-    const href = state.meta?.managerMaxLink || "#";
-    if (maxBridge?.openLink) {
-        maxBridge.openLink(href);
+    const primary = state.meta?.managerMaxLink || state.profile?.managerMaxLink || "";
+    const fallback = state.meta?.managerExternalLink || state.profile?.managerExternalLink || "";
+    if (maxBridge?.openLink && primary) {
+        maxBridge.openLink(primary);
         return;
     }
-    window.open(href, "_blank");
+    const target = primary && !primary.startsWith("max://") ? primary : fallback || primary || "#";
+    window.open(target, "_blank");
 }
 
 function escapeHtml(value) {
