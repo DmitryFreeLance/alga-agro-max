@@ -8,4 +8,5 @@ import ru.algaagro.maxapp.model.CatalogProduct;
 public interface CatalogProductRepository extends JpaRepository<CatalogProduct, Long> {
     List<CatalogProduct> findAllByActiveTrueOrderByNameAsc();
     Optional<CatalogProduct> findByExternalId(String externalId);
+    List<CatalogProduct> findAllBySourceFile(String sourceFile);
 }

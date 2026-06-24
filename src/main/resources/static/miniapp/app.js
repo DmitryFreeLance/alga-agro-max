@@ -421,7 +421,7 @@ function renderProducts() {
             <div class="product-bottom">
                 <div class="price">
                     <span class="stock">${product.stockQuantity == null ? "Наличие уточняется" : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`}</span>
-                    <strong>${formatPrice(product.price)}</strong>
+                    <strong>${formatPrice(product.price)}${product.unitName ? `/${escapeHtml(product.unitName)}` : ""}</strong>
                 </div>
                 <button class="primary-button small-button" type="button">Добавить</button>
             </div>

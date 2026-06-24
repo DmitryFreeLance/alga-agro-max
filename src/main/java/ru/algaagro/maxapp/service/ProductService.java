@@ -176,6 +176,26 @@ public class ProductService {
         catalogProductRepository.delete(product);
     }
 
+    @Transactional
+    public int deactivateMissingSourceProducts(String sourceFile, Set<String> keepExternalIds) {
+        if (sourceFile == null || sourceFile.isBlank()) {
+            return 0;
+        }
+        int deactivated = 0;
+        for (CatalogProduct product : catalogProductRepository.findAllBySourceFile(sourceFile)) {
+            String externalId = product.getExternalId();
+            if (externalId != null && keepExternalIds.contains(externalId)) {
+                continue;
+            }
+            if (product.isActive()) {
+                product.setActive(false);
+                catalogProductRepository.save(product);
+                deactivated++;
+            }
+        }
+        return deactivated;
+    }
+
     private void applyPayload(CatalogProduct product, AdminProductPayload payload) {
         product.setExternalId(payload.externalId());
         product.setSourceFile(payload.sourceFile());

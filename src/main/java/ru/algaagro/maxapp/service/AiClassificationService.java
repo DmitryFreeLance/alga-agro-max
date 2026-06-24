@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.util.JsonHelper;
+import ru.algaagro.maxapp.util.TextUtils;
 
 @Service
 public class AiClassificationService {
@@ -158,14 +159,30 @@ public class AiClassificationService {
         for (JsonNode item : items) {
             Map<String, Object> filterMap = new LinkedHashMap<>();
             item.path("filters").fields().forEachRemaining(entry -> filterMap.put(entry.getKey(), toSimpleValue(entry.getValue())));
+            String category = item.path("category").asText("");
+            String subcategory = item.path("subcategory").asText("");
+            String itemType = item.path("itemType").asText("");
+            String description = item.path("description").asText("");
+            if (category.isBlank() || "Прочее".equalsIgnoreCase(category)) {
+                category = inferCategory(chunk.get(results.size()));
+            }
+            if (subcategory.isBlank()) {
+                subcategory = inferSubcategory(chunk.get(results.size()));
+            }
+            if (itemType.isBlank() || "Прочее".equalsIgnoreCase(itemType)) {
+                itemType = !subcategory.isBlank() ? subcategory : category;
+            }
+            if (description.isBlank()) {
+                description = buildFallbackDescription(chunk.get(results.size()));
+            }
             results.add(new ClassificationResult(
                     item.path("rowId").asText(),
                     item.path("normalizedName").asText(),
-                    item.path("description").asText(""),
+                    description,
                     item.path("brand").asText(""),
-                    item.path("category").asText("Прочее"),
-                    item.path("subcategory").asText(""),
-                    item.path("itemType").asText("Прочее"),
+                    category.isBlank() ? "Прочее" : category,
+                    subcategory,
+                    itemType.isBlank() ? "Товар" : itemType,
                     readStringArray(item.path("cultures")),
                     readStringArray(item.path("purposes")),
                     readStringArray(item.path("tags")),
@@ -217,7 +234,7 @@ public class AiClassificationService {
                       "normalizedName": "чистое название товара",
                       "description": "краткое описание для каталога",
                       "brand": "бренд или линейка",
-                      "category": "Семена|Пестициды|Удобрения|Микроэлементы|Стимуляторы|Адъюванты|Протравители|Гербициды|Фунгициды|Инсектициды|Десиканты|Прочее",
+                      "category": "Семена|Пестициды|Агропитание|Адъюванты|Прочее",
                       "subcategory": "подкатегория",
                       "itemType": "тип карточки",
                       "cultures": ["пшеница"],
@@ -235,8 +252,12 @@ public class AiClassificationService {
                 - Определи культуры, для которых товар применяется или к которым относится.
                 - Если это семена, культура должна быть основной культурой товара.
                 - Если это пестицид или удобрение, включай все подходящие культуры, если они явно следуют из названия или описания.
-                - Если данных мало, делай осторожный вывод по названию и колонкам.
-                - Не придумывай лишнее описание, 1 короткое предложение.
+                - Для жидких комплексов, биостимуляторов, корректоров дефицита, NPK, борных, цинковых, кальциевых, серных, магниевых продуктов чаще всего category = Агропитание.
+                - Для прилипателей, pH-контроля, пеногасителей, очистителей, стикеров и технологических добавок category = Адъюванты.
+                - Используй значение поля "Раздел" как главный контекст категории и назначения.
+                - normalizedName должен браться из колонки "Позиция" без служебного мусора.
+                - description собирай предметно: что это за продукт + ключевой состав или норма расхода.
+                - Не оставляй category = Прочее, если по "Позиции", "Составу", "Норме расхода" или "Разделу" можно понять тип товара.
                 - Количество объектов в products должно строго совпадать с количеством строк.
                 """);
         if (!knownCultures.isEmpty()) {
@@ -246,10 +267,71 @@ public class AiClassificationService {
         for (ExcelImportService.ImportRow row : rows) {
             builder.append("- rowId=").append(row.rowId())
                     .append("; source=").append(row.sourceFile())
+                    .append("; section=").append(row.section())
                     .append("; values=").append(row.columns())
                     .append("\n");
         }
         return builder.toString();
+    }
+
+    private String inferCategory(ExcelImportService.ImportRow row) {
+        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        if (context.contains("адъюв") || context.contains("технологич") || context.contains("прилип") || context.contains("ph контроль") || context.contains("стик") || context.contains("клинер")) {
+            return "Адъюванты";
+        }
+        if (context.contains("сем") || context.contains("npk") || context.contains("бор") || context.contains("цинк") || context.contains("кальц") || context.contains("магний")
+                || context.contains("сер") || context.contains("молибден") || context.contains("листов") || context.contains("подкорм") || context.contains("биостим")
+                || context.contains("дефицит") || context.contains("аминокислот")) {
+            return "Агропитание";
+        }
+        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти") || context.contains("протрав")) {
+            return "Пестициды";
+        }
+        return "Прочее";
+    }
+
+    private String inferSubcategory(ExcelImportService.ImportRow row) {
+        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        if (context.contains("обработк") && context.contains("сем")) return "Биостимуляторы";
+        if (context.contains("антистресс")) return "Антистрессанты";
+        if (context.contains("npk")) return "NPK-комплексы";
+        if (context.contains("дефицит")) return "Корректоры дефицита";
+        if (context.contains("адъюв") || context.contains("технологич")) return "Технологические добавки";
+        if (context.contains("стик") || context.contains("прилип")) return "Прилипатели";
+        if (context.contains("ph контроль")) return "pH-контроль";
+        return "";
+    }
+
+    private String buildFallbackDescription(ExcelImportService.ImportRow row) {
+        String section = row.section();
+        String composition = firstColumnValue(row.columns(), "состав", "composition");
+        String dosage = firstColumnValue(row.columns(), "норма расхода", "расход", "дозиров");
+        List<String> parts = new ArrayList<>();
+        if (section != null && !section.isBlank()) {
+            parts.add(section);
+        }
+        if (composition != null && !composition.isBlank()) {
+            parts.add("Состав: " + TextUtils.trimTo(composition, 180));
+        }
+        if (dosage != null && !dosage.isBlank()) {
+            parts.add("Расход: " + TextUtils.trimTo(dosage, 80));
+        }
+        return String.join(". ", parts);
+    }
+
+    private String firstColumnValue(Map<String, String> columns, String... needles) {
+        for (Map.Entry<String, String> entry : columns.entrySet()) {
+            String normalized = TextUtils.normalizeToken(entry.getKey());
+            for (String needle : needles) {
+                if (normalized.contains(TextUtils.normalizeToken(needle))) {
+                    String value = entry.getValue();
+                    if (value != null && !value.isBlank()) {
+                        return value.trim();
+                    }
+                }
+            }
+        }
+        return "";
     }
 
     private List<List<ExcelImportService.ImportRow>> chunk(List<ExcelImportService.ImportRow> rows, int size) {

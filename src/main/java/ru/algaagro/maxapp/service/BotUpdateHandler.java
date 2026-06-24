@@ -227,6 +227,18 @@ public class BotUpdateHandler {
             startButtonFlow(user, null);
             return true;
         }
+        if (normalized.equals("подтвердить импорт")) {
+            if (isImportPreviewFlow(session)) {
+                confirmImportPreview(user, session);
+                return true;
+            }
+        }
+        if (normalized.equals("отменить импорт")) {
+            if (isImportPreviewFlow(session)) {
+                cancelImportPreview(user, session);
+                return true;
+            }
+        }
         if (normalized.startsWith("удалить кнопку ")) {
             Long buttonId = parseCommandLong(normalized, "удалить кнопку ");
             if (buttonId != null) {
@@ -246,6 +258,10 @@ public class BotUpdateHandler {
             return false;
         }
         if (normalized.equals("отмена") || normalized.equals("отменить")) {
+            if (isImportPreviewFlow(session)) {
+                cancelImportPreview(user, session);
+                return true;
+            }
             cancelFlow(user, null);
             return true;
         }
@@ -437,18 +453,69 @@ public class BotUpdateHandler {
             return;
         }
         var job = excelImportService.createJob(user.getMaxUserId(), files);
-        botSessionService.reset(user.getMaxUserId());
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "🤖 Импорт запущен. Анализирую Excel и автоматически расставляю фильтры по культурам, категориям и назначению.",
-                keyboardFactory.adminMenu(),
+                "🤖 Импорт запущен. Анализирую Excel, извлекаю поля и готовлю предварительное распределение по категориям.",
+                null,
                 "html");
-        excelImportService.processAsync(job,
-                () -> maxApiClient.sendToUser(user.getMaxUserId(), "✅ " + job.getSummary(), keyboardFactory.adminMenu(), "html"),
-                error -> maxApiClient.sendToUser(user.getMaxUserId(),
+        excelImportService.analyzeAsync(job,
+                () -> {
+                    Map<String, Object> previewPayload = new HashMap<>();
+                    previewPayload.put("mode", "import_preview_waiting");
+                    previewPayload.put("importJobId", job.getId());
+                    botSessionService.update(botSessionService.getOrCreate(user.getMaxUserId()), SessionState.IDLE, previewPayload);
+                    String summary = excelImportService.findJob(job.getId()).map(importJob -> importJob.getSummary()).orElse("Анализ завершен.");
+                    maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.importPreviewKeyboard(), "html");
+                },
+                error -> {
+                    botSessionService.reset(user.getMaxUserId());
+                    maxApiClient.sendToUser(user.getMaxUserId(),
                         "⚠️ ИИ не удалось распознать, попробуйте позже.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
                         keyboardFactory.adminMenu(),
-                        "html"));
+                        "html");
+                });
         maxApiClient.answerCallback(callbackId, "Импорт запущен");
+    }
+
+    private void confirmImportPreview(AppUser user, BotSession session) {
+        Long importJobId = extractImportJobId(session);
+        if (importJobId == null) {
+            botSessionService.reset(user.getMaxUserId());
+            maxApiClient.sendToUser(user.getMaxUserId(), "Не нашел подготовленный импорт. Загрузите файл заново.", keyboardFactory.adminMenu(), "html");
+            return;
+        }
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "📥 Подтверждение получено. Добавляю товары в каталог и обновляю витрину.",
+                null,
+                "html");
+        excelImportService.applyAsync(importJobId,
+                () -> {
+                    botSessionService.reset(user.getMaxUserId());
+                    String summary = excelImportService.findJob(importJobId).map(importJob -> importJob.getSummary()).orElse("Импорт применен.");
+                    maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html");
+                },
+                error -> {
+                    botSessionService.reset(user.getMaxUserId());
+                    maxApiClient.sendToUser(user.getMaxUserId(),
+                            "⚠️ Не удалось применить импорт.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
+                            keyboardFactory.adminMenu(),
+                            "html");
+                });
+    }
+
+    private void cancelImportPreview(AppUser user, BotSession session) {
+        Long importJobId = extractImportJobId(session);
+        if (importJobId != null) {
+            try {
+                excelImportService.cancelJob(importJobId);
+            } catch (Exception e) {
+                log.warn("Failed to cancel import job {}: {}", importJobId, e.getMessage());
+            }
+        }
+        botSessionService.reset(user.getMaxUserId());
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "❌ Импорт отменен. Подготовленные данные не были добавлены в каталог.",
+                keyboardFactory.adminMenu(),
+                "html");
     }
 
     private void startPostFlow(AppUser user, String callbackId) {
@@ -668,6 +735,25 @@ public class BotUpdateHandler {
 
     private boolean isButtonFlow(BotSession session) {
         return "button_waiting".equals(String.valueOf(botSessionService.getPayload(session).get("mode")));
+    }
+
+    private boolean isImportPreviewFlow(BotSession session) {
+        return "import_preview_waiting".equals(String.valueOf(botSessionService.getPayload(session).get("mode")));
+    }
+
+    private Long extractImportJobId(BotSession session) {
+        Object value = botSessionService.getPayload(session).get("importJobId");
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value != null) {
+            try {
+                return Long.parseLong(String.valueOf(value));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private Integer parseCommandPage(String normalizedText, String prefix) {

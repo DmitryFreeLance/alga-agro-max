@@ -41,6 +41,12 @@ public class KeyboardFactory {
         ));
     }
 
+    public List<Map<String, Object>> importPreviewKeyboard() {
+        return inlineKeyboard(List.of(
+                List.of(messageButton("✅ Подтвердить импорт"), messageButton("❌ Отменить импорт"))
+        ));
+    }
+
     public List<Map<String, Object>> postMediaKeyboard() {
         return inlineKeyboard(List.of(
                 List.of(messageButton("✅ Готово"), messageButton("❌ Отмена"))

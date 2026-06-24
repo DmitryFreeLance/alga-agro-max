@@ -34,6 +34,9 @@ public class ImportJob {
     @Lob
     private String summary = "";
 
+    @Lob
+    private String previewJson = "[]";
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -46,7 +49,7 @@ public class ImportJob {
 
     @PreUpdate
     public void onUpdate() {
-        if ((status == ImportStatus.COMPLETED || status == ImportStatus.FAILED) && completedAt == null) {
+        if ((status == ImportStatus.COMPLETED || status == ImportStatus.FAILED || status == ImportStatus.CANCELLED) && completedAt == null) {
             completedAt = Instant.now();
         }
     }
@@ -85,5 +88,13 @@ public class ImportJob {
 
     public void setSummary(String summary) {
         this.summary = summary;
+    }
+
+    public String getPreviewJson() {
+        return previewJson;
+    }
+
+    public void setPreviewJson(String previewJson) {
+        this.previewJson = previewJson;
     }
 }
