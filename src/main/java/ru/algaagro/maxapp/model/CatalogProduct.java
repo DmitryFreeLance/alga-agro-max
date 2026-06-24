@@ -37,12 +37,20 @@ public class CatalogProduct {
     private String subcategory;
     private String itemType;
     private String unitName;
+    private String packageType;
+    private String packageDescription;
 
     @Column(precision = 14, scale = 2)
     private BigDecimal price;
 
     @Column(precision = 14, scale = 3)
     private BigDecimal stockQuantity;
+
+    @Column(precision = 14, scale = 3)
+    private BigDecimal minOrderQuantity;
+
+    @Column(precision = 14, scale = 3)
+    private BigDecimal orderStep;
 
     @Column(nullable = false)
     private boolean active = true;
@@ -173,6 +181,22 @@ public class CatalogProduct {
         this.unitName = unitName;
     }
 
+    public String getPackageType() {
+        return packageType;
+    }
+
+    public void setPackageType(String packageType) {
+        this.packageType = packageType;
+    }
+
+    public String getPackageDescription() {
+        return packageDescription;
+    }
+
+    public void setPackageDescription(String packageDescription) {
+        this.packageDescription = packageDescription;
+    }
+
     public BigDecimal getPrice() {
         return price;
     }
@@ -187,6 +211,22 @@ public class CatalogProduct {
 
     public void setStockQuantity(BigDecimal stockQuantity) {
         this.stockQuantity = stockQuantity;
+    }
+
+    public BigDecimal getMinOrderQuantity() {
+        return minOrderQuantity;
+    }
+
+    public void setMinOrderQuantity(BigDecimal minOrderQuantity) {
+        this.minOrderQuantity = minOrderQuantity;
+    }
+
+    public BigDecimal getOrderStep() {
+        return orderStep;
+    }
+
+    public void setOrderStep(BigDecimal orderStep) {
+        this.orderStep = orderStep;
     }
 
     public boolean isActive() {

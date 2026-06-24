@@ -293,6 +293,10 @@
                 <p class="product-modal-description" id="productModalDescription"></p>
                 <div class="meta-badges product-modal-tags" id="productModalTags"></div>
                 <div class="product-volume-box">
+                    <div class="order-rules-note">
+                        <strong id="productModalPackageDescription"></strong>
+                        <span id="productModalOrderHint"></span>
+                    </div>
                     <label class="input-field">
                         <span>Необходимый объем</span>
                         <div class="volume-input-row">
@@ -380,6 +384,22 @@
                 <label class="input-field">
                     <span>Единица</span>
                     <input name="unitName" type="text" placeholder="шт / кг / л">
+                </label>
+                <label class="input-field">
+                    <span>Тип упаковки</span>
+                    <input name="packageType" type="text" placeholder="Канистра / коробка / п.е. / тонна">
+                </label>
+                <label class="input-field">
+                    <span>Минимальный заказ</span>
+                    <input name="minOrderQuantity" type="number" min="1" step="1" placeholder="1">
+                </label>
+                <label class="input-field">
+                    <span>Шаг заказа</span>
+                    <input name="orderStep" type="number" min="1" step="1" placeholder="1">
+                </label>
+                <label class="input-field input-field-full">
+                    <span>Описание фасовки</span>
+                    <input name="packageDescription" type="text" placeholder="Например: коробка 4 x 5 л">
                 </label>
                 <label class="input-field input-field-full">
                     <span>Культуры</span>

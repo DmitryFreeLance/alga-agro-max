@@ -207,6 +207,13 @@ public class ExcelImportService {
             String resolvedSubcategory = resolveSubcategory(result, row);
             String resolvedItemType = resolveItemType(result, resolvedCategory, resolvedSubcategory, row);
             String resolvedDescription = resolveDescription(result, row);
+            ProductService.OrderRules orderRules = productService.inferOrderRules(
+                    resolvedName,
+                    extractUnit(row.columns()),
+                    resolvedDescription,
+                    row.columns(),
+                    result.filterMap()
+            );
             ProductService.ImportedProduct product = new ProductService.ImportedProduct(
                     buildExternalId(row),
                     row.sourceFile(),
@@ -220,6 +227,10 @@ public class ExcelImportService {
                     extractUnit(row.columns()),
                     extractPrice(row.columns()),
                     extractStock(row.columns()),
+                    orderRules.packageType(),
+                    orderRules.packageDescription(),
+                    orderRules.minOrderQuantity(),
+                    orderRules.orderStep(),
                     result.cultures(),
                     result.purposes(),
                     result.tags(),
@@ -239,6 +250,10 @@ public class ExcelImportService {
                     product.unitName(),
                     product.price(),
                     product.stockQuantity(),
+                    product.packageType(),
+                    product.packageDescription(),
+                    product.minOrderQuantity(),
+                    product.orderStep(),
                     product.cultures(),
                     product.purposes(),
                     product.tags(),
@@ -1172,6 +1187,10 @@ public class ExcelImportService {
                     item.unitName(),
                     item.price(),
                     item.stockQuantity(),
+                    item.packageType(),
+                    item.packageDescription(),
+                    item.minOrderQuantity(),
+                    item.orderStep(),
                     item.cultures(),
                     item.purposes(),
                     item.tags(),
@@ -1239,6 +1258,10 @@ public class ExcelImportService {
             String unitName,
             BigDecimal price,
             BigDecimal stockQuantity,
+            String packageType,
+            String packageDescription,
+            BigDecimal minOrderQuantity,
+            BigDecimal orderStep,
             List<String> cultures,
             List<String> purposes,
             List<String> tags,

@@ -44,6 +44,7 @@ public class OrderService {
         for (CreateOrderItem itemCommand : command.items()) {
             var product = productService.findById(itemCommand.productId())
                     .orElseThrow(() -> new IllegalArgumentException("Product not found: " + itemCommand.productId()));
+            productService.validateOrderQuantity(product, itemCommand.quantity());
             CatalogOrderItem item = new CatalogOrderItem();
             item.setProductId(product.getId());
             item.setProductName(product.getName());

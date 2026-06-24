@@ -57,12 +57,14 @@ public class BotUpdateHandler {
         String type = update.path("update_type").asText(update.path("type").asText(""));
         Long userId = extractUserId(update);
         Long chatId = extractChatId(update);
+        String text = extractText(update);
+        String callbackPayload = extractCallbackPayload(update);
+        logUpdateContext(type, userId, chatId, text, callbackPayload, update);
         if (userId == null) {
             log.warn("Skip MAX update without user id. type={}, payload={}", type, update.toString());
             return;
         }
         AppUser user = userService.touchUser(userId, extractDisplayName(update), extractUsername(update));
-        String callbackPayload = extractCallbackPayload(update);
         String callbackId = extractCallbackId(update);
         if ("message_callback".equals(type) || type.contains("callback") || callbackPayload != null || callbackId != null) {
             log.info("Received callback update. type={}, userId={}, payload={}", type, userId, callbackPayload);
@@ -76,6 +78,41 @@ public class BotUpdateHandler {
         if ("message_created".equals(type)) {
             handleMessage(update, user, chatId);
         }
+    }
+
+    private void logUpdateContext(String type, Long userId, Long chatId, String text, String callbackPayload, JsonNode update) {
+        int attachmentsCount = extractAttachments(update).size();
+        if (chatId != null) {
+            log.info("MAX update received: type={}, chatId={}, userId={}, text={}, callbackPayload={}, attachments={}",
+                    safeLogValue(type),
+                    chatId,
+                    userId,
+                    safeLogValue(shortenForLog(text)),
+                    safeLogValue(shortenForLog(callbackPayload)),
+                    attachmentsCount);
+        } else {
+            log.info("MAX update received: type={}, userId={}, text={}, callbackPayload={}, attachments={}",
+                    safeLogValue(type),
+                    userId,
+                    safeLogValue(shortenForLog(text)),
+                    safeLogValue(shortenForLog(callbackPayload)),
+                    attachmentsCount);
+        }
+    }
+
+    private String shortenForLog(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 160) {
+            return normalized;
+        }
+        return normalized.substring(0, 157) + "...";
+    }
+
+    private String safeLogValue(String value) {
+        return value == null || value.isBlank() ? "-" : value;
     }
 
     private void handleMessage(JsonNode update, AppUser user, Long chatId) {

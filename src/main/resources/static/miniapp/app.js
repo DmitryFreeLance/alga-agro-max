@@ -86,6 +86,8 @@ const nodes = {
     productModalTitle: document.getElementById("productModalTitle"),
     productModalDescription: document.getElementById("productModalDescription"),
     productModalTags: document.getElementById("productModalTags"),
+    productModalPackageDescription: document.getElementById("productModalPackageDescription"),
+    productModalOrderHint: document.getElementById("productModalOrderHint"),
     productModalStock: document.getElementById("productModalStock"),
     productModalPrice: document.getElementById("productModalPrice"),
     productModalQuantity: document.getElementById("productModalQuantity"),
@@ -632,9 +634,18 @@ function openProductModal(product) {
         : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`;
     nodes.productModalPrice.textContent = `${formatPrice(product.price)}${product.unitName ? `/${product.unitName}` : ""}`;
     nodes.productModalUnit.textContent = product.unitName || "шт";
-    nodes.productModalQuantity.value = formatQuantityInput(getDefaultQuantity());
+    nodes.productModalPackageDescription.textContent = product.packageDescription || (product.packageType ? `Фасовка: ${product.packageType}` : "");
+    nodes.productModalOrderHint.textContent = product.orderHint || "";
+    const minOrderQuantity = getMinOrderQuantity(product);
+    const orderStep = getOrderStep(product);
+    nodes.productModalQuantity.min = String(minOrderQuantity);
+    nodes.productModalQuantity.step = String(orderStep);
+    nodes.productModalQuantity.value = formatQuantityInput(minOrderQuantity);
     nodes.productModalAddButton.dataset.productId = String(product.id);
     nodes.productModalAddButton.dataset.unitPrice = String(Number(product.price || 0));
+    nodes.productModalAddButton.dataset.minOrderQuantity = String(minOrderQuantity);
+    nodes.productModalAddButton.dataset.orderStep = String(orderStep);
+    nodes.productModalAddButton.dataset.unitName = product.unitName || "шт";
     nodes.productModal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
     syncProductModalTotal();
@@ -713,6 +724,7 @@ function renderCart() {
         return;
     }
     state.cart.forEach(item => {
+        const orderHint = item.orderHint || buildOrderHint(item);
         const row = document.createElement("div");
         row.className = "cart-item";
         row.innerHTML = `
@@ -722,16 +734,19 @@ function renderCart() {
                 <button class="remove-btn" type="button">✕</button>
             </div>
             <div class="cart-row">
-                <span>${formatPrice(item.price)} / ${escapeHtml(item.unitName)}</span>
+                <div class="cart-copy">
+                    <span>${formatPrice(item.price)} / ${escapeHtml(item.unitName)}</span>
+                    ${orderHint ? `<span class="cart-item-note">${escapeHtml(orderHint)}</span>` : ""}
+                </div>
                 <div class="cart-qty">
                     <button class="qty-btn minus" type="button">−</button>
-                    <input class="qty-input" type="number" min="1" step="1" value="${formatQuantityInput(item.quantity)}">
+                    <input class="qty-input" type="number" min="${formatQuantityInput(getMinOrderQuantity(item))}" step="${formatQuantityInput(getOrderStep(item))}" value="${formatQuantityInput(item.quantity)}">
                     <button class="qty-btn plus" type="button">+</button>
                 </div>
             </div>
         `;
-        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -getQuantityStep()));
-        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, getQuantityStep()));
+        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -getOrderStep(item)));
+        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, getOrderStep(item)));
         row.querySelector(".qty-input").addEventListener("change", event => setQuantity(item.id, event.target.value));
         row.querySelector(".remove-btn").addEventListener("click", () => removeItem(item.id));
         nodes.cartItems.appendChild(row);
@@ -806,7 +821,21 @@ function buildAdminProductCard(product) {
 }
 
 function renderProductEditor(product) {
-    const draft = product || { name: "", category: "", subcategory: "", price: "", stockQuantity: "", cultures: [], tags: [], description: "", unitName: "шт" };
+    const draft = product || {
+        name: "",
+        category: "",
+        subcategory: "",
+        price: "",
+        stockQuantity: "",
+        cultures: [],
+        tags: [],
+        description: "",
+        unitName: "шт",
+        packageType: "",
+        packageDescription: "",
+        minOrderQuantity: 1,
+        orderStep: 1,
+    };
     openAdminProductEditor(draft);
 }
 
@@ -883,6 +912,10 @@ function openAdminProductEditor(product) {
     setFormValue(form, "price", product.price ?? "");
     setFormValue(form, "stockQuantity", product.stockQuantity == null ? "" : formatQuantityInput(product.stockQuantity));
     setFormValue(form, "unitName", product.unitName || "шт");
+    setFormValue(form, "packageType", product.packageType || "");
+    setFormValue(form, "packageDescription", product.packageDescription || "");
+    setFormValue(form, "minOrderQuantity", product.minOrderQuantity == null ? "" : formatQuantityInput(product.minOrderQuantity));
+    setFormValue(form, "orderStep", product.orderStep == null ? "" : formatQuantityInput(product.orderStep));
     setFormValue(form, "cultures", (product.cultures || []).join(", "));
     setFormValue(form, "tags", (product.tags || []).join(", "));
     setFormValue(form, "description", product.description || "");
@@ -940,6 +973,10 @@ async function saveAdminProduct(productId, form) {
         subcategory: String(formData.get("subcategory") || "").trim(),
         price: formData.get("price") ? Number(formData.get("price")) : null,
         stockQuantity: formData.get("stockQuantity") ? parseQuantity(formData.get("stockQuantity")) : null,
+        packageType: String(formData.get("packageType") || "").trim(),
+        packageDescription: String(formData.get("packageDescription") || "").trim(),
+        minOrderQuantity: formData.get("minOrderQuantity") ? parseQuantity(formData.get("minOrderQuantity")) : null,
+        orderStep: formData.get("orderStep") ? parseQuantity(formData.get("orderStep")) : null,
         cultures: String(formData.get("cultures") || "").trim(),
         tags: String(formData.get("tags") || "").trim(),
         description: String(formData.get("description") || "").trim(),
@@ -1089,13 +1126,93 @@ function slugify(value) {
         .replace(/^-+|-+$/g, "") || "group";
 }
 
+function getMinOrderQuantity(product) {
+    return Math.max(1, roundQuantity(product?.minOrderQuantity || 1));
+}
+
+function getOrderStep(product) {
+    return Math.max(1, roundQuantity(product?.orderStep || getMinOrderQuantity(product)));
+}
+
+function buildOrderHint(product) {
+    const unitName = product?.unitName || "шт";
+    const minOrderQuantity = getMinOrderQuantity(product);
+    const orderStep = getOrderStep(product);
+    const hasPackageInfo = Boolean(product?.packageDescription || product?.packageType);
+    const meaningfulQuantityRule = minOrderQuantity > 1 || orderStep > 1;
+    if (!hasPackageInfo && !meaningfulQuantityRule) {
+        return "";
+    }
+    const parts = [];
+    if (product?.packageDescription) {
+        parts.push(product.packageDescription);
+    } else if (product?.packageType) {
+        parts.push(`Фасовка: ${product.packageType}`);
+    }
+    if (meaningfulQuantityRule) {
+        parts.push(`Мин. заказ: ${formatQuantityInput(minOrderQuantity)} ${unitName}`);
+        parts.push(`Кратно: ${formatQuantityInput(orderStep)} ${unitName}`);
+    }
+    return parts.join(" • ");
+}
+
+function normalizeQuantityForProduct(product, rawValue) {
+    const minOrderQuantity = getMinOrderQuantity(product);
+    const orderStep = getOrderStep(product);
+    const unitName = product?.unitName || "шт";
+    const requested = parseQuantity(rawValue);
+    if (requested < minOrderQuantity) {
+        return {
+            quantity: minOrderQuantity,
+            adjusted: true,
+            message: `Минимальный заказ: ${formatQuantityInput(minOrderQuantity)} ${unitName}`,
+        };
+    }
+    const offset = requested - minOrderQuantity;
+    const remainder = offset % orderStep;
+    if (remainder === 0) {
+        return { quantity: requested, adjusted: false, message: "" };
+    }
+    const corrected = minOrderQuantity + Math.ceil(offset / orderStep) * orderStep;
+    return {
+        quantity: corrected,
+        adjusted: true,
+        message: `Количество скорректировано до ${formatQuantityInput(corrected)} ${unitName}. Заказ кратен ${formatQuantityInput(orderStep)} ${unitName}.`,
+    };
+}
+
 function addToCart(product, quantity = 1) {
-    const safeQuantity = parseQuantity(quantity);
+    const normalized = normalizeQuantityForProduct(product, quantity);
+    const safeQuantity = normalized.quantity;
+    let notice = normalized.adjusted ? normalized.message : "";
     const existing = state.cart.find(item => item.id === product.id);
-    if (existing) existing.quantity = roundQuantity(existing.quantity + safeQuantity);
-    else state.cart.push({ id: product.id, name: product.name, price: Number(product.price || 0), quantity: safeQuantity, unitName: product.unitName || "шт" });
+    if (existing) {
+        const merged = normalizeQuantityForProduct(existing, Number(existing.quantity) + safeQuantity);
+        existing.quantity = merged.quantity;
+        existing.orderStep = getOrderStep(product);
+        existing.minOrderQuantity = getMinOrderQuantity(product);
+        existing.packageType = product.packageType || "";
+        existing.packageDescription = product.packageDescription || "";
+        existing.orderHint = product.orderHint || buildOrderHint(product);
+        if (merged.adjusted) {
+            notice = merged.message;
+        }
+    } else {
+        state.cart.push({
+            id: product.id,
+            name: product.name,
+            price: Number(product.price || 0),
+            quantity: safeQuantity,
+            unitName: product.unitName || "шт",
+            orderStep: getOrderStep(product),
+            minOrderQuantity: getMinOrderQuantity(product),
+            packageType: product.packageType || "",
+            packageDescription: product.packageDescription || "",
+            orderHint: product.orderHint || buildOrderHint(product),
+        });
+    }
     renderCart();
-    showToast(`Добавили: ${product.name}`);
+    showToast(notice ? `${notice} Добавили: ${product.name}` : `Добавили: ${product.name}`);
 }
 
 function syncSearchUi() {
@@ -1105,8 +1222,16 @@ function syncSearchUi() {
 function updateQuantity(productId, delta) {
     const item = state.cart.find(entry => entry.id === productId);
     if (!item) return;
-    item.quantity = roundQuantity(item.quantity + delta);
-    if (item.quantity <= 0) state.cart = state.cart.filter(entry => entry.id !== productId);
+    if (delta < 0 && Number(item.quantity) <= getMinOrderQuantity(item)) {
+        state.cart = state.cart.filter(entry => entry.id !== productId);
+        renderCart();
+        return;
+    }
+    const normalized = normalizeQuantityForProduct(item, Number(item.quantity) + delta);
+    item.quantity = normalized.quantity;
+    if (normalized.adjusted) {
+        showToast(normalized.message);
+    }
     renderCart();
 }
 
@@ -1117,7 +1242,11 @@ function setQuantity(productId, value) {
     if (quantity <= 0) {
         state.cart = state.cart.filter(entry => entry.id !== productId);
     } else {
-        item.quantity = quantity;
+        const normalized = normalizeQuantityForProduct(item, quantity);
+        item.quantity = normalized.quantity;
+        if (normalized.adjusted) {
+            showToast(normalized.message);
+        }
     }
     renderCart();
 }
