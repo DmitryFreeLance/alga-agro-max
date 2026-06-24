@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +52,14 @@ public class AiClassificationService {
             if (rawResponse == null) {
                 throw new IllegalStateException("ИИ не удалось распознать, попробуйте позже.");
             }
-            results.addAll(parseResponse(rawResponse, chunk));
+            try {
+                results.addAll(parseResponse(rawResponse, chunk));
+            } catch (IllegalStateException error) {
+                log.warn("AI response parsing failed, using heuristic fallback. reason={}, payloadPreview={}",
+                        error.getMessage(),
+                        TextUtils.trimTo(rawResponse, 1500));
+                results.addAll(buildHeuristicResults(chunk));
+            }
         }
         return results;
     }
@@ -204,6 +212,32 @@ public class AiClassificationService {
         }
         if (results.size() != chunk.size()) {
             throw new IllegalStateException("AI returned mismatched number of rows");
+        }
+        return results;
+    }
+
+    private List<ClassificationResult> buildHeuristicResults(List<ExcelImportService.ImportRow> chunk) {
+        List<ClassificationResult> results = new ArrayList<>();
+        for (ExcelImportService.ImportRow row : chunk) {
+            String category = inferCategory(row);
+            String subcategory = inferSubcategory(row);
+            String itemType = !subcategory.isBlank() ? subcategory : category;
+            List<String> cultures = inferCultures(row);
+            List<String> tags = inferTags(row);
+            Map<String, Object> filterMap = inferFilterMap(row, cultures, tags);
+            results.add(new ClassificationResult(
+                    row.rowId(),
+                    heuristicName(row),
+                    buildFallbackDescription(row),
+                    inferBrand(row),
+                    category.isBlank() ? "Прочее" : category,
+                    subcategory,
+                    itemType.isBlank() ? "Товар" : itemType,
+                    cultures,
+                    inferPurposes(row, category),
+                    tags,
+                    filterMap
+            ));
         }
         return results;
     }
@@ -457,6 +491,13 @@ public class AiClassificationService {
 
     private String inferCategory(ExcelImportService.ImportRow row) {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        if (context.contains("пшениц") || context.contains("ячмен") || context.contains("горох")
+                || context.contains("соя") || context.contains("гречих") || context.contains("рапс")
+                || context.contains("рожь") || context.contains("тритикал")) {
+            if (context.contains("озим") || context.contains("яров") || context.contains("семен") || context.contains("сорт")) {
+                return "Семена";
+            }
+        }
         if (context.contains("адъюв") || context.contains("технологич") || context.contains("прилип") || context.contains("ph контроль") || context.contains("стик") || context.contains("клинер")) {
             return "Адъюванты";
         }
@@ -473,6 +514,8 @@ public class AiClassificationService {
 
     private String inferSubcategory(ExcelImportService.ImportRow row) {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        if (context.contains("озим")) return "Озимые";
+        if (context.contains("яров")) return "Яровые";
         if (context.contains("обработк") && context.contains("сем")) return "Биостимуляторы";
         if (context.contains("антистресс")) return "Антистрессанты";
         if (context.contains("npk")) return "NPK-комплексы";
@@ -485,11 +528,19 @@ public class AiClassificationService {
 
     private String buildFallbackDescription(ExcelImportService.ImportRow row) {
         String section = row.section();
+        String culture = firstColumnValue(row.columns(), "культура");
         String composition = firstColumnValue(row.columns(), "состав", "composition");
         String dosage = firstColumnValue(row.columns(), "норма расхода", "расход", "дозиров");
+        String seedGrade = firstColumnValue(row.columns(), "категория семян");
         List<String> parts = new ArrayList<>();
+        if (culture != null && !culture.isBlank()) {
+            parts.add("Культура: " + TextUtils.trimTo(culture, 120));
+        }
         if (section != null && !section.isBlank()) {
             parts.add(section);
+        }
+        if (seedGrade != null && !seedGrade.isBlank()) {
+            parts.add("Категория: " + seedGrade);
         }
         if (composition != null && !composition.isBlank()) {
             parts.add("Состав: " + TextUtils.trimTo(composition, 180));
@@ -498,6 +549,76 @@ public class AiClassificationService {
             parts.add("Расход: " + TextUtils.trimTo(dosage, 80));
         }
         return String.join(". ", parts);
+    }
+
+    private String heuristicName(ExcelImportService.ImportRow row) {
+        String name = row.nameGuess() == null ? "" : row.nameGuess().trim();
+        if (!name.isBlank() && !"Культура".equalsIgnoreCase(name)) {
+            return name;
+        }
+        return firstColumnValue(row.columns(), "позиция", "наименование", "товар");
+    }
+
+    private String inferBrand(ExcelImportService.ImportRow row) {
+        String source = TextUtils.normalizeToken(row.sourceFile());
+        if (source.contains("uрl") || source.contains("upl")) {
+            return "UPL";
+        }
+        if (source.contains("cpp")) {
+            return "CPP";
+        }
+        return "";
+    }
+
+    private List<String> inferCultures(ExcelImportService.ImportRow row) {
+        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        LinkedHashSet<String> cultures = new LinkedHashSet<>();
+        if (context.contains("пшениц")) cultures.add("Пшеница");
+        if (context.contains("ячмен")) cultures.add("Ячмень");
+        if (context.contains("горох")) cultures.add("Горох");
+        if (context.contains("соя")) cultures.add("Соя");
+        if (context.contains("гречих")) cultures.add("Гречиха");
+        if (context.contains("рапс")) cultures.add("Рапс");
+        if (context.contains("рожь")) cultures.add("Рожь");
+        if (context.contains("тритикал")) cultures.add("Тритикале");
+        return new ArrayList<>(cultures);
+    }
+
+    private List<String> inferPurposes(ExcelImportService.ImportRow row, String category) {
+        if ("Семена".equalsIgnoreCase(category)) {
+            return List.of("посев");
+        }
+        if ("Пестициды".equalsIgnoreCase(category)) {
+            return List.of("защита");
+        }
+        if ("Агропитание".equalsIgnoreCase(category)) {
+            return List.of("питание");
+        }
+        return List.of();
+    }
+
+    private List<String> inferTags(ExcelImportService.ImportRow row) {
+        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        if (context.contains("озим")) tags.add("озимая");
+        if (context.contains("яров")) tags.add("яровая");
+        if (context.contains("сильная пшеница")) tags.add("сильная пшеница");
+        if (context.contains("зимостойк")) tags.add("зимостойкость");
+        if (context.contains("морозоуст")) tags.add("морозоустойчивость");
+        return new ArrayList<>(tags);
+    }
+
+    private Map<String, Object> inferFilterMap(ExcelImportService.ImportRow row, List<String> cultures, List<String> tags) {
+        Map<String, Object> filterMap = new LinkedHashMap<>();
+        if (!cultures.isEmpty()) {
+            filterMap.put("cultureGroup", List.of("зерновые"));
+        }
+        if (tags.stream().anyMatch(tag -> TextUtils.normalizeToken(tag).contains("озим"))) {
+            filterMap.put("season", List.of("Озимые"));
+        } else if (tags.stream().anyMatch(tag -> TextUtils.normalizeToken(tag).contains("яров"))) {
+            filterMap.put("season", List.of("Яровые"));
+        }
+        return filterMap;
     }
 
     private String firstColumnValue(Map<String, String> columns, String... needles) {

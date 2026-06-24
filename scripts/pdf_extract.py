@@ -47,7 +47,10 @@ def canonical_section(tokens):
 
 def is_header_row(cells):
     joined = " ".join(cells).lower()
-    return "препарат" in joined and ("цена" in joined or "упаковка" in joined)
+    return (
+        ("препарат" in joined and ("цена" in joined or "упаковка" in joined))
+        or ("культура" in joined and "сорт" in joined and "цена" in joined)
+    )
 
 
 def is_section_row(cells):
@@ -171,6 +174,84 @@ def row_to_record(file_name, row_number, section, cells):
     }
 
 
+def looks_like_seed_grade(value):
+    normalized = normalize(value).replace(" ", "")
+    return bool(re.match(r"^(эс|сэ|рс\d|pc\d|пр\d)$", normalized))
+
+
+def trim_empty_edges(values):
+    start = 0
+    end = len(values) - 1
+    while start <= end and not values[start]:
+        start += 1
+    while end >= start and not values[end]:
+        end -= 1
+    return values[start:end + 1]
+
+
+def seed_row_to_record(file_name, row_number, cells, current_culture, seed_context):
+    values = [clean(cell) for cell in cells]
+    segment = trim_empty_edges(values)
+    if not segment:
+        return None, current_culture, seed_context
+
+    joined = " ".join(segment)
+    if is_header_row(segment):
+        return None, current_culture, seed_context
+    if len(joined) > 140 and not any(looks_like_seed_grade(value) for value in segment):
+        return None, current_culture, seed_context
+
+    culture = current_culture
+    sort = seed_context["sort"] if seed_context else ""
+    description = seed_context["description"] if seed_context else ""
+    grade = ""
+    price = ""
+
+    if len(segment) >= 5 and looks_like_seed_grade(segment[2]) and re.search(r"^\d+[.,]?\d*$", segment[3]):
+        culture = segment[0]
+        sort = segment[1]
+        grade = segment[2]
+        price = segment[3]
+        description = segment[4]
+    elif len(segment) >= 4 and looks_like_seed_grade(segment[1]) and re.search(r"^\d+[.,]?\d*$", segment[2]):
+        sort = segment[0]
+        grade = segment[1]
+        price = segment[2]
+        description = segment[3]
+    elif len(segment) >= 2 and looks_like_seed_grade(segment[0]) and re.search(r"^\d+[.,]?\d*$", segment[1]):
+        grade = segment[0]
+        price = segment[1]
+    else:
+        return None, current_culture, seed_context
+
+    if not sort or not culture:
+        return None, current_culture, seed_context
+
+    current_culture = culture
+    seed_context = {
+        "sort": sort,
+        "description": description,
+    }
+    position = f"{sort} ({grade})" if grade else sort
+    record = {
+        "rowId": f"{file_name}#PDF#{row_number}",
+        "sourceFile": file_name,
+        "sheetName": "PDF",
+        "rowNumber": row_number,
+        "columns": {
+            "Позиция": position,
+            "Культура": culture,
+            "Категория семян": grade,
+            "Цена": price,
+            "Состав": description,
+            "Сырой текст": " | ".join(segment),
+        },
+        "nameGuess": position,
+        "section": culture,
+    }
+    return record, current_culture, seed_context
+
+
 def extract_tables(path):
     results = []
     row_number = 0
@@ -181,9 +262,29 @@ def extract_tables(path):
             any_words = any_words or bool(words)
             section = ""
             for table in page.extract_tables() or []:
+                seed_mode = False
+                current_seed_culture = ""
+                seed_context = None
                 for raw_row in table:
                     cells = [clean(cell) for cell in raw_row]
                     if not any(cells):
+                        continue
+                    if is_header_row(cells) and "культура" in normalize(" ".join(cells)):
+                        seed_mode = True
+                        continue
+                    if seed_mode:
+                        record, current_seed_culture, seed_context = seed_row_to_record(
+                            Path(path).name,
+                            row_number + 1,
+                            cells,
+                            current_seed_culture,
+                            seed_context,
+                        )
+                        if record:
+                            row_number += 1
+                            record["rowNumber"] = row_number
+                            record["rowId"] = f"{Path(path).name}#PDF#{row_number}"
+                            results.append(record)
                         continue
                     if is_header_row(cells):
                         continue
