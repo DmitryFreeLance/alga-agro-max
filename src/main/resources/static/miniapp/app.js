@@ -610,10 +610,7 @@ function openProductModal(product) {
     nodes.productModalType.textContent = product.itemType || product.category || "Товар";
     nodes.productModalTitle.textContent = product.name || "Товар";
     nodes.productModalDescription.textContent = product.description || "Товар доступен для заказа.";
-    const modalTags = [
-        ...(product.cultures || []).slice(0, 4),
-        ...(product.tags || []).slice(0, 4),
-    ];
+    const modalTags = collectModalTags(product);
     nodes.productModalTags.innerHTML = modalTags.map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("");
     nodes.productModalTags.classList.toggle("hidden", modalTags.length === 0);
     nodes.productModalStock.textContent = product.stockQuantity == null
@@ -627,6 +624,24 @@ function openProductModal(product) {
     nodes.productModal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
     syncProductModalTotal();
+}
+
+function collectModalTags(product) {
+    const values = [
+        ...(product.cultures || []),
+        ...(product.tags || []),
+        ...(product.purposes || []),
+    ]
+        .map(value => String(value || "").trim())
+        .filter(Boolean);
+    const unique = [...new Set(values)];
+    const visibleLimit = 4;
+    const visible = unique.slice(0, visibleLimit);
+    const hiddenCount = unique.length - visible.length;
+    if (hiddenCount > 0) {
+        visible.push(`+${hiddenCount}`);
+    }
+    return visible;
 }
 
 function closeProductModal() {

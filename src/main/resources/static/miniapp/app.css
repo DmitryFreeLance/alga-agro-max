@@ -404,6 +404,7 @@ button { border: none; cursor: pointer; }
     font-size: 0.98rem;
     font-weight: 800;
     line-height: 1.18;
+    overflow-wrap: anywhere;
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -414,6 +415,7 @@ button { border: none; cursor: pointer; }
     color: var(--muted);
     font-size: 0.84rem;
     line-height: 1.45;
+    overflow-wrap: anywhere;
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -501,16 +503,24 @@ button { border: none; cursor: pointer; }
     margin: 0;
     font-size: 1.2rem;
     line-height: 1.15;
+    overflow-wrap: anywhere;
 }
 
 .product-modal-description {
     margin: 0;
     color: var(--muted);
     line-height: 1.55;
+    overflow-wrap: anywhere;
 }
 
 .product-modal-tags {
     min-height: 0;
+}
+.product-modal-tags .badge {
+    max-width: calc(50% - 0.25rem);
+    white-space: normal;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
 }
 
 .product-modal-price {
@@ -576,7 +586,13 @@ button { border: none; cursor: pointer; }
     gap: 0.75rem;
 }
 
-.cart-qty { display: inline-flex; align-items: center; gap: 0.5rem; }
+.cart-qty {
+    display: inline-grid;
+    grid-template-columns: 2rem minmax(4.4rem, 5.8rem) 2rem;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
 .qty-btn, .remove-btn {
     width: 2rem;
     height: 2rem;
@@ -587,7 +603,8 @@ button { border: none; cursor: pointer; }
 }
 
 .qty-input {
-    width: 5.8rem;
+    width: 100%;
+    min-width: 0;
     text-align: center;
     border-radius: 14px;
     border: 1px solid rgba(0,0,0,0.06);
@@ -859,7 +876,11 @@ button { border: none; cursor: pointer; }
     .volume-input-row { grid-template-columns: 1fr; }
     .volume-unit { width: 100%; }
     .cart-row { align-items: start; }
-    .cart-qty { flex-wrap: wrap; justify-content: flex-end; }
+    .cart-qty {
+        grid-template-columns: 2rem minmax(4rem, 5.2rem) 2rem;
+        justify-content: end;
+        flex-wrap: nowrap;
+    }
     .admin-product-top,
     .admin-product-meta,
     .admin-modal-actions { align-items: start; }
