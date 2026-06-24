@@ -407,6 +407,7 @@ function showPage(page) {
     nodes.pageTitle.textContent = meta[0];
     nodes.pageCaption.textContent = meta[1];
     nodes.pageCaption.classList.toggle("hidden", !meta[1]);
+    syncHeaderBackButton();
 }
 
 function hasActiveCatalogQuery() {
@@ -450,6 +451,13 @@ function syncCatalogResultsVisibility() {
     const shouldShow = hasActiveCatalogQuery() && !shouldKeepCatalogPageOpen();
     nodes.catalogResultsCard?.classList.toggle("hidden", !shouldShow);
     nodes.catalogGroupsCard?.classList.toggle("hidden", shouldShow);
+    syncHeaderBackButton();
+}
+
+function syncHeaderBackButton() {
+    const shouldShow = state.currentPage === "checkout"
+        || (state.currentPage === "catalog" && (hasActiveCatalogQuery() || shouldKeepCatalogPageOpen()));
+    nodes.headerBackButton?.classList.toggle("hidden", !shouldShow);
 }
 
 function shouldKeepCatalogPageOpen() {
