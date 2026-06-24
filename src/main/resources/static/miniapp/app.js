@@ -39,7 +39,6 @@ const nodes = {
     cartModePanel: document.getElementById("cartModePanel"),
     searchInput: document.getElementById("searchInput"),
     clearSearchButton: document.getElementById("clearSearchButton"),
-    searchButton: document.getElementById("searchButton"),
     sortSelect: document.getElementById("sortSelect"),
     cultureChips: document.getElementById("cultureChips"),
     categoryPills: document.getElementById("categoryPills"),
@@ -84,6 +83,7 @@ const nodes = {
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
+let liveSearchTimer = null;
 state.maxUserId = resolveMaxUserId();
 
 if (maxBridge?.ready) {
@@ -133,6 +133,7 @@ function bindEvents() {
     nodes.searchInput.addEventListener("input", event => {
         state.selection.search = event.target.value.trim();
         syncSearchUi();
+        scheduleLiveCatalogUpdate();
     });
     nodes.searchInput.addEventListener("keydown", event => {
         if (event.key === "Enter") {
@@ -144,17 +145,12 @@ function bindEvents() {
         state.selection.search = "";
         nodes.searchInput.value = "";
         syncSearchUi();
-        if (state.currentPage === "results") {
-            await loadProducts();
-            showPage("results");
-        }
+        await refreshCatalogPresentation();
     });
-    nodes.searchButton.addEventListener("click", () => runSearchAndOpenResults());
     nodes.sortSelect.addEventListener("change", async event => {
         state.selection.sort = event.target.value;
-        if (state.currentPage === "results") {
-            await loadProducts();
-            showPage("results");
+        if (hasActiveCatalogQuery()) {
+            await refreshCatalogPresentation();
         }
     });
     nodes.checkoutButton.addEventListener("click", () => {
@@ -174,14 +170,21 @@ function bindEvents() {
     });
     nodes.checkoutForm.addEventListener("submit", submitOrder);
     nodes.addProductButton?.addEventListener("click", () => renderProductEditor(null));
-    nodes.headerBackButton.addEventListener("click", () => {
+    nodes.headerBackButton.addEventListener("click", async () => {
         if (state.currentPage === "checkout") {
+            await resetCatalogSelection();
             showPage("catalog");
             setCatalogMode("cart");
         } else if (state.currentPage === "results") {
+            await resetCatalogSelection();
             showPage("catalog");
             setCatalogMode("catalog");
+        } else if (state.currentPage === "catalog") {
+            await resetCatalogSelection();
+            setCatalogMode("catalog");
+            showPage("home");
         } else {
+            await resetCatalogSelection();
             showPage("home");
         }
     });
@@ -324,6 +327,34 @@ function showPage(page) {
     nodes.pageCaption.classList.toggle("hidden", !meta[1]);
 }
 
+function hasActiveCatalogQuery() {
+    return Boolean(
+        (state.selection.search || "").trim()
+        || state.selection.culture
+        || state.selection.category
+        || state.selection.group
+    );
+}
+
+function scheduleLiveCatalogUpdate() {
+    window.clearTimeout(liveSearchTimer);
+    liveSearchTimer = window.setTimeout(() => {
+        refreshCatalogPresentation().catch(error => {
+            console.error("Live catalog update failed", error);
+            showToast("Не удалось обновить каталог");
+        });
+    }, 220);
+}
+
+async function refreshCatalogPresentation() {
+    await loadProducts();
+    if (hasActiveCatalogQuery()) {
+        showPage("results");
+    } else if (state.currentPage === "results") {
+        showPage("catalog");
+    }
+}
+
 function setCatalogMode(mode) {
     state.catalogMode = mode;
     nodes.catalogModeButton.classList.toggle("active", mode === "catalog");
@@ -364,8 +395,7 @@ function buildGroupCard(group, interactive) {
             state.selection.category = group.exactCategory || "";
             renderCatalogGroups();
             renderFilterPills();
-            await loadProducts();
-            showPage("results");
+            await refreshCatalogPresentation();
         });
     } else {
         button.addEventListener("click", async () => {
@@ -374,27 +404,24 @@ function buildGroupCard(group, interactive) {
             state.selection.category = group.exactCategory || "";
             renderCatalogGroups();
             renderFilterPills();
-            await loadProducts();
-            showPage("results");
+            await refreshCatalogPresentation();
         });
     }
     return button;
 }
 
 function renderFilterPills() {
-    renderSelectableGroup(nodes.cultureChips, ["Все культуры", ...state.filters.cultures], state.selection.culture, value => {
+    renderSelectableGroup(nodes.cultureChips, ["Все культуры", ...state.filters.cultures], state.selection.culture, async value => {
         state.selection.culture = value === "Все культуры" ? "" : value;
         renderFilterPills();
-        if (state.currentPage === "results") {
-            loadProducts();
-        }
+        await refreshCatalogPresentation();
     });
-    renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, value => {
+    renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, async value => {
         state.selection.category = value === "Все категории" ? "" : value;
         state.selection.group = "";
         renderFilterPills();
         renderCatalogGroups();
-        loadProducts().then(() => showPage("results"));
+        await refreshCatalogPresentation();
     });
 }
 
@@ -439,11 +466,7 @@ function renderProducts() {
             </div>
             <div class="product-copy">
                 <h4 class="product-name">${escapeHtml(product.name)}</h4>
-                <p class="product-description">${escapeHtml(product.description || "Товар доступен для заказа.")}</p>
-            </div>
-            <div class="meta-badges product-meta-row">
-                ${(product.cultures || []).slice(0, 2).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("")}
-                ${(product.tags || []).slice(0, 2).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("")}
+                <p class="product-description">${escapeHtml(compactDescription(product.description || "Товар доступен для заказа.", 132))}</p>
             </div>
             <div class="product-bottom">
                 <div class="price">
@@ -483,10 +506,12 @@ function openProductModal(product) {
     nodes.productModalType.textContent = product.itemType || product.category || "Товар";
     nodes.productModalTitle.textContent = product.name || "Товар";
     nodes.productModalDescription.textContent = product.description || "Товар доступен для заказа.";
-    nodes.productModalTags.innerHTML = [
+    const modalTags = [
         ...(product.cultures || []).slice(0, 4),
         ...(product.tags || []).slice(0, 4),
-    ].map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("");
+    ];
+    nodes.productModalTags.innerHTML = modalTags.map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("");
+    nodes.productModalTags.classList.toggle("hidden", modalTags.length === 0);
     nodes.productModalStock.textContent = product.stockQuantity == null
         ? "Наличие уточняется"
         : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`;
@@ -501,11 +526,23 @@ function closeProductModal() {
     document.body.style.overflow = "";
 }
 
+async function resetCatalogSelection() {
+    state.selection.culture = "";
+    state.selection.category = "";
+    state.selection.search = "";
+    state.selection.group = "";
+    nodes.searchInput.value = "";
+    window.clearTimeout(liveSearchTimer);
+    syncSearchUi();
+    renderFilterPills();
+    renderCatalogGroups();
+    await loadProducts();
+}
+
 async function runSearchAndOpenResults() {
     state.selection.search = nodes.searchInput.value.trim();
     syncSearchUi();
-    await loadProducts();
-    showPage("results");
+    await refreshCatalogPresentation();
 }
 
 function renderCart() {
@@ -861,6 +898,17 @@ function formatPrice(value) {
     const number = Number(value || 0);
     if (!Number.isFinite(number) || number <= 0) return "По запросу";
     return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number)} ₽`;
+}
+
+function compactDescription(value, maxLength) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) {
+        return "Товар доступен для заказа.";
+    }
+    if (text.length <= maxLength) {
+        return text;
+    }
+    return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 function initials(value) {

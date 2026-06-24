@@ -1,23 +1,26 @@
 <svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="sprayerBody" x1="49" y1="30" x2="100" y2="126" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#7DD750"/>
+    <linearGradient id="pestBg" x1="80" y1="22" x2="80" y2="138" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAFFF5"/>
+      <stop offset="1" stop-color="#EDF8E1"/>
+    </linearGradient>
+    <linearGradient id="pestGreen" x1="52" y1="35" x2="110" y2="123" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#81DA54"/>
       <stop offset="1" stop-color="#4A972E"/>
     </linearGradient>
   </defs>
-  <ellipse cx="82" cy="128" rx="34" ry="10" fill="#E8F6DE"/>
-  <path d="M61 43C61 35.82 66.82 30 74 30H92C99.18 30 105 35.82 105 43V107C105 114.18 99.18 120 92 120H74C66.82 120 61 114.18 61 107V43Z" fill="url(#sprayerBody)"/>
-  <path d="M68 43C68 39.686 70.686 37 74 37H92C95.314 37 98 39.686 98 43V50H68V43Z" fill="#F5FFE9"/>
-  <path d="M105 47H114C119.523 47 124 51.477 124 57V61H116V58C116 55.791 114.209 54 112 54H105V47Z" fill="#5EA735"/>
-  <path d="M120 60H129C132.866 60 136 63.134 136 67V72" stroke="#5EA735" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="135" cy="81" r="4" fill="#7DD750"/>
-  <circle cx="129" cy="88" r="3.5" fill="#BFEAAB"/>
-  <circle cx="140" cy="91" r="3" fill="#A9DD8E"/>
-  <path d="M72 61C72 58.791 73.791 57 76 57H90C92.209 57 94 58.791 94 61V84C94 87.314 91.314 90 88 90H78C74.686 90 72 87.314 72 84V61Z" fill="#F8FFF4"/>
-  <path d="M83 64C87.986 70.626 91 74.91 91 80C91 85.523 86.523 90 81 90C75.477 90 71 85.523 71 80C71 74.91 74.014 70.626 79 64L81 61L83 64Z" fill="#5BA436"/>
-  <path d="M81 72V86" stroke="#F7FFF0" stroke-width="4" stroke-linecap="round"/>
-  <path d="M81 73C77.877 68.813 74.242 66.754 70 66.5C70.675 71.101 72.974 74.7 76.629 76.996C79.267 78.654 81.612 78.051 81 73Z" fill="#F7FFF0"/>
-  <path d="M81 81C84.731 76.887 88.867 74.987 93.5 75C92.758 79.386 90.461 82.797 86.871 84.95C84.269 86.51 81.984 85.96 81 81Z" fill="#F7FFF0"/>
-  <path d="M72 120V129" stroke="#5A9C35" stroke-width="5" stroke-linecap="round"/>
-  <path d="M94 120V129" stroke="#5A9C35" stroke-width="5" stroke-linecap="round"/>
+  <rect x="26" y="24" width="108" height="108" rx="30" fill="url(#pestBg)"/>
+  <path d="M58 48C58 40.268 64.268 34 72 34H88C95.732 34 102 40.268 102 48V108C102 115.732 95.732 122 88 122H72C64.268 122 58 115.732 58 108V48Z" fill="url(#pestGreen)"/>
+  <rect x="64" y="42" width="32" height="12" rx="5.5" fill="#F6FFF0"/>
+  <path d="M102 48H112C118.627 48 124 53.373 124 60V64H116V60C116 57.791 114.209 56 112 56H102V48Z" fill="#5AA536"/>
+  <path d="M122 64H130C133.866 64 137 67.134 137 71V76" stroke="#5AA536" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="136" cy="84" r="4" fill="#7ED84F"/>
+  <circle cx="130" cy="91" r="3.5" fill="#B8E9A5"/>
+  <path d="M70 64C70 60.686 72.686 58 76 58H84C87.314 58 90 60.686 90 64V82C90 86.418 86.418 90 82 90H78C73.582 90 70 86.418 70 82V64Z" fill="#F8FFF5"/>
+  <path d="M80 64L90 68V77C90 85.107 85.175 91.567 80 94C74.825 91.567 70 85.107 70 77V68L80 64Z" fill="#5BA436"/>
+  <path d="M80 71V87" stroke="#F6FFF0" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M73.5 79.5L77.5 83.5L86.5 74.5" stroke="#F6FFF0" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M69 122V130" stroke="#5A9C35" stroke-width="5" stroke-linecap="round"/>
+  <path d="M91 122V130" stroke="#5A9C35" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="80" cy="134" rx="30" ry="8" fill="#E1F3D4"/>
 </svg>

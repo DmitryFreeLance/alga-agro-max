@@ -329,7 +329,7 @@ button { border: none; cursor: pointer; }
 }
 .control-row { display: grid; grid-template-columns: 1fr auto; gap: 0.65rem; margin-top: 0.1rem; }
 .control-row-compact {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-items: end;
 }
 .select-field, .input-field { display: grid; gap: 0.45rem; }
@@ -424,7 +424,7 @@ button { border: none; cursor: pointer; }
 .product-copy {
     display: grid;
     gap: 0.32rem;
-    min-height: 6.35rem;
+    min-height: 5.8rem;
 }
 .product-name {
     margin: 0;
@@ -454,10 +454,6 @@ button { border: none; cursor: pointer; }
 .price { display: grid; gap: 0.18rem; }
 .price strong { font-size: 1.08rem; }
 .stock { color: var(--muted); font-size: 0.82rem; }
-.product-meta-row {
-    min-height: 2.25rem;
-    align-content: start;
-}
 .product-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
