@@ -1,6 +1,7 @@
 package ru.algaagro.maxapp.service;
 
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,7 @@ public class KeyboardFactory {
     public List<Map<String, Object>> mainMenu(boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
         rows.add(List.of(openAppButton("📦 Открыть каталог", appProperties.getMiniAppUrl())));
-        rows.add(List.of(linkButton("💬 Связаться с менеджером", appProperties.getManagerContactUrl())));
+        rows.add(List.of(linkButton("💬 Связаться с менеджером", normalizeHttpLink(appProperties.getManagerContactUrl()))));
         if (admin) {
             rows.add(List.of(messageButton("🛠 Админ панель")));
         }
@@ -103,6 +104,22 @@ public class KeyboardFactory {
         button.put("text", text);
         button.put("web_app", url);
         return button;
+    }
+
+    private String normalizeHttpLink(String rawUrl) {
+        String value = rawUrl == null ? "" : rawUrl.trim();
+        if (value.isBlank()) {
+            return "https://max.ru/id27849376";
+        }
+        String normalized = value.replace("max://", "https://");
+        String lowercase = normalized.toLowerCase(Locale.ROOT);
+        if (lowercase.startsWith("http://") || lowercase.startsWith("https://")) {
+            return normalized;
+        }
+        if (lowercase.startsWith("max.ru/")) {
+            return "https://" + normalized;
+        }
+        return "https://max.ru/id27849376";
     }
 
     public List<Map<String, Object>> inlineKeyboard(List<List<Map<String, Object>>> buttons) {

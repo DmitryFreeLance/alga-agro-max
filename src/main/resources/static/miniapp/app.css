@@ -321,6 +321,12 @@ img {
     box-shadow: var(--shadow);
     display: grid;
     min-width: 0;
+    cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.product-card:active {
+    transform: translateY(1px) scale(0.995);
 }
 
 .product-card-visual {
@@ -990,6 +996,11 @@ img {
     padding: 12px;
 }
 
+.admin-menu {
+    flex-direction: column;
+    flex-wrap: nowrap;
+}
+
 .admin-content {
     display: grid;
     gap: 12px;
@@ -1105,6 +1116,81 @@ img {
     justify-content: flex-end;
     gap: 10px;
     flex-wrap: wrap;
+}
+
+@media (max-width: 819px) {
+    .admin-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-menu-wrap {
+        overflow: hidden;
+    }
+
+    .admin-menu-btn {
+        width: 100%;
+        justify-content: space-between;
+        text-align: left;
+    }
+
+    .admin-table-wrap {
+        overflow: visible;
+    }
+
+    .admin-table,
+    .admin-table thead,
+    .admin-table tbody,
+    .admin-table tr,
+    .admin-table th,
+    .admin-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .admin-table {
+        min-width: 0;
+    }
+
+    .admin-table thead {
+        display: none;
+    }
+
+    .admin-table tbody {
+        display: grid;
+        gap: 12px;
+    }
+
+    .admin-table tr {
+        background: #f7fbf5;
+        border: 1px solid rgba(30, 43, 31, 0.08);
+        border-radius: 16px;
+        padding: 10px 12px;
+    }
+
+    .admin-table td {
+        border-bottom: 0;
+        padding: 6px 0;
+    }
+
+    .admin-table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 4px;
+        color: var(--text-500);
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+
+    .admin-form-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
 
 .admin-split {

@@ -6,27 +6,39 @@ const queryUserId = new URLSearchParams(window.location.search).get("maxUserId")
 const SECTION_VISUALS = [
     {
         match: ["гербиц"],
-        icon: "./assets/category-pesticides-flaticon.png",
+        icon: "./assets/category-herbicides-ref.png",
         palette: ["#bfeec2", "#e7f6d3"],
         description: "Защита от сорняков",
     },
     {
         match: ["фунгиц"],
-        icon: "./assets/category-other.svg",
+        icon: "./assets/category-fungicides-ref.png",
         palette: ["#bfeee2", "#def7de"],
         description: "Защита от болезней",
     },
     {
         match: ["инсекти"],
-        icon: "./assets/category-other.svg",
+        icon: "./assets/category-insecticides-ref.png",
         palette: ["#ffeeb9", "#ffd7ab"],
         description: "Защита от вредителей",
+    },
+    {
+        match: ["адъюв", "адьюв"],
+        icon: "./assets/category-adjuvants-ref.png",
+        palette: ["#d9edf0", "#d3f4e1"],
+        description: "Прилипатели и вспомогательные компоненты",
     },
     {
         match: ["семен", "озим", "яров"],
         icon: "./assets/category-seeds-flaticon.png",
         palette: ["#fff2b7", "#ffd681"],
         description: "Зерновые, масличные, бобовые",
+    },
+    {
+        match: ["пестиц", "сзр"],
+        icon: "./assets/category-pesticides-ref.png",
+        palette: ["#dff3d8", "#eaf7d8"],
+        description: "Комплексная защита растений",
     },
     {
         match: ["агрохим", "удобр", "агропитан", "питан", "микро", "биостим"],
@@ -178,6 +190,24 @@ function render() {
     `;
 }
 
+function renderPreservingFocus() {
+    const active = document.activeElement;
+    const field = active?.dataset?.field;
+    const selectionStart = typeof active?.selectionStart === "number" ? active.selectionStart : null;
+    const selectionEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
+    render();
+    if (!field) {
+        return;
+    }
+    const next = root.querySelector(`[data-field="${CSS.escape(field)}"]`);
+    if (next && typeof next.focus === "function") {
+        next.focus({ preventScroll: true });
+        if (selectionStart !== null && selectionEnd !== null && typeof next.setSelectionRange === "function") {
+            next.setSelectionRange(selectionStart, selectionEnd);
+        }
+    }
+}
+
 function renderTopbar() {
     const activeTitle = getTopbarTitle();
     return `
@@ -319,8 +349,8 @@ function renderProductCard(product) {
     const cartItem = getCartItem(product.id);
     const price = renderProductPrice(product);
     return `
-        <article class="product-card">
-            <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});" data-action="open-product" data-product-id="${product.id}">
+        <article class="product-card" data-action="open-product" data-product-id="${product.id}">
+            <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
                 <img src="${visual.icon}" alt="${escapeAttr(product.name)}">
                 <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
             </div>
@@ -606,13 +636,13 @@ function renderAdminDashboard() {
                     <tbody>
                         ${(dashboard.latestOrders || []).map(order => `
                             <tr>
-                                <td>${escapeHtml(order.publicCode)}</td>
-                                <td>${escapeHtml(order.customerName || "")}</td>
-                                <td>${escapeHtml(order.customerPhone || "")}</td>
-                                <td>${escapeHtml(order.items.map(item => item.productName).join(", "))}</td>
-                                <td>${formatDate(order.createdAt)}</td>
-                                <td>${escapeHtml(order.statusLabel)}</td>
-                                <td><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                                <td data-label="Номер">${escapeHtml(order.publicCode)}</td>
+                                <td data-label="Клиент">${escapeHtml(order.customerName || "")}</td>
+                                <td data-label="Телефон">${escapeHtml(order.customerPhone || "")}</td>
+                                <td data-label="Товары">${escapeHtml(order.items.map(item => item.productName).join(", "))}</td>
+                                <td data-label="Дата">${formatDate(order.createdAt)}</td>
+                                <td data-label="Статус">${escapeHtml(order.statusLabel)}</td>
+                                <td data-label="Действие"><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -670,13 +700,13 @@ function renderAdminCatalog() {
                         <tbody>
                             ${products.map(product => `
                                 <tr>
-                                    <td>${escapeHtml(product.name)}</td>
-                                    <td>${escapeHtml(product.category || "Прочее")}${product.subcategory ? `<div class="search-muted">${escapeHtml(product.subcategory)}</div>` : ""}</td>
-                                    <td>${escapeHtml(product.brand || "—")}</td>
-                                    <td>${product.price == null ? "По запросу" : formatPrice(product.price)}</td>
-                                    <td>${product.stockQuantity ?? "—"}</td>
-                                    <td>${product.active ? "Активен" : "Скрыт"}</td>
-                                    <td><button class="table-action" data-action="open-admin-product" data-product-id="${product.id}">Открыть</button></td>
+                                    <td data-label="Товар">${escapeHtml(product.name)}</td>
+                                    <td data-label="Раздел">${escapeHtml(product.category || "Прочее")}${product.subcategory ? `<div class="search-muted">${escapeHtml(product.subcategory)}</div>` : ""}</td>
+                                    <td data-label="Производитель">${escapeHtml(product.brand || "—")}</td>
+                                    <td data-label="Цена">${product.price == null ? "По запросу" : formatPrice(product.price)}</td>
+                                    <td data-label="Остаток">${product.stockQuantity ?? "—"}</td>
+                                    <td data-label="Статус">${product.active ? "Активен" : "Скрыт"}</td>
+                                    <td data-label="Действие"><button class="table-action" data-action="open-admin-product" data-product-id="${product.id}">Открыть</button></td>
                                 </tr>
                             `).join("")}
                         </tbody>
@@ -700,9 +730,9 @@ function renderAdminManufacturers() {
                     <tbody>
                         ${state.admin.manufacturers.map(item => `
                             <tr>
-                                <td>${escapeHtml(item.name)}</td>
-                                <td>${item.productsCount}</td>
-                                <td>
+                                <td data-label="Название">${escapeHtml(item.name)}</td>
+                                <td data-label="Товаров">${item.productsCount}</td>
+                                <td data-label="Действие">
                                     <div style="display:flex;gap:8px;">
                                         <button class="table-action" data-action="edit-manufacturer" data-id="${item.id || ""}" data-name="${escapeAttr(item.name)}">Редактировать</button>
                                         ${item.id ? `<button class="table-action" data-action="delete-manufacturer" data-id="${item.id}">Удалить</button>` : ""}
@@ -748,13 +778,13 @@ function renderAdminOrders() {
                     <tbody>
                         ${orders.map(order => `
                             <tr>
-                                <td>${escapeHtml(order.publicCode)}</td>
-                                <td>${escapeHtml(order.customerName || "")}</td>
-                                <td>${escapeHtml(order.customerPhone || "")}</td>
-                                <td>${formatPrice(order.totalPrice || 0)}</td>
-                                <td>${formatDate(order.createdAt)}</td>
-                                <td>${escapeHtml(order.statusLabel)}</td>
-                                <td><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                                <td data-label="Номер">${escapeHtml(order.publicCode)}</td>
+                                <td data-label="Клиент">${escapeHtml(order.customerName || "")}</td>
+                                <td data-label="Телефон">${escapeHtml(order.customerPhone || "")}</td>
+                                <td data-label="Сумма">${formatPrice(order.totalPrice || 0)}</td>
+                                <td data-label="Дата">${formatDate(order.createdAt)}</td>
+                                <td data-label="Статус">${escapeHtml(order.statusLabel)}</td>
+                                <td data-label="Действие"><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -1336,7 +1366,7 @@ function handleInput(event) {
     if (!field) return;
     if (field === "catalog-query") {
         state.catalog.query = event.target.value;
-        render();
+        renderPreservingFocus();
         return;
     }
     if (field.startsWith("checkout-")) {
@@ -1349,17 +1379,17 @@ function handleInput(event) {
     }
     if (field === "admin-product-search") {
         state.admin.catalogSearch = event.target.value;
-        render();
+        renderPreservingFocus();
         return;
     }
     if (field === "admin-order-search") {
         state.admin.orderFilters.search = event.target.value;
-        render();
+        renderPreservingFocus();
         return;
     }
     if (field === "broadcast-text") {
         state.admin.broadcastForm.text = event.target.value;
-        render();
+        renderPreservingFocus();
         return;
     }
     if (field === "filter-price-min") {

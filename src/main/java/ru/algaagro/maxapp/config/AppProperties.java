@@ -9,7 +9,7 @@ public class AppProperties {
 
     private String publicBaseUrl;
     private String miniAppUrl;
-    private String managerContactUrl = "max://max.ru/id27849376";
+    private String managerContactUrl = "https://max.ru/id27849376";
     private List<Long> startupAdminUserIds = new ArrayList<>();
     private final MaxProperties max = new MaxProperties();
     private final AiProperties ai = new AiProperties();
