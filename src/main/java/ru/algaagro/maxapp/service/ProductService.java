@@ -82,10 +82,11 @@ public class ProductService {
     }
 
     @Transactional
-    public CatalogProduct upsertProduct(ImportedProduct importedProduct) {
+    public UpsertResult upsertProduct(ImportedProduct importedProduct) {
         CatalogProduct product = importedProduct.externalId() == null
                 ? null
                 : catalogProductRepository.findByExternalId(importedProduct.externalId()).orElse(null);
+        boolean created = product == null;
         if (product == null) {
             product = new CatalogProduct();
         }
@@ -110,7 +111,7 @@ public class ProductService {
         product.setFilterMapJson(jsonHelper.writeValue(importedProduct.filterMap()));
         product.setRawDataJson(jsonHelper.writeValue(importedProduct.rawData()));
         product.setActive(true);
-        return catalogProductRepository.save(product);
+        return new UpsertResult(catalogProductRepository.save(product), created);
     }
 
     public List<String> getStringList(String json) {
@@ -248,6 +249,12 @@ public class ProductService {
             filterMap = filterMap == null ? new LinkedHashMap<>() : filterMap;
             rawData = rawData == null ? new LinkedHashMap<>() : rawData;
         }
+    }
+
+    public record UpsertResult(
+            CatalogProduct product,
+            boolean created
+    ) {
     }
 
     public record AdminProductPayload(

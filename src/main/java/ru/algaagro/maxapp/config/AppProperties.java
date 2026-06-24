@@ -97,11 +97,12 @@ public class AppProperties {
         private String kieBaseUrl;
         private String kieApiKey;
         private String kieModel = "gpt-5-5";
-        private int kieTimeoutSeconds = 150;
+        private int kieTimeoutSeconds = 300;
+        private int kieBatchSize = 500;
         private String kieGeminiApiKey;
         private String kieGeminiModel = "gemini-3-5-flash-openai";
         private String kieGeminiEndpoint = "/gemini-3-5-flash-openai/v1/chat/completions";
-        private int geminiTimeoutSeconds = 200;
+        private int geminiTimeoutSeconds = 300;
 
         public String getKieBaseUrl() {
             return kieBaseUrl;
@@ -133,6 +134,14 @@ public class AppProperties {
 
         public void setKieTimeoutSeconds(int kieTimeoutSeconds) {
             this.kieTimeoutSeconds = kieTimeoutSeconds;
+        }
+
+        public int getKieBatchSize() {
+            return kieBatchSize;
+        }
+
+        public void setKieBatchSize(int kieBatchSize) {
+            this.kieBatchSize = kieBatchSize;
         }
 
         public String getKieGeminiApiKey() {

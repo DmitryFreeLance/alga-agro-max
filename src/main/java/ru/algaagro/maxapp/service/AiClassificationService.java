@@ -33,7 +33,9 @@ public class AiClassificationService {
 
     public List<ClassificationResult> classify(List<ExcelImportService.ImportRow> rows, List<String> knownCultures) {
         List<ClassificationResult> results = new ArrayList<>();
-        List<List<ExcelImportService.ImportRow>> chunks = chunk(rows, 20);
+        int batchSize = Math.max(1, appProperties.getAi().getKieBatchSize());
+        List<List<ExcelImportService.ImportRow>> chunks = chunk(rows, batchSize);
+        log.info("AI classification started. rows={}, requests={}, batchSize={}", rows.size(), chunks.size(), batchSize);
         for (List<ExcelImportService.ImportRow> chunk : chunks) {
             String prompt = buildPrompt(chunk, knownCultures);
             String rawResponse = callKie(prompt);
@@ -89,8 +91,11 @@ public class AiClassificationService {
                 }
             }
             return response.body();
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn("Kie AI request interrupted: {}", e.getMessage());
+            return null;
+        } catch (IOException e) {
             log.warn("Kie AI request failed: {}", e.getMessage());
             return null;
         }
@@ -129,8 +134,11 @@ public class AiClassificationService {
                 return content.asText();
             }
             return response.body();
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn("Gemini request interrupted: {}", e.getMessage());
+            return null;
+        } catch (IOException e) {
             log.warn("Gemini request failed: {}", e.getMessage());
             return null;
         }

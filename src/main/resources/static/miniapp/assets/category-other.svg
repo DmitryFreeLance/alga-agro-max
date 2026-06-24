@@ -1,26 +1,18 @@
-<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="otherCrate" x1="33" y1="39" x2="97" y2="94" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#7BD651"/>
-      <stop offset="1" stop-color="#498F2D"/>
-    </linearGradient>
-    <linearGradient id="otherBox" x1="39" y1="34" x2="89" y2="83" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F9FFF4"/>
-      <stop offset="1" stop-color="#DDF5CF"/>
+    <linearGradient id="crate" x1="40" y1="43" x2="113" y2="117" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7BD650"/>
+      <stop offset="1" stop-color="#4B972F"/>
     </linearGradient>
   </defs>
-  <path d="M28 87C28 79.82 33.82 74 41 74H87C94.18 74 100 79.82 100 87V94C100 101.18 94.18 107 87 107H41C33.82 107 28 101.18 28 94V87Z" fill="#E7F8DC"/>
-  <path d="M37 49C37 44.582 40.582 41 45 41H83C87.418 41 91 44.582 91 49V89C91 93.418 87.418 97 83 97H45C40.582 97 37 93.418 37 89V49Z" fill="url(#otherCrate)"/>
-  <path d="M45 41H83C85.429 41 87.648 42.381 88.719 44.56L96 59H32L39.281 44.56C40.352 42.381 42.571 41 45 41Z" fill="#5AA835"/>
-  <path d="M43 51C43 47.686 45.686 45 49 45H79C82.314 45 85 47.686 85 51V74C85 77.314 82.314 80 79 80H49C45.686 80 43 77.314 43 74V51Z" fill="url(#otherBox)"/>
-  <path d="M48 51H80" stroke="#69B940" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M64 51V80" stroke="#69B940" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M50.5 66H60.5" stroke="#69B940" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M68 66H77.5" stroke="#69B940" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M49 87H79" stroke="#DDF5CF" stroke-width="4" stroke-linecap="round"/>
-  <path d="M103 42.5C103 47.747 98.747 52 93.5 52C88.253 52 84 47.747 84 42.5C84 37.253 88.253 33 93.5 33C98.747 33 103 37.253 103 42.5Z" fill="#F7FFF1"/>
-  <path d="M93.5 37V48" stroke="#5FAE38" stroke-width="3.4" stroke-linecap="round"/>
-  <path d="M88 42.5H99" stroke="#5FAE38" stroke-width="3.4" stroke-linecap="round"/>
-  <path d="M46 101C51 95.667 56 95.667 61 101" stroke="#64AF3C" stroke-width="3.2" stroke-linecap="round"/>
-  <path d="M67 101C71 97.333 75 97 79 100.5" stroke="#64AF3C" stroke-width="3.2" stroke-linecap="round"/>
+  <ellipse cx="80" cy="127" rx="39" ry="10" fill="#E7F6DD"/>
+  <path d="M46 58C46 49.163 53.163 42 62 42H98C106.837 42 114 49.163 114 58V107C114 115.837 106.837 123 98 123H62C53.163 123 46 115.837 46 107V58Z" fill="url(#crate)"/>
+  <path d="M58 52C58 47.582 61.582 44 66 44H94C98.418 44 102 47.582 102 52V58H58V52Z" fill="#F6FFF0"/>
+  <path d="M58 68H102" stroke="#E8F8DD" stroke-width="6" stroke-linecap="round"/>
+  <path d="M80 68V114" stroke="#E8F8DD" stroke-width="6" stroke-linecap="round"/>
+  <path d="M61 87H75" stroke="#E8F8DD" stroke-width="6" stroke-linecap="round"/>
+  <path d="M85 87H99" stroke="#E8F8DD" stroke-width="6" stroke-linecap="round"/>
+  <path d="M124 48C124 56.284 117.284 63 109 63C100.716 63 94 56.284 94 48C94 39.716 100.716 33 109 33C117.284 33 124 39.716 124 48Z" fill="#F7FFF1"/>
+  <path d="M109 40V56" stroke="#5DA736" stroke-width="5" stroke-linecap="round"/>
+  <path d="M101 48H117" stroke="#5DA736" stroke-width="5" stroke-linecap="round"/>
 </svg>

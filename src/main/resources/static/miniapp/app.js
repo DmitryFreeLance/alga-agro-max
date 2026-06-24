@@ -1,7 +1,7 @@
 const BASE_GROUPS = [
-    { key: "seeds", title: "Семена", iconPath: "./assets/category-seeds.svg", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
-    { key: "pesticides", title: "Пестициды", iconPath: "./assets/category-pesticides.svg", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
-    { key: "nutrition", title: "Агропитание", iconPath: "./assets/category-nutrition.svg", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
+    { key: "seeds", title: "Семена", iconPath: "./assets/category-seeds.svg", visualLabel: "Семена", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
+    { key: "pesticides", title: "Пестициды", iconPath: "./assets/category-pesticides.svg", visualLabel: "Защита", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
+    { key: "nutrition", title: "Агропитание", iconPath: "./assets/category-nutrition.svg", visualLabel: "Питание", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
 ];
 
 const state = {
@@ -73,8 +73,23 @@ const nodes = {
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
-const resolvedUserId = initDataUnsafe?.user?.id || initDataUnsafe?.user?.user_id || queryUserId;
-state.maxUserId = resolvedUserId ? Number(resolvedUserId) : null;
+state.maxUserId = resolveMaxUserId();
+
+if (maxBridge?.ready) {
+    try {
+        maxBridge.ready();
+    } catch (error) {
+        console.warn("MAX WebApp.ready failed", error);
+    }
+}
+
+if (maxBridge?.expand) {
+    try {
+        maxBridge.expand();
+    } catch (error) {
+        console.warn("MAX WebApp.expand failed", error);
+    }
+}
 
 bootstrap();
 
@@ -196,6 +211,7 @@ async function loadProfile() {
     state.profileOrders = await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`);
     renderProfile();
     if (state.profile.admin) {
+        rememberMaxUserId(state.maxUserId);
         const [products, orders] = await Promise.all([
             fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`),
             fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`),
@@ -203,6 +219,60 @@ async function loadProfile() {
         state.adminProducts = products;
         state.adminOrders = orders;
         renderAdminSection();
+    } else if (state.maxUserId) {
+        rememberMaxUserId(state.maxUserId);
+    }
+}
+
+function resolveMaxUserId() {
+    const candidates = [
+        initDataUnsafe?.user?.id,
+        initDataUnsafe?.user?.user_id,
+        parseUserIdFromInitData(maxBridge?.initData),
+        parseUserIdFromInitData(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash),
+        parseUserIdFromInitData(window.location.search.startsWith("?") ? window.location.search.slice(1) : window.location.search),
+        queryUserId,
+        window.localStorage?.getItem("algaAgroMaxUserId"),
+    ];
+    for (const candidate of candidates) {
+        const parsed = Number(candidate);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+    return null;
+}
+
+function parseUserIdFromInitData(rawValue) {
+    if (!rawValue || typeof rawValue !== "string") {
+        return null;
+    }
+    try {
+        const params = new URLSearchParams(rawValue);
+        const directUserId = params.get("user_id");
+        if (directUserId) {
+            return directUserId;
+        }
+        const userRaw = params.get("user");
+        if (!userRaw) {
+            return null;
+        }
+        const parsedUser = JSON.parse(userRaw);
+        return parsedUser?.id || parsedUser?.user_id || null;
+    } catch (error) {
+        console.warn("Failed to parse MAX initData", error);
+        return null;
+    }
+}
+
+function rememberMaxUserId(userId) {
+    if (!userId) {
+        return;
+    }
+    try {
+        window.localStorage?.setItem("algaAgroMaxUserId", String(userId));
+    } catch (error) {
+        console.warn("Failed to store MAX user id", error);
     }
 }
 
@@ -254,6 +324,7 @@ function buildGroupCard(group, interactive) {
     if (state.selection.group === group.key) button.classList.add("active");
     button.innerHTML = `
         <div class="group-illustration">
+            <span class="group-visual-tag">${escapeHtml(group.visualLabel || shortGroupLabel(group.title))}</span>
             <img class="group-icon-asset" src="${escapeAttr(group.iconPath)}" alt="${escapeAttr(group.title)}">
         </div>
         <div class="group-card-footer">
@@ -560,6 +631,7 @@ function getGroupDefinitions() {
             key: `dynamic:${slugify(category)}`,
             title: category,
             iconPath: iconForCategory(category),
+            visualLabel: shortGroupLabel(category),
             description: "Дополнительная группа",
             categories: [category],
             exactCategory: category,
@@ -600,9 +672,21 @@ function categoryMatchesGroup(category, group) {
 function iconForCategory(category) {
     const normalized = normalizeToken(category);
     if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "./assets/category-seeds.svg";
-    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав")) return "./assets/category-pesticides.svg";
-    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан")) return "./assets/category-nutrition.svg";
+    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав") || normalized.includes("десик")) return "./assets/category-pesticides.svg";
+    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан") || normalized.includes("азот") || normalized.includes("цинк") || normalized.includes("бор") || normalized.includes("npk")) return "./assets/category-nutrition.svg";
     return "./assets/category-other.svg";
+}
+
+function shortGroupLabel(title) {
+    const words = String(title || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2);
+    if (!words.length) {
+        return "Категория";
+    }
+    return words.join(" ");
 }
 
 function normalizeToken(value) {

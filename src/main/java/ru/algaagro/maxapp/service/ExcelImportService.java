@@ -102,9 +102,19 @@ public class ExcelImportService {
 
         Set<String> knownCultures = new LinkedHashSet<>();
         productService.getActiveProducts().forEach(product -> knownCultures.addAll(productService.getStringList(product.getCulturesJson())));
+        Set<String> knownCategories = new LinkedHashSet<>();
+        productService.getActiveProducts().stream()
+                .map(product -> TextUtils.trimTo(product.getCategory(), 200))
+                .filter(Objects::nonNull)
+                .filter(value -> !value.isBlank())
+                .forEach(knownCategories::add);
         List<AiClassificationService.ClassificationResult> classified = aiClassificationService.classify(rows, new ArrayList<>(knownCultures));
 
         int created = 0;
+        int updated = 0;
+        Set<String> detectedCategories = new LinkedHashSet<>();
+        Set<String> detectedCultures = new LinkedHashSet<>();
+        Set<String> detectedPurposes = new LinkedHashSet<>();
         for (int i = 0; i < rows.size(); i++) {
             ImportRow row = rows.get(i);
             AiClassificationService.ClassificationResult result = classified.get(i);
@@ -127,12 +137,96 @@ public class ExcelImportService {
                     result.filterMap(),
                     row.columns()
             );
-            productService.upsertProduct(product);
-            created++;
+            ProductService.UpsertResult saveResult = productService.upsertProduct(product);
+            if (saveResult.created()) {
+                created++;
+            } else {
+                updated++;
+            }
+            if (result.category() != null && !result.category().isBlank()) {
+                detectedCategories.add(result.category());
+            }
+            detectedCultures.addAll(result.cultures());
+            detectedPurposes.addAll(result.purposes());
         }
         job.setStatus(ImportStatus.COMPLETED);
-        job.setSummary("Импорт завершен: обработано " + rows.size() + " строк, обновлено товаров: " + created + ".");
+        Set<String> newCategories = detectedCategories.stream()
+                .filter(category -> knownCategories.stream().noneMatch(existing -> existing.equalsIgnoreCase(category)))
+                .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
+        Set<String> newCultures = detectedCultures.stream()
+                .filter(culture -> knownCultures.stream().noneMatch(existing -> existing.equalsIgnoreCase(culture)))
+                .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
+        job.setSummary(buildImportSummary(files, rows.size(), created, updated, detectedCategories, detectedCultures, detectedPurposes, newCategories, newCultures));
         importJobRepository.save(job);
+    }
+
+    private String buildImportSummary(
+            List<Map<String, Object>> files,
+            int rowsProcessed,
+            int created,
+            int updated,
+            Set<String> categories,
+            Set<String> cultures,
+            Set<String> purposes,
+            Set<String> newCategories,
+            Set<String> newCultures
+    ) {
+        StringBuilder summary = new StringBuilder();
+        summary.append("✅ <b>Импорт завершен</b>\n\n");
+        summary.append("• Файлов обработано: <b>").append(files.size()).append("</b>\n");
+        summary.append("• Строк из прайсов: <b>").append(rowsProcessed).append("</b>\n");
+        summary.append("• Добавлено товаров: <b>").append(created).append("</b>\n");
+        summary.append("• Обновлено товаров: <b>").append(updated).append("</b>\n");
+        summary.append("• Всего затронуто товаров: <b>").append(created + updated).append("</b>\n");
+
+        if (!categories.isEmpty()) {
+            summary.append("• Категории: ").append(formatPreviewList(categories, 6)).append("\n");
+        }
+        if (!cultures.isEmpty()) {
+            summary.append("• Культуры: ").append(formatPreviewList(cultures, 8)).append("\n");
+        }
+        if (!purposes.isEmpty()) {
+            summary.append("• Назначения: ").append(formatPreviewList(purposes, 6)).append("\n");
+        }
+        if (!newCategories.isEmpty()) {
+            summary.append("• Новые категории: ").append(formatPreviewList(newCategories, 5)).append("\n");
+        }
+        if (!newCultures.isEmpty()) {
+            summary.append("• Новые культуры: ").append(formatPreviewList(newCultures, 6)).append("\n");
+        }
+
+        List<String> fileNames = files.stream()
+                .map(file -> Objects.toString(file.get("name"), "").trim())
+                .filter(name -> !name.isBlank())
+                .distinct()
+                .toList();
+        if (!fileNames.isEmpty()) {
+            summary.append("• Файлы: ").append(formatPreviewList(new LinkedHashSet<>(fileNames), 3)).append("\n");
+        }
+        return summary.toString().trim();
+    }
+
+    private String formatPreviewList(Set<String> values, int limit) {
+        List<String> ordered = values.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+        if (ordered.isEmpty()) {
+            return "—";
+        }
+        int safeLimit = Math.max(limit, 1);
+        String visible = ordered.stream()
+                .limit(safeLimit)
+                .map(value -> TextUtils.trimTo(value, 32))
+                .reduce((left, right) -> left + ", " + right)
+                .orElse("—");
+        int hidden = ordered.size() - Math.min(ordered.size(), safeLimit);
+        if (hidden > 0) {
+            visible += " и еще " + hidden;
+        }
+        return visible;
     }
 
     private List<ImportRow> parseFile(Map<String, Object> fileMeta) {
