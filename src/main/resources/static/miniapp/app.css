@@ -635,6 +635,11 @@ button { border: none; cursor: pointer; }
     font-weight: 800;
 }
 
+.remove-btn {
+    background: rgba(233, 76, 76, 0.12);
+    color: #c43a3a;
+}
+
 .qty-input {
     width: 100%;
     min-width: 0;

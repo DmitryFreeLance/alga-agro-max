@@ -1,7 +1,7 @@
 const BASE_GROUPS = [
-    { key: "seeds", title: "Семена", iconPath: "./assets/category-seeds.svg", visualLabel: "Семена", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
-    { key: "pesticides", title: "Пестициды", iconPath: "./assets/category-pesticides.svg", visualLabel: "Защита", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
-    { key: "nutrition", title: "Агропитание", iconPath: "./assets/category-nutrition.svg", visualLabel: "Питание", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
+    { key: "seeds", title: "Семена", iconPath: "./assets/category-seeds-flaticon.png", visualLabel: "Семена", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
+    { key: "pesticides", title: "Пестициды", iconPath: "./assets/category-pesticides-flaticon.png", visualLabel: "Защита", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
+    { key: "nutrition", title: "Агропитание", iconPath: "./assets/category-nutrition-flaticon.png", visualLabel: "Питание", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
 ];
 
 const state = {
@@ -25,6 +25,7 @@ const nodes = {
     catalogPage: document.getElementById("catalogPage"),
     resultsPage: document.getElementById("resultsPage"),
     catalogResultsCard: document.getElementById("catalogResultsCard"),
+    catalogGroupsCard: document.getElementById("catalogGroupsCard"),
     profilePage: document.getElementById("profilePage"),
     checkoutPage: document.getElementById("checkoutPage"),
     catalogBottomButton: document.getElementById("catalogBottomButton"),
@@ -114,7 +115,7 @@ const nodes = {
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
-const MIN_SEARCH_LENGTH = 3;
+const MIN_SEARCH_LENGTH = 1;
 let liveSearchTimer = null;
 state.maxUserId = resolveMaxUserId();
 
@@ -442,6 +443,7 @@ async function refreshCatalogPresentation() {
 function syncCatalogResultsVisibility() {
     const shouldShow = hasActiveCatalogQuery() && !shouldKeepCatalogPageOpen();
     nodes.catalogResultsCard?.classList.toggle("hidden", !shouldShow);
+    nodes.catalogGroupsCard?.classList.toggle("hidden", shouldShow);
 }
 
 function shouldKeepCatalogPageOpen() {
@@ -494,6 +496,7 @@ function buildGroupCard(group, interactive) {
             renderCatalogGroups();
             renderFilterPills();
             await refreshCatalogPresentation();
+            nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
         });
     } else {
         button.addEventListener("click", async () => {
@@ -503,6 +506,7 @@ function buildGroupCard(group, interactive) {
             renderCatalogGroups();
             renderFilterPills();
             await refreshCatalogPresentation();
+            nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
         });
     }
     return button;
@@ -912,6 +916,7 @@ function openAdminProductEditor(product) {
     setFormValue(form, "price", product.price ?? "");
     setFormValue(form, "stockQuantity", product.stockQuantity == null ? "" : formatQuantityInput(product.stockQuantity));
     setFormValue(form, "unitName", product.unitName || "шт");
+    ensureSelectOption(form.elements.namedItem("packageType"), product.packageType || "");
     setFormValue(form, "packageType", product.packageType || "");
     setFormValue(form, "packageDescription", product.packageDescription || "");
     setFormValue(form, "minOrderQuantity", product.minOrderQuantity == null ? "" : formatQuantityInput(product.minOrderQuantity));
@@ -1095,9 +1100,9 @@ function categoryMatchesGroup(category, group) {
 
 function iconForCategory(category) {
     const normalized = normalizeToken(category);
-    if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "./assets/category-seeds.svg";
-    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав") || normalized.includes("десик")) return "./assets/category-pesticides.svg";
-    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан") || normalized.includes("азот") || normalized.includes("цинк") || normalized.includes("бор") || normalized.includes("npk")) return "./assets/category-nutrition.svg";
+    if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "./assets/category-seeds-flaticon.png";
+    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав") || normalized.includes("десик")) return "./assets/category-pesticides-flaticon.png";
+    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан") || normalized.includes("азот") || normalized.includes("цинк") || normalized.includes("бор") || normalized.includes("npk")) return "./assets/category-nutrition-flaticon.png";
     return "./assets/category-other.svg";
 }
 
@@ -1399,5 +1404,18 @@ function setFormValue(form, name, value) {
     const field = form.elements.namedItem(name);
     if (field) {
         field.value = value;
+    }
+}
+
+function ensureSelectOption(field, value) {
+    if (!field || field.tagName !== "SELECT" || !value) {
+        return;
+    }
+    const exists = Array.from(field.options).some(option => option.value === value);
+    if (!exists) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        field.appendChild(option);
     }
 }

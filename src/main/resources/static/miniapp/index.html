@@ -84,7 +84,7 @@
                     </div>
                 </div>
 
-                <div class="content-card">
+                <div class="content-card" id="catalogGroupsCard">
                     <div class="section-head">
                         <div>
                             <p class="section-kicker">Разделы</p>
@@ -387,7 +387,15 @@
                 </label>
                 <label class="input-field">
                     <span>Тип упаковки</span>
-                    <input name="packageType" type="text" placeholder="Канистра / коробка / п.е. / тонна">
+                    <select name="packageType">
+                        <option value="">Не выбрано</option>
+                        <option value="канистра">Канистра</option>
+                        <option value="коробка">Коробка</option>
+                        <option value="мешок">Мешок</option>
+                        <option value="п.е.">П.е.</option>
+                        <option value="тонна">Тонна</option>
+                        <option value="паллета">Паллета</option>
+                    </select>
                 </label>
                 <label class="input-field">
                     <span>Минимальный заказ</span>
