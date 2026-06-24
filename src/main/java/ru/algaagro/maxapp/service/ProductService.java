@@ -45,7 +45,7 @@ public class ProductService {
                 .toList();
     }
 
-    public List<CatalogProduct> findFiltered(String culture, String category, String search, String tag, String sort) {
+    public List<CatalogProduct> findFiltered(String culture, String category, String search, String tag, String season, String sort) {
         Comparator<CatalogProduct> comparator = switch (sort == null ? "" : sort) {
             case "price_desc" -> Comparator.comparing(CatalogProduct::getPrice, Comparator.nullsLast(Comparator.reverseOrder()));
             case "price_asc" -> Comparator.comparing(CatalogProduct::getPrice, Comparator.nullsLast(Comparator.naturalOrder()));
@@ -57,26 +57,35 @@ public class ProductService {
                 .filter(product -> TextUtils.containsToken(product.getCulturesIndex(), culture))
                 .filter(product -> category == null || category.isBlank() || category.equalsIgnoreCase(product.getCategory()))
                 .filter(product -> TextUtils.containsToken(product.getTagsIndex(), tag))
+                .filter(product -> matchesSeason(product, season))
                 .filter(product -> normalizedSearch.isBlank() || TextUtils.normalizeToken(buildSearchText(product)).contains(normalizedSearch))
                 .sorted(comparator)
                 .collect(Collectors.toList());
     }
 
-    public Map<String, Object> buildFilterSummary() {
+    public Map<String, Object> buildFilterSummary(String culture) {
         Set<String> cultures = new LinkedHashSet<>();
         Set<String> categories = new LinkedHashSet<>();
         Set<String> tags = new LinkedHashSet<>();
-        for (CatalogProduct product : getActiveProducts()) {
+        Set<String> seasons = new LinkedHashSet<>();
+        List<CatalogProduct> activeProducts = getActiveProducts();
+        for (CatalogProduct product : activeProducts) {
             cultures.addAll(getStringList(product.getCulturesJson()));
+        }
+        for (CatalogProduct product : activeProducts.stream()
+                .filter(item -> TextUtils.containsToken(item.getCulturesIndex(), culture))
+                .toList()) {
             tags.addAll(getStringList(product.getTagsJson()));
             if (product.getCategory() != null && !product.getCategory().isBlank()) {
                 categories.add(product.getCategory());
             }
+            seasons.addAll(extractSeasonValues(product));
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("cultures", cultures);
         response.put("categories", categories);
         response.put("tags", tags);
+        response.put("seasons", seasons);
         response.put("total", getActiveProducts().size());
         return response;
     }
@@ -240,6 +249,69 @@ public class ProductService {
                 Objects.toString(product.getBrand(), ""),
                 String.join(" ", getStringList(product.getCulturesJson())),
                 String.join(" ", getStringList(product.getTagsJson())));
+    }
+
+    private boolean matchesSeason(CatalogProduct product, String season) {
+        String normalizedSeason = normalizeSeasonValue(season);
+        if (normalizedSeason.isBlank()) {
+            return true;
+        }
+        return extractSeasonValues(product).stream()
+                .map(this::normalizeSeasonValue)
+                .anyMatch(normalizedSeason::equals);
+    }
+
+    private List<String> extractSeasonValues(CatalogProduct product) {
+        LinkedHashSet<String> seasons = new LinkedHashSet<>();
+        Object seasonValue = jsonHelper.readMap(product.getFilterMapJson()).get("season");
+        seasons.addAll(toStringList(seasonValue));
+        for (String tag : getStringList(product.getTagsJson())) {
+            String normalized = normalizeSeasonValue(tag);
+            if (!normalized.isBlank()) {
+                seasons.add(displaySeasonValue(normalized));
+            }
+        }
+        return new ArrayList<>(seasons);
+    }
+
+    private List<String> toStringList(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(item -> Objects.toString(item, "").trim())
+                    .filter(item -> !item.isBlank())
+                    .map(this::displaySeasonValue)
+                    .toList();
+        }
+        String raw = Objects.toString(value, "").trim();
+        if (raw.isBlank()) {
+            return List.of();
+        }
+        return List.of(displaySeasonValue(raw));
+    }
+
+    private String normalizeSeasonValue(String value) {
+        String normalized = TextUtils.normalizeToken(value);
+        if (normalized.contains("озим")) {
+            return "озимые";
+        }
+        if (normalized.contains("яров")) {
+            return "яровые";
+        }
+        return "";
+    }
+
+    private String displaySeasonValue(String value) {
+        String normalized = normalizeSeasonValue(value);
+        if ("озимые".equals(normalized)) {
+            return "Озимые";
+        }
+        if ("яровые".equals(normalized)) {
+            return "Яровые";
+        }
+        return value == null ? "" : value.trim();
     }
 
     private Map<String, String> buildImageStyle(CatalogProduct product) {

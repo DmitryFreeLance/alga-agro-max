@@ -61,16 +61,17 @@ public class MiniAppApiController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String season,
             @RequestParam(defaultValue = "name") String sort
     ) {
-        return productService.findFiltered(culture, category, search, tag, sort).stream()
+        return productService.findFiltered(culture, category, search, tag, season, sort).stream()
                 .map(productService::toMiniAppDto)
                 .toList();
     }
 
     @GetMapping("/catalog/filters")
-    public Map<String, Object> filters() {
-        return productService.buildFilterSummary();
+    public Map<String, Object> filters(@RequestParam(required = false) String culture) {
+        return productService.buildFilterSummary(culture);
     }
 
     @PostMapping("/orders")

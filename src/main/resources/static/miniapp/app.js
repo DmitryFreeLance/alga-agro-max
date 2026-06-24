@@ -11,9 +11,9 @@ const state = {
     adminOrders: [],
     adminProducts: [],
     adminUi: { search: "", category: "all" },
-    filters: { cultures: [], categories: [], tags: [] },
+    filters: { cultures: [], categories: [], tags: [], seasons: [] },
     products: [],
-    selection: { culture: "", category: "", search: "", sort: "name", group: "" },
+    selection: { culture: "", season: "", category: "", search: "", sort: "name", group: "" },
     cart: [],
     currentPage: "catalog",
     maxUserId: null,
@@ -41,6 +41,10 @@ const nodes = {
     clearSearchButton: document.getElementById("clearSearchButton"),
     sortSelect: document.getElementById("sortSelect"),
     cultureChips: document.getElementById("cultureChips"),
+    catalogSeasonFilterBlock: document.getElementById("catalogSeasonFilterBlock"),
+    catalogSeasonChips: document.getElementById("catalogSeasonChips"),
+    seasonFilterBlock: document.getElementById("seasonFilterBlock"),
+    seasonChips: document.getElementById("seasonChips"),
     categoryPills: document.getElementById("categoryPills"),
     groupGrid: document.getElementById("groupGrid"),
     productGrid: document.getElementById("productGrid"),
@@ -268,13 +272,16 @@ async function loadMeta() {
 }
 
 async function loadFilters() {
-    state.filters = await fetchJson("/api/catalog/filters");
+    const query = new URLSearchParams();
+    if (state.selection.culture) query.set("culture", state.selection.culture);
+    state.filters = await fetchJson(`/api/catalog/filters${query.toString() ? `?${query.toString()}` : ""}`);
     renderFilterPills();
 }
 
 async function loadProducts() {
     const query = new URLSearchParams();
     if (state.selection.culture) query.set("culture", state.selection.culture);
+    if (state.selection.season) query.set("season", state.selection.season);
     if (state.selection.category) query.set("category", state.selection.category);
     if (state.selection.search) query.set("search", state.selection.search);
     if (state.selection.sort) query.set("sort", state.selection.sort);
@@ -394,6 +401,7 @@ function hasActiveCatalogQuery() {
     return Boolean(
         (state.selection.search || "").trim()
         || state.selection.culture
+        || state.selection.season
         || state.selection.category
         || state.selection.group
     );
@@ -411,11 +419,24 @@ function scheduleLiveCatalogUpdate() {
 
 async function refreshCatalogPresentation() {
     await loadProducts();
-    if (hasActiveCatalogQuery()) {
+    if (shouldKeepCatalogPageOpen()) {
+        showPage("catalog");
+    } else if (hasActiveCatalogQuery()) {
         showPage("results");
     } else if (state.currentPage === "results") {
         showPage("catalog");
     }
+}
+
+function shouldKeepCatalogPageOpen() {
+    return Boolean(
+        state.selection.culture
+        && !state.selection.season
+        && !state.selection.search
+        && !state.selection.category
+        && !state.selection.group
+        && (state.filters.seasons || []).length
+    );
 }
 
 function setCatalogMode(mode) {
@@ -474,9 +495,11 @@ function buildGroupCard(group, interactive) {
 function renderFilterPills() {
     renderSelectableGroup(nodes.cultureChips, ["Все культуры", ...state.filters.cultures], state.selection.culture, async value => {
         state.selection.culture = value === "Все культуры" ? "" : value;
-        renderFilterPills();
+        state.selection.season = "";
+        await loadFilters();
         await refreshCatalogPresentation();
     });
+    renderSeasonPills();
     renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, async value => {
         state.selection.category = value === "Все категории" ? "" : value;
         state.selection.group = "";
@@ -486,6 +509,31 @@ function renderFilterPills() {
     });
 }
 
+function renderSeasonPills() {
+    const seasonOptions = (state.filters.seasons || []).filter(Boolean);
+    const hasCulture = Boolean(state.selection.culture);
+    const showSeasonBlock = hasCulture && seasonOptions.length > 0;
+    nodes.catalogSeasonFilterBlock.classList.toggle("hidden", !showSeasonBlock);
+    nodes.seasonFilterBlock.classList.toggle("hidden", !showSeasonBlock);
+    if (!showSeasonBlock) {
+        state.selection.season = "";
+        nodes.catalogSeasonChips.innerHTML = "";
+        nodes.seasonChips.innerHTML = "";
+        return;
+    }
+    if (state.selection.season && !seasonOptions.includes(state.selection.season)) {
+        state.selection.season = "";
+    }
+    const items = ["Все сезоны", ...seasonOptions];
+    const onSeasonClick = async value => {
+        state.selection.season = value === "Все сезоны" ? "" : value;
+        renderSeasonPills();
+        await refreshCatalogPresentation();
+    };
+    renderSelectableGroup(nodes.catalogSeasonChips, items, state.selection.season, onSeasonClick);
+    renderSelectableGroup(nodes.seasonChips, items, state.selection.season, onSeasonClick);
+}
+
 function renderSelectableGroup(container, items, selected, onClick) {
     container.innerHTML = "";
     items.forEach(item => {
@@ -493,7 +541,7 @@ function renderSelectableGroup(container, items, selected, onClick) {
         button.type = "button";
         button.className = "chip";
         button.textContent = item;
-        const active = (selected || "") === item || (!selected && ["Все культуры", "Все", "Все категории"].includes(item));
+        const active = (selected || "") === item || (!selected && ["Все культуры", "Все", "Все категории", "Все сезоны"].includes(item));
         if (active) button.classList.add("active");
         button.addEventListener("click", () => onClick(item));
         container.appendChild(button);
@@ -600,15 +648,16 @@ function closeCheckoutModal() {
 
 async function resetCatalogSelection() {
     state.selection.culture = "";
+    state.selection.season = "";
     state.selection.category = "";
     state.selection.search = "";
     state.selection.group = "";
     nodes.searchInput.value = "";
     window.clearTimeout(liveSearchTimer);
     syncSearchUi();
-    renderFilterPills();
-    renderCatalogGroups();
+    await loadFilters();
     await loadProducts();
+    renderCatalogGroups();
 }
 
 async function runSearchAndOpenResults() {
@@ -907,6 +956,9 @@ function filterProductsByGroup(products, group) {
 }
 
 function getCatalogTitle() {
+    if (state.selection.culture && state.selection.season) {
+        return `${state.selection.culture} · ${state.selection.season}`;
+    }
     if (state.selection.group) {
         const group = getGroupDefinitions().find(item => item.key === state.selection.group);
         if (group) return group.title;
