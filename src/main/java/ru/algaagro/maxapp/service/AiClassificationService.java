@@ -39,9 +39,9 @@ public class AiClassificationService {
         log.info("AI classification started. rows={}, requests={}, batchSize={}", rows.size(), chunks.size(), batchSize);
         for (List<ExcelImportService.ImportRow> chunk : chunks) {
             String prompt = buildPrompt(chunk, knownCultures);
-            String rawResponse = callKie(prompt);
+            String rawResponse = callGemini(prompt);
             if (rawResponse == null) {
-                rawResponse = callGemini(prompt);
+                rawResponse = callKie(prompt);
             }
             if (rawResponse == null) {
                 throw new IllegalStateException("ИИ не удалось распознать, попробуйте позже.");

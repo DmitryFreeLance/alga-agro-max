@@ -35,10 +35,10 @@ app:
   ai:
     kie-base-url: ${KIE_BASE_URL:https://api.kie.ai}
     kie-api-key: ${KIE_API_KEY:}
-    kie-model: ${KIE_MODEL:gpt-5-5}
+    kie-model: ${KIE_MODEL:gpt-5-2}
     kie-timeout-seconds: ${KIE_TIMEOUT_SECONDS:300}
     kie-batch-size: ${KIE_BATCH_SIZE:500}
     kie-gemini-api-key: ${KIE_GEMINI_API_KEY:${KIE_API_KEY:}}
-    kie-gemini-model: ${KIE_GEMINI_MODEL:gemini-3-5-flash-openai}
-    kie-gemini-endpoint: ${KIE_GEMINI_ENDPOINT:/gemini-3-5-flash-openai/v1/chat/completions}
+    kie-gemini-model: ${KIE_GEMINI_MODEL:gemini-3-flash-openai}
+    kie-gemini-endpoint: ${KIE_GEMINI_ENDPOINT:/gemini-3-flash-openai/v1/chat/completions}
     gemini-timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:300}

@@ -96,12 +96,12 @@ public class AppProperties {
     public static class AiProperties {
         private String kieBaseUrl;
         private String kieApiKey;
-        private String kieModel = "gpt-5-5";
+        private String kieModel = "gpt-5-2";
         private int kieTimeoutSeconds = 300;
         private int kieBatchSize = 500;
         private String kieGeminiApiKey;
-        private String kieGeminiModel = "gemini-3-5-flash-openai";
-        private String kieGeminiEndpoint = "/gemini-3-5-flash-openai/v1/chat/completions";
+        private String kieGeminiModel = "gemini-3-flash-openai";
+        private String kieGeminiEndpoint = "/gemini-3-flash-openai/v1/chat/completions";
         private int geminiTimeoutSeconds = 300;
 
         public String getKieBaseUrl() {
