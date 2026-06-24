@@ -93,6 +93,26 @@
                     </div>
                     <div class="group-grid" id="groupGrid"></div>
                 </div>
+
+                <div class="content-card hidden" id="catalogResultsCard">
+                    <div class="section-head section-head-tight">
+                        <div>
+                            <p class="section-kicker">Результаты</p>
+                            <h3 id="catalogTitle">Все товары</h3>
+                        </div>
+                        <p class="catalog-count" id="catalogCount">0 позиций</p>
+                    </div>
+                    <div class="filter-block filter-block-inline compact hidden" id="seasonFilterBlock">
+                        <p class="filter-title">Сезон</p>
+                        <div class="chips chips-light" id="seasonChips"></div>
+                    </div>
+                    <div class="chips chips-light compact" id="categoryPills"></div>
+                    <div class="product-grid" id="productGrid"></div>
+                    <div class="empty-state hidden" id="emptyState">
+                        <h4>Ничего не найдено</h4>
+                        <p>Попробуйте выбрать другую культуру, группу или изменить запрос.</p>
+                    </div>
+                </div>
             </div>
 
             <div class="mode-panel" id="cartModePanel">
@@ -116,27 +136,7 @@
             </div>
         </section>
 
-        <section class="page" id="resultsPage">
-            <div class="content-card">
-                <div class="section-head section-head-tight">
-                    <div>
-                        <p class="section-kicker">Результаты</p>
-                        <h3 id="catalogTitle">Все товары</h3>
-                    </div>
-                    <p class="catalog-count" id="catalogCount">0 позиций</p>
-                </div>
-                <div class="filter-block filter-block-inline compact hidden" id="seasonFilterBlock">
-                    <p class="filter-title">Сезон</p>
-                    <div class="chips chips-light" id="seasonChips"></div>
-                </div>
-                <div class="chips chips-light compact" id="categoryPills"></div>
-                <div class="product-grid" id="productGrid"></div>
-                <div class="empty-state hidden" id="emptyState">
-                    <h4>Ничего не найдено</h4>
-                    <p>Попробуйте выбрать другую культуру, группу или изменить запрос.</p>
-                </div>
-            </div>
-        </section>
+        <section class="page" id="resultsPage"></section>
 
         <section class="page" id="profilePage">
             <div class="content-card profile-card">

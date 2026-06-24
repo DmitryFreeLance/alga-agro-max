@@ -88,6 +88,9 @@ public class MiniAppApiController {
         ));
         String summary = orderService.buildAdminSummary(order);
         userService.findAdminUserIds().forEach(adminId -> maxApiClient.sendToUser(adminId, summary, null, "html"));
+        if (order.getCustomerMaxUserId() != null) {
+            maxApiClient.sendToUser(order.getCustomerMaxUserId(), orderService.buildCustomerSummary(order), null, "html");
+        }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("orderCode", order.getPublicCode());
         response.put("message", "Заказ отправлен администраторам.");

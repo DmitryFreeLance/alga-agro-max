@@ -24,6 +24,7 @@ const nodes = {
     homePage: document.getElementById("homePage"),
     catalogPage: document.getElementById("catalogPage"),
     resultsPage: document.getElementById("resultsPage"),
+    catalogResultsCard: document.getElementById("catalogResultsCard"),
     profilePage: document.getElementById("profilePage"),
     checkoutPage: document.getElementById("checkoutPage"),
     catalogBottomButton: document.getElementById("catalogBottomButton"),
@@ -111,6 +112,7 @@ const nodes = {
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
+const MIN_SEARCH_LENGTH = 3;
 let liveSearchTimer = null;
 state.maxUserId = resolveMaxUserId();
 
@@ -283,7 +285,8 @@ async function loadProducts() {
     if (state.selection.culture) query.set("culture", state.selection.culture);
     if (state.selection.season) query.set("season", state.selection.season);
     if (state.selection.category) query.set("category", state.selection.category);
-    if (state.selection.search) query.set("search", state.selection.search);
+    const effectiveSearchQuery = getEffectiveSearchQuery();
+    if (effectiveSearchQuery) query.set("search", effectiveSearchQuery);
     if (state.selection.sort) query.set("sort", state.selection.sort);
     state.products = await fetchJson(`/api/catalog/products?${query.toString()}`);
     renderProducts();
@@ -373,8 +376,8 @@ function rememberMaxUserId(userId) {
 function showPage(page) {
     state.currentPage = page;
     nodes.homePage?.classList.toggle("page-active", false);
-    nodes.catalogPage.classList.toggle("page-active", page === "catalog" || page === "cart");
-    nodes.resultsPage.classList.toggle("page-active", page === "results");
+    nodes.catalogPage.classList.toggle("page-active", page === "catalog" || page === "cart" || page === "results");
+    nodes.resultsPage.classList.toggle("page-active", false);
     nodes.profilePage.classList.toggle("page-active", page === "profile");
     nodes.checkoutPage?.classList.toggle("page-active", page === "checkout");
     nodes.catalogBottomButton.classList.toggle("active", page === "catalog" || page === "results");
@@ -399,12 +402,17 @@ function showPage(page) {
 
 function hasActiveCatalogQuery() {
     return Boolean(
-        (state.selection.search || "").trim()
+        getEffectiveSearchQuery()
         || state.selection.culture
         || state.selection.season
         || state.selection.category
         || state.selection.group
     );
+}
+
+function getEffectiveSearchQuery() {
+    const query = (state.selection.search || "").trim();
+    return query.length >= MIN_SEARCH_LENGTH ? query : "";
 }
 
 function scheduleLiveCatalogUpdate() {
@@ -419,20 +427,26 @@ function scheduleLiveCatalogUpdate() {
 
 async function refreshCatalogPresentation() {
     await loadProducts();
-    if (shouldKeepCatalogPageOpen()) {
-        showPage("catalog");
-    } else if (hasActiveCatalogQuery()) {
-        showPage("results");
+    syncCatalogResultsVisibility();
+    if (shouldKeepCatalogPageOpen() || hasActiveCatalogQuery()) {
+        if (state.currentPage !== "cart" && state.currentPage !== "profile" && state.currentPage !== "checkout") {
+            showPage("catalog");
+        }
     } else if (state.currentPage === "results") {
         showPage("catalog");
     }
+}
+
+function syncCatalogResultsVisibility() {
+    const shouldShow = hasActiveCatalogQuery() && !shouldKeepCatalogPageOpen();
+    nodes.catalogResultsCard?.classList.toggle("hidden", !shouldShow);
 }
 
 function shouldKeepCatalogPageOpen() {
     return Boolean(
         state.selection.culture
         && !state.selection.season
-        && !state.selection.search
+        && !getEffectiveSearchQuery()
         && !state.selection.category
         && !state.selection.group
         && (state.filters.seasons || []).length
@@ -673,12 +687,16 @@ async function resetCatalogSelection() {
     await loadFilters();
     await loadProducts();
     renderCatalogGroups();
+    syncCatalogResultsVisibility();
 }
 
 async function runSearchAndOpenResults() {
     state.selection.search = nodes.searchInput.value.trim();
     syncSearchUi();
     await refreshCatalogPresentation();
+    if (hasActiveCatalogQuery()) {
+        nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 }
 
 function renderCart() {

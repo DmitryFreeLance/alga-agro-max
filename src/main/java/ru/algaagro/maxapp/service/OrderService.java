@@ -100,6 +100,24 @@ public class OrderService {
         return builder.toString();
     }
 
+    public String buildCustomerSummary(CatalogOrder order) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("✅ <b>Заказ ").append(order.getPublicCode()).append(" принят</b>\n")
+                .append("Спасибо за заявку");
+        if (order.getCustomerName() != null && !order.getCustomerName().isBlank()) {
+            builder.append(", ").append(order.getCustomerName());
+        }
+        builder.append(".\n\n");
+        order.getItems().forEach(item -> builder.append("• ")
+                .append(item.getProductName())
+                .append(" × ")
+                .append(item.getQuantity().stripTrailingZeros().toPlainString())
+                .append("\n"));
+        builder.append("\n💳 Итого: ").append(TextUtils.formatPrice(order.getTotalPrice()))
+                .append("\n📞 Менеджер свяжется с вами для подтверждения деталей.");
+        return builder.toString();
+    }
+
     private String generatePublicCode() {
         return "AG-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("ddMM")) + "-"
                 + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
