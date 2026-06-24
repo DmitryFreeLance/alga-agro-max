@@ -150,7 +150,7 @@
                 </div>
             </div>
 
-            <div class="content-card">
+            <div class="content-card" id="profileOrdersSection">
                 <div class="section-head section-head-tight">
                     <div>
                         <p class="section-kicker">Мои заказы</p>
@@ -161,6 +161,19 @@
             </div>
 
             <div class="admin-section hidden" id="adminSection">
+                <div class="content-card">
+                    <button class="admin-orders-preview" id="adminOrdersPreviewButton" type="button">
+                        <div class="section-head section-head-tight">
+                            <div>
+                                <p class="section-kicker">Админ</p>
+                                <h3>Все заказы</h3>
+                            </div>
+                        </div>
+                        <p class="admin-orders-hint" id="adminOrdersHint">Для просмотра всех заказов нажмите на этот блок.</p>
+                        <div class="orders-list admin-orders-preview-list" id="adminOrdersPreview"></div>
+                    </button>
+                </div>
+
                 <div class="content-card">
                     <div class="section-head section-head-tight">
                         <div>
@@ -181,16 +194,6 @@
                         </label>
                     </div>
                     <div class="admin-products" id="adminProducts"></div>
-                </div>
-
-                <div class="content-card">
-                    <div class="section-head section-head-tight">
-                        <div>
-                            <p class="section-kicker">Админ</p>
-                            <h3>Все заказы</h3>
-                        </div>
-                    </div>
-                    <div class="orders-list" id="adminOrders"></div>
                 </div>
             </div>
         </section>
@@ -322,7 +325,7 @@
                     <input name="phone" type="tel" required placeholder="+7 (___) ___-__-__">
                 </label>
                 <div class="cart-summary checkout-modal-summary">
-                    <span>Итого к отправке</span>
+                    <span>Итого</span>
                     <strong id="checkoutModalTotal">0 ₽</strong>
                 </div>
                 <div class="checkout-actions">
@@ -387,6 +390,20 @@
                     <button class="primary-button small-button" type="submit">Сохранить</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div class="admin-modal hidden" id="adminOrdersModal">
+        <div class="product-modal-backdrop" id="adminOrdersModalBackdrop"></div>
+        <div class="admin-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="adminOrdersModalTitle">
+            <div class="section-head section-head-tight">
+                <div>
+                    <p class="section-kicker">Админ</p>
+                    <h3 id="adminOrdersModalTitle">Все заказы</h3>
+                </div>
+                <button class="product-modal-close" id="adminOrdersModalClose" type="button">×</button>
+            </div>
+            <div class="orders-list admin-orders-modal-list" id="adminOrders"></div>
         </div>
     </div>
 

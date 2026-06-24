@@ -2,11 +2,15 @@ package ru.algaagro.maxapp.service;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.pdfbox.Loader;
@@ -31,6 +36,8 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.algaagro.maxapp.config.AppProperties;
@@ -42,6 +49,8 @@ import ru.algaagro.maxapp.util.TextUtils;
 
 @Service
 public class ExcelImportService {
+
+    private static final Logger log = LoggerFactory.getLogger(ExcelImportService.class);
 
     private final ExecutorService importExecutorService;
     private final ImportJobRepository importJobRepository;
@@ -486,6 +495,123 @@ public class ExcelImportService {
     }
 
     private List<ImportRow> parsePdfFile(byte[] bytes, String fileName) {
+        List<ImportRow> scriptRows = parsePdfFileViaScript(bytes, fileName);
+        if (!scriptRows.isEmpty()) {
+            return scriptRows;
+        }
+        return parsePdfFileLegacy(bytes, fileName);
+    }
+
+    private List<ImportRow> parsePdfFileViaScript(byte[] bytes, String fileName) {
+        Optional<Path> scriptPath = resolvePdfExtractorScript();
+        if (scriptPath.isEmpty()) {
+            return List.of();
+        }
+        Path tempPdf = null;
+        try (PDDocument document = Loader.loadPDF(bytes)) {
+            // Quick validation that PDF is readable before handing it to the external extractor.
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось прочитать PDF-файл " + fileName, e);
+        }
+        try {
+            tempPdf = Files.createTempFile("alga-pdf-import-", ".pdf");
+            Files.write(tempPdf, bytes);
+            Process process = new ProcessBuilder(resolvePdfPythonExecutable(), scriptPath.get().toString(), tempPdf.toString())
+                    .redirectErrorStream(true)
+                    .start();
+            String output;
+            try (InputStream inputStream = process.getInputStream()) {
+                output = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            if (!process.waitFor(240, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IllegalStateException("PDF extractor timed out");
+            }
+            if (process.exitValue() != 0) {
+                log.warn("Python PDF extractor failed for {}: {}", fileName, output.trim());
+                return List.of();
+            }
+            List<Map<String, Object>> rows = jsonHelper.readValue(output, new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of());
+            if (rows.isEmpty()) {
+                return List.of();
+            }
+            List<ImportRow> importRows = new ArrayList<>();
+            for (Map<String, Object> row : rows) {
+                Map<String, String> columns = toStringMap(row.get("columns"));
+                String rowId = Objects.toString(row.get("rowId"), fileName + "#PDF#" + (importRows.size() + 1));
+                String sourceFile = Objects.toString(row.get("sourceFile"), fileName);
+                String sheetName = Objects.toString(row.get("sheetName"), "PDF");
+                int rowNumber = parseInteger(row.get("rowNumber"), importRows.size() + 1);
+                String nameGuess = Objects.toString(row.get("nameGuess"), extractName(columns));
+                String section = Objects.toString(row.get("section"), "");
+                importRows.add(new ImportRow(rowId, sourceFile, sheetName, rowNumber, columns, nameGuess, section));
+            }
+            return importRows;
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Python PDF extractor unavailable for {}: {}", fileName, e.getMessage());
+            return List.of();
+        } finally {
+            if (tempPdf != null) {
+                try {
+                    Files.deleteIfExists(tempPdf);
+                } catch (IOException ignored) {
+                    // ignore cleanup failure
+                }
+            }
+        }
+    }
+
+    private String resolvePdfPythonExecutable() {
+        String envPath = System.getenv("APP_PDF_PYTHON_BIN");
+        return envPath == null || envPath.isBlank() ? "python3" : envPath;
+    }
+
+    private Optional<Path> resolvePdfExtractorScript() {
+        String envPath = System.getenv("APP_PDF_EXTRACTOR_SCRIPT");
+        if (envPath != null && !envPath.isBlank()) {
+            Path candidate = Path.of(envPath);
+            if (Files.exists(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+        Path localCandidate = Path.of("scripts", "pdf_extract.py");
+        if (Files.exists(localCandidate)) {
+            return Optional.of(localCandidate);
+        }
+        Path dockerCandidate = Path.of("/app", "scripts", "pdf_extract.py");
+        if (Files.exists(dockerCandidate)) {
+            return Optional.of(dockerCandidate);
+        }
+        return Optional.empty();
+    }
+
+    private Map<String, String> toStringMap(Object value) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (!(value instanceof Map<?, ?> map)) {
+            return result;
+        }
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            result.put(Objects.toString(entry.getKey(), ""), Objects.toString(entry.getValue(), ""));
+        }
+        return result;
+    }
+
+    private int parseInteger(Object value, int fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private List<ImportRow> parsePdfFileLegacy(byte[] bytes, String fileName) {
         try (PDDocument document = Loader.loadPDF(bytes)) {
             PDFTextStripper stripper = new PDFTextStripper();
             String text = stripper.getText(document);
@@ -954,11 +1080,16 @@ public class ExcelImportService {
         if (value == null || value.isBlank()) {
             return null;
         }
-        String normalized = value.replace(" ", "").replace(",", ".").replaceAll("[^0-9.\\-]", "");
-        if (normalized.isBlank()) {
+        String normalized = value.replace('\u00A0', ' ').replace(",", ".");
+        Matcher matcher = Pattern.compile("-?\\d+(?:\\.\\d+)?").matcher(normalized);
+        String candidate = null;
+        while (matcher.find()) {
+            candidate = matcher.group();
+        }
+        if (candidate == null || candidate.isBlank()) {
             return null;
         }
-        return new BigDecimal(normalized);
+        return new BigDecimal(candidate);
     }
 
     private String resolveCategory(AiClassificationService.ClassificationResult result, ImportRow row) {

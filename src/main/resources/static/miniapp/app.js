@@ -60,7 +60,11 @@ const nodes = {
     profileOrdersCount: document.getElementById("profileOrdersCount"),
     profileStatus: document.getElementById("profileStatus"),
     profileOrders: document.getElementById("profileOrders"),
+    profileOrdersSection: document.getElementById("profileOrdersSection"),
     adminSection: document.getElementById("adminSection"),
+    adminOrdersPreviewButton: document.getElementById("adminOrdersPreviewButton"),
+    adminOrdersPreview: document.getElementById("adminOrdersPreview"),
+    adminOrdersHint: document.getElementById("adminOrdersHint"),
     adminProducts: document.getElementById("adminProducts"),
     adminOrders: document.getElementById("adminOrders"),
     addProductButton: document.getElementById("addProductButton"),
@@ -95,6 +99,9 @@ const nodes = {
     adminProductForm: document.getElementById("adminProductForm"),
     adminProductCancelButton: document.getElementById("adminProductCancelButton"),
     adminProductDeleteButton: document.getElementById("adminProductDeleteButton"),
+    adminOrdersModal: document.getElementById("adminOrdersModal"),
+    adminOrdersModalBackdrop: document.getElementById("adminOrdersModalBackdrop"),
+    adminOrdersModalClose: document.getElementById("adminOrdersModalClose"),
 };
 
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
@@ -184,6 +191,7 @@ function bindEvents() {
     nodes.checkoutForm.addEventListener("submit", submitOrder);
     nodes.checkoutModalForm.addEventListener("submit", submitOrder);
     nodes.addProductButton?.addEventListener("click", () => renderProductEditor(null));
+    nodes.adminOrdersPreviewButton?.addEventListener("click", openAdminOrdersModal);
     nodes.adminProductSearch?.addEventListener("input", () => {
         state.adminUi.search = nodes.adminProductSearch.value.trim();
         syncAdminSearchUi();
@@ -237,6 +245,8 @@ function bindEvents() {
     nodes.adminProductCancelButton?.addEventListener("click", closeAdminProductModal);
     nodes.adminProductForm?.addEventListener("submit", submitAdminProductForm);
     nodes.adminProductDeleteButton?.addEventListener("click", handleAdminDeleteFromModal);
+    nodes.adminOrdersModalBackdrop?.addEventListener("click", closeAdminOrdersModal);
+    nodes.adminOrdersModalClose?.addEventListener("click", closeAdminOrdersModal);
     document.addEventListener("keydown", event => {
         if (event.key === "Escape" && !nodes.productModal.classList.contains("hidden")) {
             closeProductModal();
@@ -246,6 +256,9 @@ function bindEvents() {
         }
         if (event.key === "Escape" && !nodes.adminProductModal.classList.contains("hidden")) {
             closeAdminProductModal();
+        }
+        if (event.key === "Escape" && !nodes.adminOrdersModal.classList.contains("hidden")) {
+            closeAdminOrdersModal();
         }
     });
 }
@@ -649,6 +662,7 @@ function renderProfile() {
     nodes.profileOrdersCount.textContent = state.profile.ordersCount || 0;
     nodes.profileStatus.textContent = state.profile.admin ? "Админ" : "Клиент";
     nodes.profileAvatar.textContent = initials(state.profile.displayName || "AA");
+    nodes.profileOrdersSection.classList.toggle("hidden", Boolean(state.profile.admin));
     renderOrdersList(nodes.profileOrders, state.profileOrders, "У вас пока нет заказов.");
 }
 
@@ -657,7 +671,20 @@ function renderAdminSection() {
     renderAdminCategoryFilter();
     syncAdminSearchUi();
     renderAdminProducts();
+    renderAdminOrdersPreview();
     renderOrdersList(nodes.adminOrders, state.adminOrders, "Заказов пока нет.");
+}
+
+function renderAdminOrdersPreview() {
+    const lastOrder = state.adminOrders[0] ? [state.adminOrders[0]] : [];
+    renderOrdersList(nodes.adminOrdersPreview, lastOrder, "Заказов пока нет.");
+    if (nodes.adminOrdersHint) {
+        nodes.adminOrdersHint.textContent = state.adminOrders.length > 1
+            ? "Для просмотра всех заказов нажмите на этот блок."
+            : state.adminOrders.length === 1
+                ? "Показан последний заказ. Для просмотра списка нажмите на этот блок."
+                : "Заказов пока нет.";
+    }
 }
 
 function renderAdminProducts() {
@@ -784,6 +811,16 @@ function openAdminProductEditor(product) {
 
 function closeAdminProductModal() {
     nodes.adminProductModal.classList.add("hidden");
+    document.body.style.overflow = "";
+}
+
+function openAdminOrdersModal() {
+    nodes.adminOrdersModal?.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+}
+
+function closeAdminOrdersModal() {
+    nodes.adminOrdersModal?.classList.add("hidden");
     document.body.style.overflow = "";
 }
 

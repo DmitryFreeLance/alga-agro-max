@@ -86,6 +86,14 @@ public class ProductService {
         CatalogProduct product = importedProduct.externalId() == null
                 ? null
                 : catalogProductRepository.findByExternalId(importedProduct.externalId()).orElse(null);
+        if (product == null && importedProduct.name() != null && !importedProduct.name().isBlank()) {
+            String normalizedImportName = TextUtils.normalizeToken(importedProduct.name());
+            product = catalogProductRepository.findAll().stream()
+                    .filter(existing -> existing.getName() != null && !existing.getName().isBlank())
+                    .filter(existing -> TextUtils.normalizeToken(existing.getName()).equals(normalizedImportName))
+                    .findFirst()
+                    .orElse(null);
+        }
         boolean created = product == null;
         if (product == null) {
             product = new CatalogProduct();
