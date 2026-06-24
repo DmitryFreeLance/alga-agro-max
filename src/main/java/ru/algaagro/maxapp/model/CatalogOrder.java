@@ -33,9 +33,16 @@ public class CatalogOrder {
     private String customerName;
     private String customerPhone;
     private String customerCompany;
+    private String customerEmail;
+
+    @Lob
+    private String deliveryAddress;
 
     @Lob
     private String comment;
+
+    @Lob
+    private String attachmentsJson = "[]";
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -109,12 +116,36 @@ public class CatalogOrder {
         this.customerCompany = customerCompany;
     }
 
+    public String getCustomerEmail() {
+        return customerEmail;
+    }
+
+    public void setCustomerEmail(String customerEmail) {
+        this.customerEmail = customerEmail;
+    }
+
+    public String getDeliveryAddress() {
+        return deliveryAddress;
+    }
+
+    public void setDeliveryAddress(String deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
+    }
+
     public String getComment() {
         return comment;
     }
 
     public void setComment(String comment) {
         this.comment = comment;
+    }
+
+    public String getAttachmentsJson() {
+        return attachmentsJson;
+    }
+
+    public void setAttachmentsJson(String attachmentsJson) {
+        this.attachmentsJson = attachmentsJson;
     }
 
     public OrderStatus getStatus() {

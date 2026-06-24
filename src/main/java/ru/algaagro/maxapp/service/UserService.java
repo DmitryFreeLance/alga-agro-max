@@ -1,6 +1,8 @@
 package ru.algaagro.maxapp.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -69,9 +71,20 @@ public class UserService {
         return appUserRepository.count();
     }
 
+    public long countUsersCreatedThisMonth() {
+        Instant monthStart = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+        return appUserRepository.countByCreatedAtGreaterThanEqual(monthStart);
+    }
+
     public List<Long> findAdminUserIds() {
         return appUserRepository.findAll().stream()
                 .filter(AppUser::isAdmin)
+                .map(AppUser::getMaxUserId)
+                .toList();
+    }
+
+    public List<Long> findAllUserIds() {
+        return appUserRepository.findAll().stream()
                 .map(AppUser::getMaxUserId)
                 .toList();
     }

@@ -1,7 +1,9 @@
 package ru.algaagro.maxapp.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -12,8 +14,11 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.util.JsonHelper;
@@ -26,6 +31,7 @@ public class MaxApiClient {
     private final AppProperties appProperties;
     private final JsonHelper jsonHelper;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+    private final ConcurrentMap<String, String> uploadedImageTokens = new ConcurrentHashMap<>();
 
     public MaxApiClient(AppProperties appProperties, JsonHelper jsonHelper) {
         this.appProperties = appProperties;
@@ -69,6 +75,20 @@ public class MaxApiClient {
         sendPost("/answers?callback_id=" + URLEncoder.encode(callbackId, StandardCharsets.UTF_8), body);
     }
 
+    public Map<String, Object> classpathImageAttachment(String classpathLocation) {
+        if (classpathLocation == null || classpathLocation.isBlank()) {
+            return null;
+        }
+        String token = uploadedImageTokens.computeIfAbsent(classpathLocation, this::uploadClasspathImageToken);
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return Map.of(
+                "type", "image",
+                "payload", Map.of("token", token)
+        );
+    }
+
     private void sendMessage(String targetQuery, String text, List<Map<String, Object>> attachments, String format) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("text", text);
@@ -100,6 +120,70 @@ public class MaxApiClient {
         } catch (IOException | RuntimeException e) {
             log.warn("MAX API request failed for {}: {}", path, e.getMessage());
         }
+    }
+
+    private String uploadClasspathImageToken(String classpathLocation) {
+        if (!enabled()) {
+            return null;
+        }
+        try {
+            ClassPathResource resource = new ClassPathResource(classpathLocation);
+            if (!resource.exists()) {
+                log.warn("MAX image upload skipped, classpath resource not found: {}", classpathLocation);
+                return null;
+            }
+            HttpRequest uploadRequest = baseRequest(appProperties.getMax().getApiBaseUrl() + "/uploads?type=image")
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+            HttpResponse<String> uploadResponse = httpClient.send(uploadRequest, HttpResponse.BodyHandlers.ofString());
+            ensureSuccess(uploadResponse);
+            JsonNode uploadJson = jsonHelper.readTree(uploadResponse.body());
+            String uploadUrl = uploadJson.path("url").asText("");
+            if (uploadUrl.isBlank()) {
+                throw new IllegalStateException("MAX image upload URL is empty");
+            }
+
+            byte[] bytes;
+            try (InputStream inputStream = resource.getInputStream()) {
+                bytes = inputStream.readAllBytes();
+            }
+            String boundary = "----AlgaAgroMaxBoundary" + System.nanoTime();
+            HttpRequest fileRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(uploadUrl))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .timeout(Duration.ofSeconds(60))
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(buildMultipartBody(boundary, resource.getFilename(), bytes)))
+                    .build();
+            HttpResponse<String> fileResponse = httpClient.send(fileRequest, HttpResponse.BodyHandlers.ofString());
+            if (fileResponse.statusCode() / 100 != 2) {
+                throw new IllegalStateException("MAX image upload failed " + fileResponse.statusCode() + ": " + fileResponse.body());
+            }
+            JsonNode fileJson = jsonHelper.readTree(fileResponse.body());
+            String token = fileJson.path("token").asText("");
+            if (token.isBlank()) {
+                throw new IllegalStateException("MAX image token is empty");
+            }
+            return token;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("MAX classpath image upload interrupted for {}: {}", classpathLocation, e.getMessage());
+            return null;
+        } catch (IOException | RuntimeException e) {
+            log.warn("MAX classpath image upload failed for {}: {}", classpathLocation, e.getMessage());
+            return null;
+        }
+    }
+
+    private byte[] buildMultipartBody(String boundary, String filename, byte[] bytes) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        outputStream.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        outputStream.write(("Content-Disposition: form-data; name=\"data\"; filename=\"" + filename + "\"\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        outputStream.write("Content-Type: image/png\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        outputStream.write(bytes);
+        outputStream.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return outputStream.toByteArray();
     }
 
     private HttpRequest.Builder baseRequest(String url) {

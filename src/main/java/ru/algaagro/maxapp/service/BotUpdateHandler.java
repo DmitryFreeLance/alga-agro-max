@@ -716,12 +716,22 @@ public class BotUpdateHandler {
 
     private void sendWelcome(Long userId, boolean admin) {
         String text = """
-                🌿 <b>Официальный бот</b>
-                <b>ООО «АЛГА АГРО»</b>
+                🌱 <b>АЛГА АГРО ГРУПП</b>
 
-                Здесь мы собрали удобный каталог для агро-товаров: семена, средства защиты, питание и сопутствующие позиции с быстрым подбором по культурам.
+                Мы предлагаем:
+                🌾 Семена — озимые и яровые культуры
+                🛡 СЗР — гербициды, фунгициды, инсектициды
+                🧪 Агрохимикаты и мелиоранты
+
+                Выберите нужный раздел 👇
                 """;
-        maxApiClient.sendToUser(userId, text, keyboardFactory.mainMenu(admin), "html");
+        List<Map<String, Object>> attachments = new ArrayList<>();
+        Map<String, Object> logoAttachment = maxApiClient.classpathImageAttachment("static/miniapp/assets/logo.png");
+        if (logoAttachment != null) {
+            attachments.add(logoAttachment);
+        }
+        attachments.addAll(keyboardFactory.mainMenu(admin));
+        maxApiClient.sendToUser(userId, text, attachments, "html");
     }
 
     private void openAdminMenu(AppUser user) {

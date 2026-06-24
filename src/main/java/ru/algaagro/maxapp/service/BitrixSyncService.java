@@ -116,11 +116,16 @@ public class BitrixSyncService {
             log.info("Bitrix24 sync disabled: webhook is not configured");
             return;
         }
+        if (!syncInProgress.compareAndSet(false, true)) {
+            return;
+        }
         try {
             syncAllLocalProducts();
             syncFromBitrix();
         } catch (RuntimeException e) {
             log.warn("Initial Bitrix24 sync failed: {}", e.getMessage());
+        } finally {
+            syncInProgress.set(false);
         }
     }
 
@@ -133,6 +138,7 @@ public class BitrixSyncService {
             return;
         }
         try {
+            syncAllLocalProducts();
             syncFromBitrix();
         } catch (RuntimeException e) {
             log.warn("Bitrix24 scheduled sync failed: {}", e.getMessage());
@@ -193,14 +199,23 @@ public class BitrixSyncService {
         }
         List<CatalogProduct> products = catalogProductRepository.findAll();
         int synced = 0;
+        int failed = 0;
         for (CatalogProduct product : products) {
             if (!product.isActive() && product.getBitrixProductId() == null) {
                 continue;
             }
-            syncLocalProduct(product.getId());
-            synced++;
+            try {
+                syncLocalProduct(product.getId());
+                synced++;
+            } catch (RuntimeException e) {
+                failed++;
+                log.warn("Bitrix24 outbound sync skipped product id={}, name={}: {}",
+                        product.getId(),
+                        TextUtils.trimTo(product.getName(), 80),
+                        e.getMessage());
+            }
         }
-        log.info("Bitrix24 outbound sync completed for {} products", synced);
+        log.info("Bitrix24 outbound sync completed: synced={}, failed={}", synced, failed);
     }
 
     @Transactional
@@ -643,14 +658,14 @@ public class BitrixSyncService {
             return;
         }
 
-        CatalogProduct local = catalogProductRepository.findByBitrixProductId(remoteId).orElse(null);
+        CatalogProduct local = findFirstByBitrixProductId(remoteId);
         String externalId = firstNonBlank(
                 propertyValue(productNode, context, PROPERTY_EXTERNAL_ID),
                 productNode.path("xmlId").asText(""),
                 "bitrix-" + remoteId
         );
         if (local == null && externalId != null && !externalId.isBlank()) {
-            local = catalogProductRepository.findByExternalId(externalId).orElse(null);
+            local = findFirstByExternalId(externalId);
         }
         if (local == null) {
             String normalizedName = TextUtils.normalizeToken(productNode.path("name").asText(""));
@@ -1019,6 +1034,28 @@ public class BitrixSyncService {
         }
         String trimmed = value.trim();
         return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private CatalogProduct findFirstByExternalId(String externalId) {
+        if (externalId == null || externalId.isBlank()) {
+            return null;
+        }
+        List<CatalogProduct> matches = catalogProductRepository.findAllByExternalIdOrderByUpdatedAtDesc(externalId);
+        if (matches.size() > 1) {
+            log.warn("Detected duplicate local products by externalId={}, using the latest record", externalId);
+        }
+        return matches.isEmpty() ? null : matches.get(0);
+    }
+
+    private CatalogProduct findFirstByBitrixProductId(Long bitrixProductId) {
+        if (bitrixProductId == null || bitrixProductId <= 0) {
+            return null;
+        }
+        List<CatalogProduct> matches = catalogProductRepository.findAllByBitrixProductIdOrderByUpdatedAtDesc(bitrixProductId);
+        if (matches.size() > 1) {
+            log.warn("Detected duplicate local products by bitrixProductId={}, using the latest record", bitrixProductId);
+        }
+        return matches.isEmpty() ? null : matches.get(0);
     }
 
     private record PropertyDefinition(

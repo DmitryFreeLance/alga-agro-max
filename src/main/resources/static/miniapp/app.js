@@ -1,124 +1,104 @@
-const BASE_GROUPS = [
-    { key: "seeds", title: "Семена", iconPath: "./assets/category-seeds-flaticon.png", visualLabel: "Семена", description: "Посевной материал", matchers: ["сем", "озим", "яров", "гибрид", "сорт"], fallbackCategories: ["Семена"] },
-    { key: "pesticides", title: "Пестициды", iconPath: "./assets/category-pesticides-flaticon.png", visualLabel: "Защита", description: "Защита растений", matchers: ["пестиц", "гербиц", "фунгиц", "инсекти", "протрав", "десикан", "обработка семян", "зср"], fallbackCategories: ["Пестициды"] },
-    { key: "nutrition", title: "Агропитание", iconPath: "./assets/category-nutrition-flaticon.png", visualLabel: "Питание", description: "Питание и стимуляция", matchers: ["удоб", "микро", "стим", "адъюв", "питан", "биостим", "листов", "изагри"], fallbackCategories: ["Агропитание"] },
-];
-
-const state = {
-    meta: null,
-    profile: null,
-    profileOrders: [],
-    adminOrders: [],
-    adminProducts: [],
-    adminUi: { search: "", category: "all" },
-    filters: { cultures: [], categories: [], tags: [], seasons: [] },
-    products: [],
-    selection: { culture: "", season: "", category: "", search: "", sort: "name", group: "" },
-    cart: [],
-    currentPage: "catalog",
-    maxUserId: null,
-    catalogMode: "catalog",
-};
-
-const nodes = {
-    homePage: document.getElementById("homePage"),
-    catalogPage: document.getElementById("catalogPage"),
-    resultsPage: document.getElementById("resultsPage"),
-    catalogResultsCard: document.getElementById("catalogResultsCard"),
-    catalogGroupsCard: document.getElementById("catalogGroupsCard"),
-    profilePage: document.getElementById("profilePage"),
-    checkoutPage: document.getElementById("checkoutPage"),
-    catalogBottomButton: document.getElementById("catalogBottomButton"),
-    cartBottomButton: document.getElementById("cartBottomButton"),
-    cartBottomBadge: document.getElementById("cartBottomBadge"),
-    profileNavButton: document.getElementById("profileNavButton"),
-    pageTitle: document.getElementById("pageTitle"),
-    pageCaption: document.getElementById("pageCaption"),
-    openCatalogFromHome: document.getElementById("openCatalogFromHome"),
-    openCartFromHome: document.getElementById("openCartFromHome"),
-    homeGroupGrid: document.getElementById("homeGroupGrid"),
-    catalogModePanel: document.getElementById("catalogModePanel"),
-    cartModePanel: document.getElementById("cartModePanel"),
-    searchInput: document.getElementById("searchInput"),
-    searchScrollButton: document.getElementById("searchScrollButton"),
-    clearSearchButton: document.getElementById("clearSearchButton"),
-    sortSelect: document.getElementById("sortSelect"),
-    cultureChips: document.getElementById("cultureChips"),
-    catalogSeasonFilterBlock: document.getElementById("catalogSeasonFilterBlock"),
-    catalogSeasonChips: document.getElementById("catalogSeasonChips"),
-    seasonFilterBlock: document.getElementById("seasonFilterBlock"),
-    seasonChips: document.getElementById("seasonChips"),
-    categoryPills: document.getElementById("categoryPills"),
-    groupGrid: document.getElementById("groupGrid"),
-    productGrid: document.getElementById("productGrid"),
-    emptyState: document.getElementById("emptyState"),
-    catalogTitle: document.getElementById("catalogTitle"),
-    catalogCount: document.getElementById("catalogCount"),
-    cartSummaryCount: document.getElementById("cartSummaryCount"),
-    cartItems: document.getElementById("cartItems"),
-    cartTotal: document.getElementById("cartTotal"),
-    checkoutButton: document.getElementById("checkoutButton"),
-    checkoutForm: document.getElementById("checkoutForm"),
-    backToCart: document.getElementById("backToCart"),
-    backToCatalog: document.getElementById("backToCatalog"),
-    profileAvatar: document.getElementById("profileAvatar"),
-    profileName: document.getElementById("profileName"),
-    profileRole: document.getElementById("profileRole"),
-    profileOrdersCount: document.getElementById("profileOrdersCount"),
-    profileStatus: document.getElementById("profileStatus"),
-    profileOrders: document.getElementById("profileOrders"),
-    profileOrdersSection: document.getElementById("profileOrdersSection"),
-    adminSection: document.getElementById("adminSection"),
-    adminOrdersPreviewButton: document.getElementById("adminOrdersPreviewButton"),
-    adminOrdersPreview: document.getElementById("adminOrdersPreview"),
-    adminOrdersHint: document.getElementById("adminOrdersHint"),
-    adminProducts: document.getElementById("adminProducts"),
-    adminOrders: document.getElementById("adminOrders"),
-    addProductButton: document.getElementById("addProductButton"),
-    adminProductSearch: document.getElementById("adminProductSearch"),
-    adminProductClearSearch: document.getElementById("adminProductClearSearch"),
-    adminCategoryFilter: document.getElementById("adminCategoryFilter"),
-    headerBackButton: document.getElementById("headerBackButton"),
-    toast: document.getElementById("toast"),
-    productModal: document.getElementById("productModal"),
-    productModalBackdrop: document.getElementById("productModalBackdrop"),
-    productModalClose: document.getElementById("productModalClose"),
-    productModalBadges: document.getElementById("productModalBadges"),
-    productModalType: document.getElementById("productModalType"),
-    productModalTitle: document.getElementById("productModalTitle"),
-    productModalDescription: document.getElementById("productModalDescription"),
-    productModalTags: document.getElementById("productModalTags"),
-    productModalPackageDescription: document.getElementById("productModalPackageDescription"),
-    productModalOrderHint: document.getElementById("productModalOrderHint"),
-    productModalStock: document.getElementById("productModalStock"),
-    productModalPrice: document.getElementById("productModalPrice"),
-    productModalQuantity: document.getElementById("productModalQuantity"),
-    productModalUnit: document.getElementById("productModalUnit"),
-    productModalTotal: document.getElementById("productModalTotal"),
-    productModalAddButton: document.getElementById("productModalAddButton"),
-    checkoutModal: document.getElementById("checkoutModal"),
-    checkoutModalBackdrop: document.getElementById("checkoutModalBackdrop"),
-    checkoutModalClose: document.getElementById("checkoutModalClose"),
-    checkoutModalCancel: document.getElementById("checkoutModalCancel"),
-    checkoutModalForm: document.getElementById("checkoutModalForm"),
-    checkoutModalTotal: document.getElementById("checkoutModalTotal"),
-    adminProductModal: document.getElementById("adminProductModal"),
-    adminProductModalBackdrop: document.getElementById("adminProductModalBackdrop"),
-    adminProductModalClose: document.getElementById("adminProductModalClose"),
-    adminProductForm: document.getElementById("adminProductForm"),
-    adminProductCancelButton: document.getElementById("adminProductCancelButton"),
-    adminProductDeleteButton: document.getElementById("adminProductDeleteButton"),
-    adminOrdersModal: document.getElementById("adminOrdersModal"),
-    adminOrdersModalBackdrop: document.getElementById("adminOrdersModalBackdrop"),
-    adminOrdersModalClose: document.getElementById("adminOrdersModalClose"),
-};
-
+const root = document.getElementById("appRoot");
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
-const MIN_SEARCH_LENGTH = 1;
-let liveSearchTimer = null;
-state.maxUserId = resolveMaxUserId();
+
+const SECTION_VISUALS = [
+    {
+        match: ["гербиц"],
+        icon: "./assets/category-pesticides-flaticon.png",
+        palette: ["#bfeec2", "#e7f6d3"],
+        description: "Защита от сорняков",
+    },
+    {
+        match: ["фунгиц"],
+        icon: "./assets/category-other.svg",
+        palette: ["#bfeee2", "#def7de"],
+        description: "Защита от болезней",
+    },
+    {
+        match: ["инсекти"],
+        icon: "./assets/category-other.svg",
+        palette: ["#ffeeb9", "#ffd7ab"],
+        description: "Защита от вредителей",
+    },
+    {
+        match: ["семен", "озим", "яров"],
+        icon: "./assets/category-seeds-flaticon.png",
+        palette: ["#fff2b7", "#ffd681"],
+        description: "Зерновые, масличные, бобовые",
+    },
+    {
+        match: ["агрохим", "удобр", "агропитан", "питан", "микро", "биостим"],
+        icon: "./assets/category-nutrition-flaticon.png",
+        palette: ["#c8eff6", "#a8e0ee"],
+        description: "Удобрения и стимуляторы",
+    },
+    {
+        match: ["мелиор"],
+        icon: "./assets/category-other.svg",
+        palette: ["#d9d3cf", "#bfb0aa"],
+        description: "Известкование почв",
+    },
+];
+
+const state = {
+    maxUserId: resolveMaxUserId(),
+    meta: null,
+    profile: null,
+    products: [],
+    sections: [],
+    profileOrders: [],
+    nav: "catalog",
+    favorites: loadStorage("alga-favorites", []),
+    cart: loadStorage("alga-cart", []),
+    successOrderCode: "",
+    catalog: {
+        query: "",
+        section: "",
+        sort: "default",
+        filtersOpen: false,
+        draft: null,
+        applied: emptyFilters(),
+    },
+    productModal: {
+        open: false,
+        productId: null,
+        quantity: 1,
+        imageIndex: 0,
+    },
+    checkout: {
+        open: false,
+        submitting: false,
+        uploaded: [],
+        errors: {},
+        form: {
+            organization: "",
+            phone: "",
+            email: "",
+            address: "",
+            comment: "",
+        },
+    },
+    profileOrdersFilter: "ALL",
+    admin: {
+        ready: false,
+        menu: "dashboard",
+        dashboard: null,
+        products: [],
+        manufacturers: [],
+        orders: [],
+        broadcasts: { stats: null, history: [] },
+        catalogSearch: "",
+        catalogStatus: "ALL",
+        catalogSection: "",
+        productEditor: { open: false, productId: null },
+        orderModal: { open: false, orderId: null },
+        manufacturerModal: { open: false, id: null, name: "" },
+        broadcastForm: { text: "", imageUrl: "", imageName: "", sending: false },
+        orderFilters: { search: "", status: "ALL", from: "", to: "" },
+    },
+};
 
 if (maxBridge?.ready) {
     try {
@@ -136,207 +116,1930 @@ if (maxBridge?.expand) {
     }
 }
 
-bootstrap();
+bootstrap().catch(error => {
+    console.error(error);
+    root.innerHTML = `<div class="page"><div class="empty-box">Не удалось загрузить каталог. Попробуйте обновить мини-приложение.</div></div>`;
+});
+
+root.addEventListener("click", handleClick);
+root.addEventListener("input", handleInput);
+root.addEventListener("change", handleChange);
+root.addEventListener("submit", handleSubmit);
 
 async function bootstrap() {
-    bindEvents();
-    await Promise.all([loadMeta(), loadFilters()]);
-    const initialLoads = await Promise.allSettled([loadProfile(), loadProducts()]);
-    initialLoads.forEach(result => {
-        if (result.status === "rejected") {
-            showToast(result.reason?.message || "Часть данных пока недоступна");
-        }
-    });
-    renderHomeGroups();
-    renderCatalogGroups();
-    renderCart();
-    showPage("catalog");
+    const [meta, profile, products, sections, profileOrders] = await Promise.all([
+        fetchJson("/api/meta"),
+        state.maxUserId ? fetchJson(`/api/profile?maxUserId=${state.maxUserId}`) : Promise.resolve({ admin: false, displayName: "Пользователь MAX" }),
+        fetchJson("/api/catalog/products?sort=name"),
+        fetchJson("/api/catalog/sections"),
+        state.maxUserId ? fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`) : Promise.resolve([]),
+    ]);
+    state.meta = meta;
+    state.profile = profile;
+    state.products = products;
+    state.sections = sections;
+    state.profileOrders = profileOrders;
+    hydrateCheckoutFromProfile();
+    rememberMaxUserId(state.maxUserId);
+    if (state.profile.admin && state.maxUserId) {
+        await loadAdminData();
+    }
+    render();
 }
 
-function bindEvents() {
-    nodes.catalogBottomButton.addEventListener("click", () => showPage("catalog"));
-    nodes.cartBottomButton.addEventListener("click", () => showPage("cart"));
-    nodes.profileNavButton.addEventListener("click", () => showPage("profile"));
-    nodes.openCatalogFromHome?.addEventListener("click", () => showPage("catalog"));
-    nodes.openCartFromHome?.addEventListener("click", () => {
-        showPage("cart");
-    });
-    nodes.searchInput.addEventListener("input", event => {
-        state.selection.search = event.target.value.trim();
-        syncSearchUi();
-        scheduleLiveCatalogUpdate();
-    });
-    nodes.searchInput.addEventListener("keydown", event => {
-        if (event.key === "Enter") {
-            event.preventDefault();
-            runSearchAndOpenResults();
-        }
-    });
-    nodes.searchScrollButton?.addEventListener("click", () => {
-        if (hasActiveCatalogQuery()) {
-            nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-    });
-    nodes.clearSearchButton.addEventListener("click", async () => {
-        state.selection.search = "";
-        nodes.searchInput.value = "";
-        syncSearchUi();
-        await refreshCatalogPresentation();
-    });
-    nodes.sortSelect.addEventListener("change", async event => {
-        state.selection.sort = event.target.value;
-        if (hasActiveCatalogQuery()) {
-            await refreshCatalogPresentation();
-        }
-    });
-    nodes.checkoutButton.addEventListener("click", () => {
-        if (!state.cart.length) {
-            showToast("Сначала добавьте товары в корзину");
-            return;
-        }
-        openCheckoutModal();
-    });
-    nodes.backToCart.addEventListener("click", () => {
-        showPage("cart");
-    });
-    nodes.backToCatalog.addEventListener("click", () => {
-        showPage("catalog");
-        setCatalogMode("catalog");
-    });
-    nodes.checkoutForm.addEventListener("submit", submitOrder);
-    nodes.checkoutModalForm.addEventListener("submit", submitOrder);
-    nodes.addProductButton?.addEventListener("click", () => renderProductEditor(null));
-    nodes.adminOrdersPreviewButton?.addEventListener("click", openAdminOrdersModal);
-    nodes.adminProductSearch?.addEventListener("input", () => {
-        state.adminUi.search = nodes.adminProductSearch.value.trim();
-        syncAdminSearchUi();
-        renderAdminProducts();
-    });
-    nodes.adminProductClearSearch?.addEventListener("click", () => {
-        state.adminUi.search = "";
-        nodes.adminProductSearch.value = "";
-        syncAdminSearchUi();
-        renderAdminProducts();
-    });
-    nodes.adminCategoryFilter?.addEventListener("change", () => {
-        state.adminUi.category = nodes.adminCategoryFilter.value;
-        renderAdminProducts();
-    });
-    nodes.headerBackButton.addEventListener("click", async () => {
-        if (state.currentPage === "checkout") {
-            await resetCatalogSelection();
-            showPage("cart");
-        } else if (state.currentPage === "results") {
-            await resetCatalogSelection();
-            showPage("catalog");
-            setCatalogMode("catalog");
-        } else if (state.currentPage === "catalog") {
-            await resetCatalogSelection();
-            setCatalogMode("catalog");
-            showPage("catalog");
-        } else if (state.currentPage === "cart") {
-            showPage("catalog");
-            setCatalogMode("catalog");
-        } else {
-            showPage("catalog");
-        }
-    });
-    nodes.productModalBackdrop.addEventListener("click", closeProductModal);
-    nodes.productModalClose.addEventListener("click", closeProductModal);
-    nodes.productModalQuantity.addEventListener("input", syncProductModalTotal);
-    nodes.productModalAddButton.addEventListener("click", () => {
-        const productId = Number(nodes.productModalAddButton.dataset.productId);
-        const product = state.products.find(item => item.id === productId);
-        if (product) {
-            addToCart(product, parseQuantity(nodes.productModalQuantity.value));
-            closeProductModal();
-        }
-    });
-    nodes.checkoutModalBackdrop.addEventListener("click", closeCheckoutModal);
-    nodes.checkoutModalClose.addEventListener("click", closeCheckoutModal);
-    nodes.checkoutModalCancel.addEventListener("click", closeCheckoutModal);
-    nodes.adminProductModalBackdrop?.addEventListener("click", closeAdminProductModal);
-    nodes.adminProductModalClose?.addEventListener("click", closeAdminProductModal);
-    nodes.adminProductCancelButton?.addEventListener("click", closeAdminProductModal);
-    nodes.adminProductForm?.addEventListener("submit", submitAdminProductForm);
-    nodes.adminProductDeleteButton?.addEventListener("click", handleAdminDeleteFromModal);
-    nodes.adminOrdersModalBackdrop?.addEventListener("click", closeAdminOrdersModal);
-    nodes.adminOrdersModalClose?.addEventListener("click", closeAdminOrdersModal);
-    document.addEventListener("keydown", event => {
-        if (event.key === "Escape" && !nodes.productModal.classList.contains("hidden")) {
-            closeProductModal();
-        }
-        if (event.key === "Escape" && !nodes.checkoutModal.classList.contains("hidden")) {
-            closeCheckoutModal();
-        }
-        if (event.key === "Escape" && !nodes.adminProductModal.classList.contains("hidden")) {
-            closeAdminProductModal();
-        }
-        if (event.key === "Escape" && !nodes.adminOrdersModal.classList.contains("hidden")) {
-            closeAdminOrdersModal();
-        }
-    });
+async function loadAdminData() {
+    const [dashboard, products, manufacturers, orders, broadcasts] = await Promise.all([
+        fetchJson(`/api/admin/dashboard?maxUserId=${state.maxUserId}`),
+        fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`),
+        fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`),
+        fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`),
+        fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`),
+    ]);
+    state.admin.ready = true;
+    state.admin.dashboard = dashboard;
+    state.admin.products = products;
+    state.admin.manufacturers = manufacturers;
+    state.admin.orders = orders;
+    state.admin.broadcasts = broadcasts;
 }
 
-async function loadMeta() {
-    state.meta = await fetchJson("/api/meta");
+function render() {
+    root.innerHTML = `
+        <div class="mobile-app">
+            ${renderTopbar()}
+            ${renderCurrentPage()}
+            ${renderBottomNav()}
+            ${renderProductModal()}
+            ${renderFiltersDrawer()}
+            ${renderAdminProductModal()}
+            ${renderAdminManufacturerModal()}
+            ${renderAdminOrderModal()}
+        </div>
+    `;
 }
 
-async function loadFilters() {
-    const query = new URLSearchParams();
-    if (state.selection.culture) query.set("culture", state.selection.culture);
-    state.filters = await fetchJson(`/api/catalog/filters${query.toString() ? `?${query.toString()}` : ""}`);
-    renderFilterPills();
+function renderTopbar() {
+    const activeTitle = getTopbarTitle();
+    return `
+        <header class="topbar">
+            <div class="topbar-row">
+                <div class="topbar-logo"><img src="./assets/logo.png" alt="АЛГА АГРО"></div>
+                <div class="topbar-title">
+                    <h1>${escapeHtml(state.meta?.company || "АЛГА АГРО ГРУПП")}</h1>
+                    <p>Только вперёд!</p>
+                </div>
+                ${shouldShowBackButton()
+                    ? `<button class="topbar-action" data-action="back">←</button>`
+                    : `<button class="topbar-action" data-action="open-manager">⋯</button>`}
+            </div>
+            ${activeTitle.subtitle
+                ? `<div class="page-head" style="margin-top:14px;"><h2>${escapeHtml(activeTitle.title)}</h2><p>${escapeHtml(activeTitle.subtitle)}</p></div>`
+                : ""}
+        </header>
+    `;
 }
 
-async function loadProducts() {
-    const query = new URLSearchParams();
-    if (state.selection.culture) query.set("culture", state.selection.culture);
-    if (state.selection.season) query.set("season", state.selection.season);
-    if (state.selection.category) query.set("category", state.selection.category);
-    const effectiveSearchQuery = getEffectiveSearchQuery();
-    if (effectiveSearchQuery) query.set("search", effectiveSearchQuery);
-    if (state.selection.sort) query.set("sort", state.selection.sort);
-    state.products = await fetchJson(`/api/catalog/products?${query.toString()}`);
-    renderProducts();
-    renderCatalogGroups();
+function getTopbarTitle() {
+    if (state.nav === "catalog" && state.catalog.section) {
+        return { title: state.catalog.section, subtitle: `${getSectionProducts(state.catalog.section).length} товаров` };
+    }
+    if (state.nav === "favorites") {
+        return { title: "Избранное", subtitle: "" };
+    }
+    if (state.nav === "cart") {
+        return { title: state.checkout.open ? "Оформление заявки" : "Корзина", subtitle: state.checkout.open ? "Менеджер свяжется с вами и выставит счёт" : "" };
+    }
+    if (state.nav === "profile") {
+        return { title: state.profile?.admin ? "Админ-панель" : "Профиль", subtitle: "" };
+    }
+    return { title: "", subtitle: "" };
 }
 
-async function loadProfile() {
-    if (!state.maxUserId) {
-        state.profile = {
-            displayName: "Пользователь MAX",
-            admin: false,
-            ordersCount: 0,
-        };
-        state.profileOrders = [];
-        renderProfile();
+function renderCurrentPage() {
+    switch (state.nav) {
+        case "cart":
+            return renderCartPage();
+        case "favorites":
+            return renderFavoritesPage();
+        case "profile":
+            return state.profile?.admin ? renderAdminPage() : renderProfilePage();
+        case "catalog":
+        default:
+            return renderCatalogPage();
+    }
+}
+
+function renderCatalogPage() {
+    const searchQuery = state.catalog.query.trim();
+    const results = searchQuery ? getSearchResults(searchQuery) : [];
+    return `
+        <section class="page stack">
+            <div class="search-shell">
+                <label class="search-field">
+                    <span>🔎</span>
+                    <input data-field="catalog-query" type="search" placeholder="Поиск по каталогу..." value="${escapeAttr(state.catalog.query)}">
+                    ${searchQuery ? `<button type="button" class="search-clear-btn" data-action="clear-search">×</button>` : `<span></span>`}
+                </label>
+            </div>
+            ${state.catalog.section ? renderSectionPage() : renderCatalogHome(results)}
+        </section>
+    `;
+}
+
+function renderCatalogHome(results) {
+    const searching = state.catalog.query.trim().length > 0;
+    if (searching) {
+        return `
+            <div class="stack">
+                <div class="search-muted">Найдено: ${results.length} товаров</div>
+                ${renderProductsGrid(results)}
+            </div>
+        `;
+    }
+    return `
+        <div class="stack">
+            <div class="section-label">Разделы каталога</div>
+            <div class="section-list">
+                ${getCatalogSections().map(renderSectionCard).join("")}
+            </div>
+        </div>
+    `;
+}
+
+function renderSectionCard(section) {
+    const visual = getSectionVisual(section.name);
+    return `
+        <button type="button" class="section-card" data-action="open-section" data-section="${escapeAttr(section.name)}">
+            <div class="section-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
+                <img src="${visual.icon}" alt="${escapeAttr(section.name)}">
+            </div>
+            <div class="section-card-body">
+                <p class="section-card-title">${escapeHtml(section.name)}</p>
+                <p class="section-card-desc">${escapeHtml(section.description || visual.description)}</p>
+            </div>
+            <div class="section-card-end">
+                <span class="pill-count">${section.productsCount}</span>
+                <span class="section-arrow">›</span>
+            </div>
+        </button>
+    `;
+}
+
+function renderSectionPage() {
+    const products = getSectionProducts(state.catalog.section);
+    const filtered = applyCatalogFilters(products);
+    return `
+        <div class="stack">
+            <button class="search-muted" data-action="back">‹ Назад</button>
+            <div class="page-head">
+                <h2 class="page-title">${escapeHtml(state.catalog.section)}</h2>
+                <p>${filtered.length} товаров</p>
+            </div>
+            <div class="toolbar-row">
+                <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
+                <select class="toolbar-select" data-field="catalog-sort">
+                    ${renderSortOptions()}
+                </select>
+            </div>
+            ${renderProductsGrid(filtered)}
+        </div>
+    `;
+}
+
+function renderProductsGrid(products) {
+    if (!products.length) {
+        return `<div class="empty-box">По выбранным параметрам товары не найдены.</div>`;
+    }
+    return `<div class="products-grid">${products.map(renderProductCard).join("")}</div>`;
+}
+
+function renderProductCard(product) {
+    const visual = getProductVisual(product);
+    const favorite = isFavorite(product.id);
+    const cartItem = getCartItem(product.id);
+    const price = renderProductPrice(product);
+    return `
+        <article class="product-card">
+            <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});" data-action="open-product" data-product-id="${product.id}">
+                <img src="${visual.icon}" alt="${escapeAttr(product.name)}">
+                <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
+            </div>
+            <div class="product-card-body">
+                <p class="product-card-title">${escapeHtml(product.name)}</p>
+                <p class="product-card-subtitle">${escapeHtml(product.brand || product.category || "")}</p>
+                <div class="price-line">
+                    ${price}
+                    ${product.price == null
+                        ? `<span></span>`
+                        : cartItem
+                            ? renderStepper(product.id, cartItem.quantity, "card")
+                            : `<button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>`}
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function renderProductPrice(product) {
+    const oldPrice = normalizePrice(product.oldPrice);
+    if (product.price == null) {
+        return `<div class="price-block request"><div class="old-price">&nbsp;</div><strong>По запросу</strong></div>`;
+    }
+    return `
+        <div class="price-block">
+            <div class="old-price">${oldPrice ? `${formatPrice(oldPrice)}` : "&nbsp;"}</div>
+            <strong>${formatPrice(product.price)}</strong>
+        </div>
+    `;
+}
+
+function renderCartPage() {
+    if (state.checkout.open) {
+        return renderCheckoutPage();
+    }
+    if (!state.cart.length) {
+        return `
+            <section class="page stack">
+                <div class="empty-box">
+                    <p>Корзина пока пуста.</p>
+                    <button class="primary-btn" data-action="go-catalog">Перейти в каталог</button>
+                </div>
+            </section>
+        `;
+    }
+    const items = getCartProducts();
+    return `
+        <section class="page stack">
+            <div class="cart-list">${items.map(renderCartItem).join("")}</div>
+            <div class="summary-card">
+                <div class="summary-grid">
+                    <div class="summary-row"><span>Позиций</span><span>${items.length}</span></div>
+                    <div class="summary-row"><span>Единиц</span><span>${sumCartUnits()}</span></div>
+                    <div class="summary-row"><span>Примерная сумма</span><strong>${formatApproximateTotal(items)}</strong></div>
+                </div>
+                <button class="primary-btn" data-action="open-checkout">Оформить заявку →</button>
+            </div>
+        </section>
+    `;
+}
+
+function renderCartItem(item) {
+    const visual = getProductVisual(item.product);
+    return `
+        <article class="cart-item">
+            <div class="cart-thumb" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
+                <img src="${visual.icon}" alt="${escapeAttr(item.product.name)}">
+            </div>
+            <div class="cart-main">
+                <h3>${escapeHtml(item.product.name)}</h3>
+                <div class="cart-meta">${escapeHtml(item.product.brand || item.product.packageDescription || item.product.unitName || "")}</div>
+                ${renderStepper(item.product.id, item.quantity, "cart")}
+            </div>
+            <div class="cart-end">
+                <button class="delete-btn" data-action="remove-cart" data-product-id="${item.product.id}">×</button>
+                <strong>${item.product.price == null ? "По запросу" : formatPrice(item.product.price * item.quantity)}</strong>
+            </div>
+        </article>
+    `;
+}
+
+function renderCheckoutPage() {
+    if (state.successOrderCode) {
+        return `
+            <section class="page stack">
+                <div class="success-screen summary-card">
+                    <h3>Заявка отправлена!</h3>
+                    <p>Менеджер свяжется с вами в течение 30 минут.</p>
+                    <div>Номер заявки: <strong>${escapeHtml(state.successOrderCode)}</strong></div>
+                    <button class="primary-btn" data-action="go-catalog">Вернуться в каталог</button>
+                </div>
+            </section>
+        `;
+    }
+    const attachmentHtml = state.checkout.uploaded.map((item, index) => `
+        <div class="attachment-item">
+            <div>
+                <strong>${escapeHtml(item.originalName || item.storedName)}</strong>
+                <div class="search-muted">${escapeHtml(item.contentType || "Файл")}</div>
+            </div>
+            <button class="delete-btn" data-action="remove-attachment" data-index="${index}">×</button>
+        </div>
+    `).join("");
+    return `
+        <section class="page stack">
+            <button class="search-muted" data-action="close-checkout">‹ Назад</button>
+            <div class="checkout-panel">
+                <div class="form-grid">
+                    ${renderField("organization", "Организация / ФИО", state.checkout.form.organization, "ООО Агро-Степь", true)}
+                    ${renderField("phone", "Телефон", state.checkout.form.phone, "+7 900 000-00-00", true)}
+                    ${renderField("email", "Email", state.checkout.form.email, "mail@company.ru", true)}
+                    ${renderField("address", "Адрес доставки", state.checkout.form.address, "Регион, район, населённый пункт", true)}
+                    <div class="field">
+                        <label>Реквизиты</label>
+                        <label class="upload-box">
+                            <input type="file" data-field="checkout-attachment" multiple>
+                            <div style="font-size:2rem;">📎</div>
+                            <div>Прикрепить реквизиты</div>
+                            <div class="upload-hint">Фото, PDF, Word — любой формат</div>
+                        </label>
+                    </div>
+                    ${attachmentHtml ? `<div class="attachment-list">${attachmentHtml}</div>` : ""}
+                    <div class="field">
+                        <label>Состав заявки</label>
+                        <div class="summary-card">
+                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.product.name)}</span><span>${formatQuantity(item.quantity)} ед.</span></div>`).join("")}
+                            <div class="summary-row"><strong>Итого позиций</strong><strong>${getCartProducts().length}</strong></div>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Комментарий</label>
+                        <textarea data-field="checkout-comment" placeholder="Удобное время звонка, особые условия...">${escapeHtml(state.checkout.form.comment)}</textarea>
+                    </div>
+                </div>
+                <button class="primary-btn" ${state.checkout.submitting ? "disabled" : ""} data-action="submit-order">Отправить заявку →</button>
+            </div>
+        </section>
+    `;
+}
+
+function renderFavoritesPage() {
+    const products = state.products.filter(product => isFavorite(product.id));
+    return `
+        <section class="page stack">
+            ${products.length ? `<div class="products-grid">${products.map(renderProductCard).join("")}</div>` : `<div class="empty-box">Вы еще не добавили товары в избранное.</div>`}
+        </section>
+    `;
+}
+
+function renderProfilePage() {
+    const orders = filterProfileOrders();
+    return `
+        <section class="page stack">
+            <div class="profile-card">
+                <div class="profile-hero">
+                    <div class="profile-avatar">👤</div>
+                    <h2>${escapeHtml(state.profile?.displayName || "Пользователь")}</h2>
+                    <p>${escapeHtml(state.profile?.phone || "")}</p>
+                </div>
+            </div>
+            <div class="profile-section stack">
+                <button class="link-tile" data-action="toggle-profile-orders">
+                    <div class="link-tile-text">
+                        <strong>Мои заявки</strong>
+                        <p>История с статусами</p>
+                    </div>
+                    <span class="cell-arrow">›</span>
+                </button>
+                <div class="profile-status-tabs">
+                    ${["ALL", "NEW", "IN_PROGRESS", "COMPLETED", "CANCELLED"].map(status => `
+                        <button class="status-chip ${state.profileOrdersFilter === status ? "active" : ""}" data-action="profile-status" data-status="${status}">
+                            ${profileStatusLabel(status)}
+                        </button>
+                    `).join("")}
+                </div>
+                <div class="orders-stack">
+                    ${orders.length ? orders.map(renderOrderCard).join("") : `<div class="empty-box">Заявок по этому фильтру пока нет.</div>`}
+                </div>
+            </div>
+            <div class="profile-section">
+                <div class="section-label" style="margin-bottom:10px;">Контакты</div>
+                <div class="profile-links">
+                    <a class="link-tile" href="tel:${escapeAttr(state.meta?.managerPhone || "")}">
+                        <div class="link-tile-text">
+                            <strong>Позвонить менеджеру</strong>
+                            <p>${escapeHtml(state.meta?.managerPhone || "")} — ${escapeHtml(state.meta?.managerName || "Марат")}</p>
+                        </div>
+                        <span class="cell-arrow">›</span>
+                    </a>
+                    <a class="link-tile" href="${escapeAttr(state.meta?.managerMaxLink || "#")}">
+                        <div class="link-tile-text">
+                            <strong>Написать в MAX</strong>
+                            <p>${escapeHtml(state.meta?.managerName || "Менеджер")}</p>
+                        </div>
+                        <span class="cell-arrow">›</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function renderOrderCard(order) {
+    return `
+        <article class="summary-card">
+            <div class="summary-row">
+                <strong>${escapeHtml(order.publicCode)}</strong>
+                <span class="status-chip active">${escapeHtml(order.statusLabel || profileStatusLabel(order.status))}</span>
+            </div>
+            <div class="search-muted">${formatDate(order.createdAt)}</div>
+            <div class="search-muted">${order.items.map(item => `${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)}`).join(", ")}</div>
+        </article>
+    `;
+}
+
+function renderAdminPage() {
+    return `
+        <section class="page stack">
+            <div class="admin-layout">
+                <aside class="admin-menu-wrap">
+                    <div class="admin-menu">
+                        ${renderAdminMenuButton("dashboard", "Дашборд", null)}
+                        ${renderAdminMenuButton("catalog", "Каталог", null)}
+                        ${renderAdminMenuButton("manufacturers", "Производители", null)}
+                        ${renderAdminMenuButton("orders", "Заявки", getPendingOrdersCount())}
+                        ${renderAdminMenuButton("broadcasts", "Рассылка", null)}
+                    </div>
+                </aside>
+                <div class="admin-content">
+                    ${renderAdminContent()}
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function renderAdminMenuButton(key, label, badge) {
+    return `
+        <button class="admin-menu-btn ${state.admin.menu === key ? "active" : ""}" data-action="admin-menu" data-menu="${key}">
+            ${escapeHtml(label)}
+            ${badge ? `<span class="pending-badge">${badge}</span>` : ""}
+        </button>
+    `;
+}
+
+function renderAdminContent() {
+    switch (state.admin.menu) {
+        case "catalog":
+            return renderAdminCatalog();
+        case "manufacturers":
+            return renderAdminManufacturers();
+        case "orders":
+            return renderAdminOrders();
+        case "broadcasts":
+            return renderAdminBroadcasts();
+        case "dashboard":
+        default:
+            return renderAdminDashboard();
+    }
+}
+
+function renderAdminDashboard() {
+    const dashboard = state.admin.dashboard || { latestOrders: [] };
+    return `
+        <div class="admin-card">
+            <h2>Дашборд</h2>
+            <div class="stats-grid" style="margin-top:12px;">
+                <div class="stat-tile"><span>Заявок всего</span><strong>${dashboard.ordersTotal || 0}</strong></div>
+                <div class="stat-tile"><span>В ожидании</span><strong>${dashboard.ordersPending || 0}</strong></div>
+                <div class="stat-tile"><span>Товаров в каталоге</span><strong>${dashboard.productsTotal || 0}</strong></div>
+                <div class="stat-tile"><span>Пользователей</span><strong>${dashboard.usersTotal || 0}</strong><span>+${dashboard.usersAddedThisMonth || 0} за месяц</span></div>
+            </div>
+        </div>
+        <div class="admin-card">
+            <div class="summary-row">
+                <h3>Последние заявки</h3>
+                <button class="table-action" data-action="admin-menu" data-menu="orders">Все заявки</button>
+            </div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Номер</th><th>Клиент</th><th>Телефон</th><th>Товары</th><th>Дата</th><th>Статус</th><th></th></tr></thead>
+                    <tbody>
+                        ${(dashboard.latestOrders || []).map(order => `
+                            <tr>
+                                <td>${escapeHtml(order.publicCode)}</td>
+                                <td>${escapeHtml(order.customerName || "")}</td>
+                                <td>${escapeHtml(order.customerPhone || "")}</td>
+                                <td>${escapeHtml(order.items.map(item => item.productName).join(", "))}</td>
+                                <td>${formatDate(order.createdAt)}</td>
+                                <td>${escapeHtml(order.statusLabel)}</td>
+                                <td><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminCatalog() {
+    const products = getAdminFilteredProducts();
+    return `
+        <div class="admin-split">
+            <div class="admin-card">
+                <div class="summary-row">
+                    <h3>Структура</h3>
+                    <button class="table-action" data-action="open-admin-product">+ Добавить товар</button>
+                </div>
+                <div class="admin-tree">
+                    ${getAdminSectionTree().map(section => `
+                        <div class="admin-tree-group">
+                            <div class="admin-tree-title">
+                                <button data-action="admin-section" data-section="${escapeAttr(section.name)}">${escapeHtml(section.name)}</button>
+                                <span class="pill-count">${section.count}</span>
+                            </div>
+                            <div class="admin-tree-list">
+                                ${section.children.map(child => `<button class="admin-tree-item" data-action="admin-section" data-section="${escapeAttr(section.name)}" data-category="${escapeAttr(child)}">${escapeHtml(child)}</button>`).join("")}
+                            </div>
+                        </div>
+                    `).join("")}
+                </div>
+            </div>
+            <div class="admin-card">
+                <div class="summary-row">
+                    <h3>Товары</h3>
+                    <button class="table-action" data-action="open-admin-product">+ Добавить товар</button>
+                </div>
+                <div class="admin-toolbar">
+                    <label class="search-field">
+                        <span>🔎</span>
+                        <input type="search" data-field="admin-product-search" placeholder="Поиск по товарам" value="${escapeAttr(state.admin.catalogSearch)}">
+                        <span></span>
+                    </label>
+                    <select class="toolbar-select" data-field="admin-product-status">
+                        ${renderOptions([
+                            ["ALL", "Все"],
+                            ["ACTIVE", "Активен"],
+                            ["HIDDEN", "Скрыт"],
+                        ], state.admin.catalogStatus)}
+                    </select>
+                </div>
+                <div class="admin-table-wrap">
+                    <table class="admin-table">
+                        <thead><tr><th>Товар</th><th>Раздел</th><th>Производитель</th><th>Цена</th><th>Остаток</th><th>Статус</th><th></th></tr></thead>
+                        <tbody>
+                            ${products.map(product => `
+                                <tr>
+                                    <td>${escapeHtml(product.name)}</td>
+                                    <td>${escapeHtml(product.category || "Прочее")}${product.subcategory ? `<div class="search-muted">${escapeHtml(product.subcategory)}</div>` : ""}</td>
+                                    <td>${escapeHtml(product.brand || "—")}</td>
+                                    <td>${product.price == null ? "По запросу" : formatPrice(product.price)}</td>
+                                    <td>${product.stockQuantity ?? "—"}</td>
+                                    <td>${product.active ? "Активен" : "Скрыт"}</td>
+                                    <td><button class="table-action" data-action="open-admin-product" data-product-id="${product.id}">Открыть</button></td>
+                                </tr>
+                            `).join("")}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminManufacturers() {
+    return `
+        <div class="admin-card">
+            <div class="summary-row">
+                <h3>Производители</h3>
+                <button class="table-action" data-action="open-manufacturer-modal">+ Добавить производителя</button>
+            </div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Название</th><th>Товаров</th><th></th></tr></thead>
+                    <tbody>
+                        ${state.admin.manufacturers.map(item => `
+                            <tr>
+                                <td>${escapeHtml(item.name)}</td>
+                                <td>${item.productsCount}</td>
+                                <td>
+                                    <div style="display:flex;gap:8px;">
+                                        <button class="table-action" data-action="edit-manufacturer" data-id="${item.id || ""}" data-name="${escapeAttr(item.name)}">Редактировать</button>
+                                        ${item.id ? `<button class="table-action" data-action="delete-manufacturer" data-id="${item.id}">Удалить</button>` : ""}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminOrders() {
+    const orders = getFilteredAdminOrders();
+    return `
+        <div class="admin-card">
+            <h3>Заявки</h3>
+            <div class="admin-toolbar" style="margin-top:12px;">
+                <label class="search-field">
+                    <span>🔎</span>
+                    <input type="search" data-field="admin-order-search" placeholder="Поиск по имени или телефону" value="${escapeAttr(state.admin.orderFilters.search)}">
+                    <span></span>
+                </label>
+                <select class="toolbar-select" data-field="admin-order-status">
+                    ${renderOptions([
+                        ["ALL", "Все"],
+                        ["NEW", "В ожидании"],
+                        ["IN_PROGRESS", "В работе"],
+                        ["COMPLETED", "Оплачен"],
+                        ["CANCELLED", "Отменён"],
+                    ], state.admin.orderFilters.status)}
+                </select>
+                <div class="admin-form-row">
+                    <input type="date" data-field="admin-order-from" value="${escapeAttr(state.admin.orderFilters.from)}">
+                    <input type="date" data-field="admin-order-to" value="${escapeAttr(state.admin.orderFilters.to)}">
+                </div>
+            </div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Номер</th><th>Клиент</th><th>Телефон</th><th>Сумма</th><th>Дата</th><th>Статус</th><th></th></tr></thead>
+                    <tbody>
+                        ${orders.map(order => `
+                            <tr>
+                                <td>${escapeHtml(order.publicCode)}</td>
+                                <td>${escapeHtml(order.customerName || "")}</td>
+                                <td>${escapeHtml(order.customerPhone || "")}</td>
+                                <td>${formatPrice(order.totalPrice || 0)}</td>
+                                <td>${formatDate(order.createdAt)}</td>
+                                <td>${escapeHtml(order.statusLabel)}</td>
+                                <td><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminBroadcasts() {
+    const stats = state.admin.broadcasts?.stats || {};
+    const history = state.admin.broadcasts?.history || [];
+    return `
+        <div class="admin-split">
+            <div class="admin-card">
+                <h3>Рассылка</h3>
+                <div class="form-grid" style="margin-top:12px;">
+                    <div class="field">
+                        <label>Фото</label>
+                        <label class="upload-box">
+                            <input type="file" accept="image/*" data-field="broadcast-image">
+                            <div style="font-size:2rem;">🖼️</div>
+                            <div>${state.admin.broadcastForm.imageName ? escapeHtml(state.admin.broadcastForm.imageName) : "Загрузить изображение"}</div>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label>Текст сообщения</label>
+                        <textarea data-field="broadcast-text" placeholder="Текст сообщения для всех пользователей">${escapeHtml(state.admin.broadcastForm.text)}</textarea>
+                    </div>
+                    <div class="summary-card">
+                        <strong>Предпросмотр</strong>
+                        ${state.admin.broadcastForm.imageUrl ? `<img src="${escapeAttr(state.admin.broadcastForm.imageUrl)}" alt="" style="border-radius:14px;max-height:180px;object-fit:cover;">` : ""}
+                        <div>${escapeHtml(state.admin.broadcastForm.text || "Сообщение появится здесь")}</div>
+                    </div>
+                    <button class="primary-btn" data-action="send-broadcast" ${state.admin.broadcastForm.sending ? "disabled" : ""}>Отправить всем (${stats.subscribersCount || 0} чел.)</button>
+                </div>
+            </div>
+            <div class="admin-stack">
+                <div class="admin-card">
+                    <h3>Статистика</h3>
+                    <div class="stats-grid" style="margin-top:12px;">
+                        <div class="stat-tile"><span>Подписчики</span><strong>${stats.subscribersCount || 0}</strong></div>
+                        <div class="stat-tile"><span>Рассылок</span><strong>${stats.broadcastsCount || 0}</strong></div>
+                        <div class="stat-tile"><span>Новых за месяц</span><strong>${stats.newUsersThisMonth || 0}</strong></div>
+                        <div class="stat-tile"><span>Последняя</span><strong>${stats.lastBroadcastAt ? formatDate(stats.lastBroadcastAt) : "—"}</strong></div>
+                    </div>
+                </div>
+                <div class="admin-card">
+                    <h3>История рассылок</h3>
+                    <div class="history-list" style="margin-top:12px;">
+                        ${history.length ? history.map(item => `
+                            <div class="history-card">
+                                <strong>${formatDate(item.createdAt)}</strong>
+                                <div>${item.messageType === "photo" ? "Фото" : "Текст"} · ${item.recipientsCount} получателей</div>
+                                <div class="search-muted">${escapeHtml(item.text)}</div>
+                            </div>
+                        `).join("") : `<div class="empty-box">История пока пуста.</div>`}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderBottomNav() {
+    const profileLabel = state.profile?.admin ? "Админка" : "Профиль";
+    return `
+        <nav class="bottom-nav">
+            <div class="bottom-nav-grid">
+                ${renderNavButton("catalog", "🗂", "Каталог", null)}
+                ${renderNavButton("cart", "🛒", "Корзина", state.cart.length || null)}
+                ${renderNavButton("favorites", "♡", "Избранное", null)}
+                ${renderNavButton("profile", "👤", profileLabel, null)}
+            </div>
+        </nav>
+    `;
+}
+
+function renderNavButton(key, icon, label, badge) {
+    return `
+        <button class="nav-btn ${state.nav === key ? "active" : ""}" data-action="nav" data-nav="${key}">
+            ${badge ? `<span class="nav-badge">${badge}</span>` : ""}
+            <span class="nav-icon">${icon}</span>
+            <span class="nav-label">${escapeHtml(label)}</span>
+        </button>
+    `;
+}
+
+function renderProductModal() {
+    if (!state.productModal.open) return "";
+    const product = getProductById(state.productModal.productId);
+    if (!product) return "";
+    const visual = getProductVisual(product);
+    const galleryItems = [visual.icon];
+    const currentImage = galleryItems[state.productModal.imageIndex] || visual.icon;
+    const favorite = isFavorite(product.id);
+    const canBuy = product.price != null;
+    const currentQty = getCartItem(product.id)?.quantity || state.productModal.quantity;
+    return `
+        <div class="modal">
+            <div class="modal-backdrop" data-action="close-product"></div>
+            <div class="modal-sheet">
+                <div class="modal-head">
+                    <div class="modal-title-wrap">
+                        <div class="modal-title">${escapeHtml(product.name)}</div>
+                        <div class="modal-subtitle">${escapeHtml(product.brand || "")}</div>
+                    </div>
+                    <button class="modal-close" data-action="close-product">×</button>
+                </div>
+                <div class="product-gallery">
+                    <div class="gallery-stage" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
+                        ${galleryItems.length > 1 ? `<button class="gallery-nav prev" data-action="gallery-prev">‹</button>` : ""}
+                        <img src="${currentImage}" alt="${escapeAttr(product.name)}">
+                        <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
+                        ${galleryItems.length > 1 ? `<button class="gallery-nav next" data-action="gallery-next">›</button>` : ""}
+                    </div>
+                    ${galleryItems.length > 1 ? `<div class="gallery-dots">${galleryItems.map((_, index) => `<span class="gallery-dot ${index === state.productModal.imageIndex ? "active" : ""}"></span>`).join("")}</div>` : ""}
+                </div>
+                <div class="product-detail-body">
+                    <div>
+                        <div class="eyebrow">${escapeHtml(product.category || "Каталог")}</div>
+                        <h3>${escapeHtml(product.name)}</h3>
+                        <div class="product-brand">${escapeHtml(product.brand || "")}</div>
+                    </div>
+                    <div class="detail-price">
+                        ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
+                        <strong>${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
+                    </div>
+                    <div class="packaging-chips">
+                        <span class="packaging-chip">${escapeHtml(product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
+                    </div>
+                    ${product.description ? `<p class="detail-paragraph">${escapeHtml(product.description)}</p>` : ""}
+                    ${product.activeIngredient ? `<div><div class="eyebrow">Действующее вещество</div><p class="detail-paragraph">${escapeHtml(product.activeIngredient)}</p></div>` : ""}
+                    ${canBuy ? `
+                        <div class="detail-footer">
+                            ${renderStepper(product.id, currentQty, "modal")}
+                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}">
+                                ${getCartItem(product.id) ? "✓ В корзине" : "В корзину"}
+                            </button>
+                        </div>
+                    ` : `<button class="secondary-btn" data-action="open-manager">Связаться с менеджером</button>`}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderFiltersDrawer() {
+    if (!state.catalog.filtersOpen) return "";
+    const draft = state.catalog.draft || cloneFilters(state.catalog.applied);
+    const sectionProducts = getSectionProducts(state.catalog.section);
+    const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
+    const categoriesTree = buildCategoriesTree(sectionProducts);
+    return `
+        <div class="drawer">
+            <div class="drawer-backdrop" data-action="close-filters"></div>
+            <div class="drawer-sheet">
+                <div class="drawer-top">
+                    <div class="modal-title">Фильтры</div>
+                    <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
+                </div>
+                <div class="drawer-section">
+                    <h4>Раздел</h4>
+                    <div class="filter-chips-row">
+                        ${getCatalogSections().map(section => `
+                            <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(section.name)}</button>
+                        `).join("")}
+                    </div>
+                </div>
+                <div class="drawer-section">
+                    <h4>Производитель</h4>
+                    <div class="checkbox-list">
+                        ${manufacturers.map(name => `
+                            <label class="checkbox-row">
+                                <input type="checkbox" data-field="filter-manufacturer" value="${escapeAttr(name)}" ${draft.manufacturers.includes(name) ? "checked" : ""}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
+                        `).join("")}
+                    </div>
+                </div>
+                <div class="drawer-section">
+                    <h4>Категория</h4>
+                    <div class="tree-list">
+                        ${Object.entries(categoriesTree).map(([parent, children]) => `
+                            <div>
+                                <label class="tree-row">
+                                    <input type="checkbox" data-field="filter-category" value="${escapeAttr(parent)}" ${draft.categories.includes(parent) ? "checked" : ""}>
+                                    <span>${escapeHtml(parent)}</span>
+                                </label>
+                                ${children.length ? `<div class="tree-children">${children.map(child => `
+                                    <label class="tree-row">
+                                        <input type="checkbox" data-field="filter-category" value="${escapeAttr(`${parent}::${child}`)}" ${draft.categories.includes(`${parent}::${child}`) ? "checked" : ""}>
+                                        <span>${escapeHtml(child)}</span>
+                                    </label>`).join("")}</div>` : ""}
+                            </div>
+                        `).join("")}
+                    </div>
+                </div>
+                <div class="drawer-section">
+                    <h4>Цена, ₽</h4>
+                    <div class="price-range">
+                        <input type="number" data-field="filter-price-min" value="${escapeAttr(draft.priceMin)}" placeholder="от">
+                        <span>—</span>
+                        <input type="number" data-field="filter-price-max" value="${escapeAttr(draft.priceMax)}" placeholder="до">
+                    </div>
+                </div>
+                <div class="drawer-actions">
+                    <button class="ghost-btn" data-action="close-filters">Сбросить</button>
+                    <button class="primary-btn" data-action="apply-filters">Применить</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminProductModal() {
+    if (!state.admin.productEditor.open) return "";
+    const product = state.admin.productEditor.productId ? state.admin.products.find(item => item.id === state.admin.productEditor.productId) : null;
+    const categories = getCatalogSections().map(item => item.name);
+    return `
+        <div class="modal">
+            <div class="modal-backdrop" data-action="close-admin-product"></div>
+            <div class="modal-sheet">
+                <div class="modal-head">
+                    <div class="modal-title-wrap"><div class="modal-title">${product ? "Редактирование товара" : "Добавить товар"}</div></div>
+                    <button class="modal-close" data-action="close-admin-product">×</button>
+                </div>
+                <form class="admin-form-grid" data-form="admin-product">
+                    <input type="hidden" name="productId" value="${product?.id || ""}">
+                    <div class="admin-form-row">
+                        <div class="admin-field"><label>Раздел</label><select name="category">${renderOptions(categories.map(item => [item, item]), product?.category || "")}</select></div>
+                        <div class="admin-field"><label>Категория</label><input name="subcategory" value="${escapeAttr(product?.subcategory || "")}"></div>
+                    </div>
+                    <div class="admin-field"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
+                    <div class="admin-form-row">
+                        <div class="admin-field"><label>Производитель</label><input name="brand" required value="${escapeAttr(product?.brand || "")}"></div>
+                        <div class="admin-field"><label>Ед. измерения</label><input name="unitName" value="${escapeAttr(product?.unitName || "шт")}"></div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}"></div>
+                        <div class="admin-field"><label>Старая цена</label><input name="oldPrice" type="number" min="0" step="0.01" value="${escapeAttr(product?.oldPrice ?? "")}"></div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="1" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
+                        <div class="admin-field"><label>Показывать</label><select name="active">${renderOptions([["true", "Да"], ["false", "Нет"]], String(product?.active ?? true))}</select></div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-field"><label>Тип упаковки</label><select name="packageType">${renderOptions([["", "Не выбрано"], ["канистра", "Канистра"], ["коробка", "Коробка"], ["мешок", "Мешок"], ["п.е.", "П.е."], ["тонна", "Тонна"]], product?.packageType || "")}</select></div>
+                        <div class="admin-field"><label>Упаковка / объём</label><input name="packageDescription" value="${escapeAttr(product?.packageDescription || "")}"></div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-field"><label>Минимальный шаг</label><input name="orderStep" type="number" min="1" step="1" value="${escapeAttr(product?.orderStep ?? 1)}"></div>
+                        <div class="admin-field"><label>Минимум</label><input name="minOrderQuantity" type="number" min="1" step="1" value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
+                    </div>
+                    <div class="admin-field"><label>Описание</label><textarea name="description">${escapeHtml(product?.description || "")}</textarea></div>
+                    <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
+                    <div class="admin-field"><label>Культуры</label><input name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"></div>
+                    <div class="admin-field"><label>Назначение</label><input name="tags" value="${escapeAttr((product?.tags || []).join(", "))}"></div>
+                    <div class="admin-actions">
+                        ${product ? `<button type="button" class="ghost-btn" data-action="delete-admin-product" data-product-id="${product.id}">Удалить</button>` : ""}
+                        <button type="button" class="ghost-btn" data-action="close-admin-product">Отмена</button>
+                        <button type="submit" class="primary-btn">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminManufacturerModal() {
+    if (!state.admin.manufacturerModal.open) return "";
+    return `
+        <div class="modal">
+            <div class="modal-backdrop" data-action="close-manufacturer-modal"></div>
+            <div class="modal-sheet">
+                <div class="modal-head">
+                    <div class="modal-title-wrap"><div class="modal-title">${state.admin.manufacturerModal.id ? "Редактировать производителя" : "Добавить производителя"}</div></div>
+                    <button class="modal-close" data-action="close-manufacturer-modal">×</button>
+                </div>
+                <form class="admin-form-grid" data-form="manufacturer">
+                    <input type="hidden" name="id" value="${state.admin.manufacturerModal.id || ""}">
+                    <div class="admin-field">
+                        <label>Название</label>
+                        <input name="name" required value="${escapeAttr(state.admin.manufacturerModal.name || "")}">
+                    </div>
+                    <div class="admin-actions">
+                        <button type="button" class="ghost-btn" data-action="close-manufacturer-modal">Отмена</button>
+                        <button type="submit" class="primary-btn">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminOrderModal() {
+    if (!state.admin.orderModal.open) return "";
+    const order = state.admin.orders.find(item => item.id === state.admin.orderModal.orderId);
+    if (!order) return "";
+    return `
+        <div class="modal">
+            <div class="modal-backdrop" data-action="close-admin-order"></div>
+            <div class="modal-sheet">
+                <div class="modal-head">
+                    <div class="modal-title-wrap">
+                        <div class="modal-title">${escapeHtml(order.publicCode)}</div>
+                        <div class="modal-subtitle">${escapeHtml(order.statusLabel)}</div>
+                    </div>
+                    <button class="modal-close" data-action="close-admin-order">×</button>
+                </div>
+                <div class="product-detail-body">
+                    <div class="summary-card">
+                        <div class="summary-row"><span>Клиент</span><strong>${escapeHtml(order.customerName || "")}</strong></div>
+                        <div class="summary-row"><span>Телефон</span><span>${escapeHtml(order.customerPhone || "")}</span></div>
+                        <div class="summary-row"><span>Email</span><span>${escapeHtml(order.customerEmail || "—")}</span></div>
+                        <div class="summary-row"><span>Адрес</span><span>${escapeHtml(order.deliveryAddress || "—")}</span></div>
+                        <div class="summary-row"><span>Комментарий</span><span>${escapeHtml(order.comment || "—")}</span></div>
+                    </div>
+                    <div class="summary-card">
+                        ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity)}</strong></div>`).join("")}
+                        <div class="summary-row"><strong>Итого</strong><strong>${formatPrice(order.totalPrice || 0)}</strong></div>
+                    </div>
+                    ${(order.attachments || []).length ? `
+                        <div class="summary-card">
+                            <strong>Прикреплённые реквизиты</strong>
+                            ${(order.attachments || []).map(file => `<a class="link-tile" href="${escapeAttr(file.downloadUrl)}" target="_blank"><div class="link-tile-text"><strong>${escapeHtml(file.originalName || file.storedName)}</strong></div><span class="cell-arrow">›</span></a>`).join("")}
+                        </div>
+                    ` : ""}
+                    <div class="admin-actions">
+                        ${renderOrderStatusActions(order)}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderOrderStatusActions(order) {
+    if (order.status === "NEW") {
+        return `
+            <button class="ghost-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="CANCELLED">Отменить заявку</button>
+            <button class="primary-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="IN_PROGRESS">Принять → В работе</button>
+        `;
+    }
+    if (order.status === "IN_PROGRESS") {
+        return `
+            <button class="ghost-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="CANCELLED">Отменить заявку</button>
+            <button class="primary-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="COMPLETED">Отметить как оплачен</button>
+        `;
+    }
+    return `<button class="secondary-btn" disabled>Заявка завершена</button>`;
+}
+
+function handleClick(event) {
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+    const { action } = button.dataset;
+    if (action === "nav") {
+        state.nav = button.dataset.nav;
+        state.catalog.query = "";
+        render();
         return;
     }
-    state.profile = await fetchJson(`/api/profile?maxUserId=${state.maxUserId}`);
-    state.profileOrders = await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`);
-    renderProfile();
-    if (state.profile.admin) {
-        rememberMaxUserId(state.maxUserId);
-        const [products, orders] = await Promise.all([
-            fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`),
-            fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`),
-        ]);
-        state.adminProducts = products;
-        state.adminOrders = orders;
-        renderAdminSection();
-    } else if (state.maxUserId) {
-        rememberMaxUserId(state.maxUserId);
+    if (action === "open-section") {
+        state.catalog.section = button.dataset.section;
+        state.catalog.applied = emptyFilters();
+        state.catalog.draft = cloneFilters(state.catalog.applied);
+        render();
+        return;
     }
+    if (action === "back") {
+        if (state.productModal.open) {
+            closeProductModal();
+        } else if (state.checkout.open) {
+            state.checkout.open = false;
+            state.successOrderCode = "";
+        } else if (state.catalog.section) {
+            state.catalog.section = "";
+            state.catalog.applied = emptyFilters();
+            state.catalog.filtersOpen = false;
+        } else {
+            state.nav = "catalog";
+        }
+        render();
+        return;
+    }
+    if (action === "clear-search") {
+        state.catalog.query = "";
+        render();
+        return;
+    }
+    if (action === "open-product") {
+        state.productModal = { open: true, productId: Number(button.dataset.productId), quantity: 1, imageIndex: 0 };
+        render();
+        return;
+    }
+    if (action === "close-product") {
+        closeProductModal();
+        render();
+        return;
+    }
+    if (action === "gallery-prev" || action === "gallery-next") {
+        state.productModal.imageIndex = 0;
+        render();
+        return;
+    }
+    if (action === "toggle-favorite") {
+        toggleFavorite(Number(button.dataset.productId));
+        render();
+        return;
+    }
+    if (action === "add-product") {
+        const productId = Number(button.dataset.productId);
+        const product = getProductById(productId);
+        if (product?.price == null) {
+            openManagerLink();
+            return;
+        }
+        addToCart(productId, getInitialQuantity(product));
+        render();
+        return;
+    }
+    if (action === "confirm-product-cart") {
+        const product = getProductById(Number(button.dataset.productId));
+        if (product) {
+            setCartQuantity(product.id, getSanitizedQuantityForProduct(product, getCartItem(product.id)?.quantity || state.productModal.quantity));
+            saveCart();
+        }
+        closeProductModal();
+        render();
+        return;
+    }
+    if (action === "cart-minus" || action === "cart-plus") {
+        adjustCartQuantity(Number(button.dataset.productId), action === "cart-plus" ? 1 : -1);
+        render();
+        return;
+    }
+    if (action === "remove-cart") {
+        removeFromCart(Number(button.dataset.productId));
+        render();
+        return;
+    }
+    if (action === "open-checkout") {
+        state.checkout.open = true;
+        state.successOrderCode = "";
+        render();
+        return;
+    }
+    if (action === "close-checkout") {
+        state.checkout.open = false;
+        state.successOrderCode = "";
+        render();
+        return;
+    }
+    if (action === "submit-order") {
+        submitOrder().catch(handleActionError);
+        return;
+    }
+    if (action === "remove-attachment") {
+        state.checkout.uploaded.splice(Number(button.dataset.index), 1);
+        render();
+        return;
+    }
+    if (action === "go-catalog") {
+        state.nav = "catalog";
+        state.catalog.section = "";
+        state.catalog.query = "";
+        state.checkout.open = false;
+        state.successOrderCode = "";
+        render();
+        return;
+    }
+    if (action === "profile-status") {
+        state.profileOrdersFilter = button.dataset.status;
+        render();
+        return;
+    }
+    if (action === "open-manager") {
+        openManagerLink();
+        return;
+    }
+    if (action === "open-filters") {
+        state.catalog.filtersOpen = true;
+        state.catalog.draft = cloneFilters(state.catalog.applied);
+        render();
+        return;
+    }
+    if (action === "close-filters") {
+        state.catalog.filtersOpen = false;
+        render();
+        return;
+    }
+    if (action === "reset-filters") {
+        state.catalog.draft = emptyFilters();
+        render();
+        return;
+    }
+    if (action === "apply-filters") {
+        state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
+        state.catalog.filtersOpen = false;
+        render();
+        return;
+    }
+    if (action === "toggle-filter-section") {
+        const section = button.dataset.section;
+        const current = state.catalog.draft.sections;
+        state.catalog.draft.sections = current.includes(section)
+            ? current.filter(item => item !== section)
+            : [...current, section];
+        render();
+        return;
+    }
+    if (action === "admin-menu") {
+        state.admin.menu = button.dataset.menu;
+        render();
+        return;
+    }
+    if (action === "admin-section") {
+        state.admin.menu = "catalog";
+        state.admin.catalogSection = button.dataset.section || "";
+        state.admin.catalogCategory = button.dataset.category || "";
+        render();
+        return;
+    }
+    if (action === "open-admin-product") {
+        state.admin.productEditor = { open: true, productId: button.dataset.productId ? Number(button.dataset.productId) : null };
+        render();
+        return;
+    }
+    if (action === "close-admin-product") {
+        state.admin.productEditor = { open: false, productId: null };
+        render();
+        return;
+    }
+    if (action === "delete-admin-product") {
+        deleteAdminProduct(Number(button.dataset.productId)).catch(handleActionError);
+        return;
+    }
+    if (action === "open-manufacturer-modal") {
+        state.admin.manufacturerModal = { open: true, id: null, name: "" };
+        render();
+        return;
+    }
+    if (action === "edit-manufacturer") {
+        state.admin.manufacturerModal = { open: true, id: button.dataset.id ? Number(button.dataset.id) : null, name: button.dataset.name || "" };
+        render();
+        return;
+    }
+    if (action === "close-manufacturer-modal") {
+        state.admin.manufacturerModal = { open: false, id: null, name: "" };
+        render();
+        return;
+    }
+    if (action === "delete-manufacturer") {
+        deleteManufacturer(Number(button.dataset.id)).catch(handleActionError);
+        return;
+    }
+    if (action === "open-admin-order") {
+        state.admin.orderModal = { open: true, orderId: Number(button.dataset.orderId) };
+        render();
+        return;
+    }
+    if (action === "close-admin-order") {
+        state.admin.orderModal = { open: false, orderId: null };
+        render();
+        return;
+    }
+    if (action === "set-order-status") {
+        updateOrderStatus(Number(button.dataset.orderId), button.dataset.status).catch(handleActionError);
+        return;
+    }
+    if (action === "send-broadcast") {
+        sendBroadcast().catch(handleActionError);
+    }
+}
+
+function handleInput(event) {
+    const { field } = event.target.dataset;
+    if (!field) return;
+    if (field === "catalog-query") {
+        state.catalog.query = event.target.value;
+        render();
+        return;
+    }
+    if (field.startsWith("checkout-")) {
+        const key = field.replace("checkout-", "");
+        state.checkout.form[key] = event.target.value;
+        if (state.checkout.errors[key]) {
+            delete state.checkout.errors[key];
+        }
+        return;
+    }
+    if (field === "admin-product-search") {
+        state.admin.catalogSearch = event.target.value;
+        render();
+        return;
+    }
+    if (field === "admin-order-search") {
+        state.admin.orderFilters.search = event.target.value;
+        render();
+        return;
+    }
+    if (field === "broadcast-text") {
+        state.admin.broadcastForm.text = event.target.value;
+        render();
+        return;
+    }
+    if (field === "filter-price-min") {
+        state.catalog.draft.priceMin = event.target.value;
+        return;
+    }
+    if (field === "filter-price-max") {
+        state.catalog.draft.priceMax = event.target.value;
+        return;
+    }
+}
+
+function handleChange(event) {
+    const { field } = event.target.dataset;
+    if (!field) return;
+    if (field === "catalog-sort") {
+        state.catalog.sort = event.target.value;
+        render();
+        return;
+    }
+    if (field === "checkout-attachment") {
+        uploadCheckoutAttachments(event.target.files).catch(handleActionError);
+        return;
+    }
+    if (field === "broadcast-image") {
+        uploadBroadcastImage(event.target.files?.[0]).catch(handleActionError);
+        return;
+    }
+    if (field === "filter-manufacturer") {
+        toggleDraftFilterArray("manufacturers", event.target.value, event.target.checked);
+        return;
+    }
+    if (field === "filter-category") {
+        toggleDraftFilterArray("categories", event.target.value, event.target.checked);
+        return;
+    }
+    if (field === "admin-product-status") {
+        state.admin.catalogStatus = event.target.value;
+        render();
+        return;
+    }
+    if (field === "admin-order-status") {
+        state.admin.orderFilters.status = event.target.value;
+        render();
+        return;
+    }
+    if (field === "admin-order-from") {
+        state.admin.orderFilters.from = event.target.value;
+        render();
+        return;
+    }
+    if (field === "admin-order-to") {
+        state.admin.orderFilters.to = event.target.value;
+        render();
+    }
+}
+
+function handleSubmit(event) {
+    event.preventDefault();
+    const form = event.target.dataset.form;
+    if (form === "admin-product") {
+        saveAdminProduct(new FormData(event.target)).catch(handleActionError);
+        return;
+    }
+    if (form === "manufacturer") {
+        saveManufacturer(new FormData(event.target)).catch(handleActionError);
+    }
+}
+
+async function submitOrder() {
+    const validation = validateCheckout();
+    if (!validation.valid) {
+        state.checkout.errors = validation.errors;
+        render();
+        return;
+    }
+    state.checkout.submitting = true;
+    render();
+    const items = state.cart.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+    }));
+    const organization = state.checkout.form.organization.trim();
+    const payload = {
+        maxUserId: state.maxUserId,
+        name: organization,
+        phone: state.checkout.form.phone.trim(),
+        company: organization,
+        email: state.checkout.form.email.trim(),
+        deliveryAddress: state.checkout.form.address.trim(),
+        comment: state.checkout.form.comment.trim(),
+        attachments: state.checkout.uploaded,
+        items,
+    };
+    const response = await fetchJson("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    state.cart = [];
+    saveCart();
+    state.checkout.submitting = false;
+    state.checkout.open = true;
+    state.checkout.uploaded = [];
+    state.successOrderCode = response.orderCode || "";
+    state.nav = "cart";
+    state.profileOrders = state.maxUserId ? await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`) : [];
+    if (state.profile?.admin) {
+        await loadAdminData();
+    }
+    render();
+}
+
+async function uploadCheckoutAttachments(fileList) {
+    if (!fileList?.length) return;
+    for (const file of Array.from(fileList)) {
+        const formData = new FormData();
+        formData.append("maxUserId", String(state.maxUserId || 0));
+        formData.append("file", file);
+        const uploaded = await fetchJson("/api/uploads/order-attachment", {
+            method: "POST",
+            body: formData,
+        });
+        state.checkout.uploaded.push(uploaded);
+    }
+    render();
+}
+
+async function uploadBroadcastImage(file) {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("maxUserId", String(state.maxUserId || 0));
+    formData.append("file", file);
+    const uploaded = await fetchJson("/api/uploads/media", {
+        method: "POST",
+        body: formData,
+    });
+    state.admin.broadcastForm.imageUrl = uploaded.downloadUrl;
+    state.admin.broadcastForm.imageName = uploaded.originalName || uploaded.storedName;
+    render();
+}
+
+async function saveAdminProduct(formData) {
+    const id = Number(formData.get("productId")) || null;
+    const activeIngredient = String(formData.get("activeIngredient") || "").trim();
+    const oldPrice = String(formData.get("oldPrice") || "").trim();
+    const payload = {
+        name: String(formData.get("name") || "").trim(),
+        category: String(formData.get("category") || "").trim(),
+        subcategory: String(formData.get("subcategory") || "").trim(),
+        brand: String(formData.get("brand") || "").trim(),
+        description: String(formData.get("description") || "").trim(),
+        unitName: String(formData.get("unitName") || "шт").trim(),
+        price: parseOptionalNumber(formData.get("price")),
+        stockQuantity: parseOptionalNumber(formData.get("stockQuantity")),
+        packageType: String(formData.get("packageType") || "").trim(),
+        packageDescription: String(formData.get("packageDescription") || "").trim(),
+        minOrderQuantity: parseOptionalNumber(formData.get("minOrderQuantity")) || 1,
+        orderStep: parseOptionalNumber(formData.get("orderStep")) || 1,
+        cultures: String(formData.get("cultures") || "").trim(),
+        tags: String(formData.get("tags") || "").trim(),
+        filterMap: {
+            activeIngredient,
+            oldPrice,
+        },
+        active: String(formData.get("active")) !== "false",
+    };
+    const url = id ? `/api/admin/products/${id}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
+    const method = id ? "PUT" : "POST";
+    await fetchJson(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    await refreshCatalogData();
+    state.admin.productEditor = { open: false, productId: null };
+    render();
+}
+
+async function deleteAdminProduct(productId) {
+    await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
+    await refreshCatalogData();
+    state.admin.productEditor = { open: false, productId: null };
+    render();
+}
+
+async function saveManufacturer(formData) {
+    const id = Number(formData.get("id")) || null;
+    const payload = { name: String(formData.get("name") || "").trim() };
+    const url = id ? `/api/admin/manufacturers/${id}?maxUserId=${state.maxUserId}` : `/api/admin/manufacturers?maxUserId=${state.maxUserId}`;
+    const method = id ? "PUT" : "POST";
+    await fetchJson(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    state.admin.manufacturerModal = { open: false, id: null, name: "" };
+    state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
+    render();
+}
+
+async function deleteManufacturer(id) {
+    await fetchJson(`/api/admin/manufacturers/${id}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
+    state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
+    render();
+}
+
+async function updateOrderStatus(orderId, status) {
+    const updated = await fetchJson(`/api/admin/orders/${orderId}/status?maxUserId=${state.maxUserId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+    });
+    state.admin.orders = state.admin.orders.map(item => item.id === updated.id ? updated : item);
+    if (state.admin.dashboard?.latestOrders) {
+        state.admin.dashboard.latestOrders = state.admin.dashboard.latestOrders.map(item => item.id === updated.id ? updated : item);
+    }
+    state.admin.orderModal.orderId = updated.id;
+    render();
+}
+
+async function sendBroadcast() {
+    if (!state.admin.broadcastForm.text.trim()) {
+        throw new Error("Введите текст рассылки");
+    }
+    state.admin.broadcastForm.sending = true;
+    render();
+    await fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            text: state.admin.broadcastForm.text.trim(),
+            imageUrl: state.admin.broadcastForm.imageUrl || "",
+        }),
+    });
+    state.admin.broadcastForm = { text: "", imageUrl: "", imageName: "", sending: false };
+    state.admin.broadcasts = await fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`);
+    render();
+}
+
+async function refreshCatalogData() {
+    const [products, sections, profileOrders] = await Promise.all([
+        fetchJson("/api/catalog/products?sort=name"),
+        fetchJson("/api/catalog/sections"),
+        state.maxUserId ? fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`) : Promise.resolve([]),
+    ]);
+    state.products = products;
+    state.sections = sections;
+    state.profileOrders = profileOrders;
+    if (state.profile?.admin) {
+        await loadAdminData();
+    }
+}
+
+function validateCheckout() {
+    const errors = {};
+    if (!state.checkout.form.organization.trim()) errors.organization = true;
+    if (!state.checkout.form.phone.trim()) errors.phone = true;
+    if (!state.checkout.form.email.trim()) errors.email = true;
+    if (!state.checkout.form.address.trim()) errors.address = true;
+    return { valid: Object.keys(errors).length === 0, errors };
+}
+
+function renderField(key, label, value, placeholder, required) {
+    return `
+        <div class="field ${state.checkout.errors[key] ? "invalid" : ""}">
+            <label>${escapeHtml(label)}${required ? "" : ""}</label>
+            <input data-field="checkout-${key}" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}">
+        </div>
+    `;
+}
+
+function renderSortOptions() {
+    return renderOptions([
+        ["default", "По умолчанию"],
+        ["price_asc", "Сначала дешевле"],
+        ["price_desc", "Сначала дороже"],
+    ], state.catalog.sort);
+}
+
+function renderOptions(options, selected) {
+    return options.map(([value, label]) => `
+        <option value="${escapeAttr(value)}" ${String(selected) === String(value) ? "selected" : ""}>${escapeHtml(label)}</option>
+    `).join("");
+}
+
+function getCatalogSections() {
+    if (state.sections?.length) return state.sections;
+    const grouped = new Map();
+    state.products.forEach(product => {
+        const name = product.category || "Прочее";
+        if (!grouped.has(name)) {
+            grouped.set(name, { name, description: getSectionVisual(name).description, productsCount: 0 });
+        }
+        grouped.get(name).productsCount += 1;
+    });
+    return [...grouped.values()];
+}
+
+function getSectionProducts(sectionName) {
+    return state.products.filter(product => (product.category || "Прочее") === sectionName);
+}
+
+function getSearchResults(query) {
+    const normalized = normalize(query);
+    return state.products.filter(product => normalize([
+        product.name,
+        product.description,
+        product.brand,
+        product.category,
+        product.subcategory,
+        ...(product.cultures || []),
+        ...(product.tags || []),
+    ].join(" ")).includes(normalized));
+}
+
+function applyCatalogFilters(products) {
+    let filtered = [...products];
+    const applied = state.catalog.applied;
+    if (applied.sections.length) {
+        filtered = filtered.filter(product => applied.sections.includes(product.category || "Прочее"));
+    }
+    if (applied.manufacturers.length) {
+        filtered = filtered.filter(product => applied.manufacturers.includes(product.brand));
+    }
+    if (applied.categories.length) {
+        filtered = filtered.filter(product => {
+            const direct = product.subcategory || product.itemType || "Без категории";
+            const parent = product.category || "Прочее";
+            return applied.categories.includes(parent) || applied.categories.includes(`${parent}::${direct}`);
+        });
+    }
+    if (applied.priceMin) {
+        filtered = filtered.filter(product => product.price != null && Number(product.price) >= Number(applied.priceMin));
+    }
+    if (applied.priceMax) {
+        filtered = filtered.filter(product => product.price != null && Number(product.price) <= Number(applied.priceMax));
+    }
+    if (state.catalog.query.trim()) {
+        const normalized = normalize(state.catalog.query);
+        filtered = filtered.filter(product => normalize([product.name, product.description, product.brand].join(" ")).includes(normalized));
+    }
+    return sortProducts(filtered, state.catalog.sort);
+}
+
+function sortProducts(products, sort) {
+    return [...products].sort((left, right) => {
+        const leftPrice = left.price == null ? null : Number(left.price);
+        const rightPrice = right.price == null ? null : Number(right.price);
+        if (sort === "price_asc") {
+            if (leftPrice == null && rightPrice == null) return compareNames(left, right);
+            if (leftPrice == null) return 1;
+            if (rightPrice == null) return -1;
+            return leftPrice - rightPrice || compareNames(left, right);
+        }
+        if (sort === "price_desc") {
+            if (leftPrice == null && rightPrice == null) return compareNames(left, right);
+            if (leftPrice == null) return -1;
+            if (rightPrice == null) return 1;
+            return rightPrice - leftPrice || compareNames(left, right);
+        }
+        return compareNames(left, right);
+    });
+}
+
+function compareNames(left, right) {
+    return String(left.name || "").localeCompare(String(right.name || ""), "ru", { sensitivity: "base" });
+}
+
+function getProductVisual(product) {
+    return getSectionVisual(product.category || "Прочее");
+}
+
+function getSectionVisual(name) {
+    const normalized = normalize(name);
+    const matched = SECTION_VISUALS.find(item => item.match.some(match => normalized.includes(match)));
+    return matched || {
+        icon: "./assets/category-other.svg",
+        palette: ["#e1f1de", "#d7e9f6"],
+        description: "Актуальные позиции каталога",
+    };
+}
+
+function buildCategoriesTree(products) {
+    const tree = {};
+    products.forEach(product => {
+        const parent = product.category || "Прочее";
+        const child = product.subcategory || product.itemType || "Без категории";
+        if (!tree[parent]) tree[parent] = [];
+        if (!tree[parent].includes(child)) tree[parent].push(child);
+    });
+    Object.keys(tree).forEach(key => tree[key].sort((a, b) => a.localeCompare(b, "ru", { sensitivity: "base" })));
+    return tree;
+}
+
+function getAdminSectionTree() {
+    const grouped = {};
+    state.admin.products.forEach(product => {
+        const section = product.category || "Прочее";
+        const child = product.subcategory || product.itemType || "Без категории";
+        if (!grouped[section]) grouped[section] = { name: section, count: 0, children: [] };
+        grouped[section].count += 1;
+        if (!grouped[section].children.includes(child)) grouped[section].children.push(child);
+    });
+    return Object.values(grouped).sort((a, b) => a.name.localeCompare(b.name, "ru", { sensitivity: "base" }));
+}
+
+function getAdminFilteredProducts() {
+    const search = normalize(state.admin.catalogSearch);
+    return state.admin.products.filter(product => {
+        if (state.admin.catalogStatus === "ACTIVE" && !product.active) return false;
+        if (state.admin.catalogStatus === "HIDDEN" && product.active) return false;
+        if (state.admin.catalogSection && (product.category || "Прочее") !== state.admin.catalogSection) return false;
+        if (state.admin.catalogCategory && (product.subcategory || product.itemType || "Без категории") !== state.admin.catalogCategory) return false;
+        if (search && !normalize([product.name, product.brand, product.category, product.subcategory].join(" ")).includes(search)) return false;
+        return true;
+    });
+}
+
+function getFilteredAdminOrders() {
+    const { search, status, from, to } = state.admin.orderFilters;
+    const normalizedSearch = normalize(search);
+    return state.admin.orders.filter(order => {
+        if (status !== "ALL" && order.status !== status) return false;
+        if (from && String(order.createdAt).slice(0, 10) < from) return false;
+        if (to && String(order.createdAt).slice(0, 10) > to) return false;
+        if (normalizedSearch && !normalize([order.customerName, order.customerPhone].join(" ")).includes(normalizedSearch)) return false;
+        return true;
+    });
+}
+
+function getPendingOrdersCount() {
+    return (state.admin.orders || []).filter(order => order.status === "NEW").length || null;
+}
+
+function filterProfileOrders() {
+    if (state.profileOrdersFilter === "ALL") return state.profileOrders;
+    return state.profileOrders.filter(order => order.status === state.profileOrdersFilter);
+}
+
+function profileStatusLabel(status) {
+    return {
+        ALL: "Все",
+        NEW: "В ожидании",
+        IN_PROGRESS: "В работе",
+        COMPLETED: "Оплачен",
+        CANCELLED: "Отменён",
+    }[status] || status;
+}
+
+function renderStepper(productId, quantity, variant) {
+    return `
+        <div class="qty-stepper">
+            <button type="button" data-action="cart-minus" data-product-id="${productId}">−</button>
+            <span>${formatQuantity(quantity)}</span>
+            <button type="button" data-action="cart-plus" data-product-id="${productId}">+</button>
+        </div>
+    `;
+}
+
+function addToCart(productId, quantity) {
+    const product = getProductById(productId);
+    if (!product || product.price == null) return;
+    const existing = getCartItem(productId);
+    const base = existing ? existing.quantity : 0;
+    const next = getSanitizedQuantityForProduct(product, base + quantity);
+    setCartQuantity(productId, next);
+    saveCart();
+}
+
+function setCartQuantity(productId, quantity) {
+    const nextQuantity = Math.max(0, Number(quantity) || 0);
+    const existing = state.cart.find(item => item.productId === productId);
+    if (nextQuantity <= 0) {
+        state.cart = state.cart.filter(item => item.productId !== productId);
+        return;
+    }
+    if (existing) {
+        existing.quantity = nextQuantity;
+    } else {
+        state.cart.push({ productId, quantity: nextQuantity });
+    }
+}
+
+function adjustCartQuantity(productId, direction) {
+    const product = getProductById(productId);
+    if (!product) return;
+    const current = getCartItem(productId)?.quantity || 0;
+    const step = Number(product.orderStep || 1);
+    const min = Number(product.minOrderQuantity || 1);
+    const next = direction > 0
+        ? (current > 0 ? current + step : min)
+        : current - step;
+    if (next < min) {
+        removeFromCart(productId);
+    } else {
+        setCartQuantity(productId, getSanitizedQuantityForProduct(product, next));
+    }
+    saveCart();
+}
+
+function getSanitizedQuantityForProduct(product, quantity) {
+    const step = Math.max(1, Number(product.orderStep || 1));
+    const min = Math.max(1, Number(product.minOrderQuantity || 1));
+    const safeQuantity = Math.max(min, Math.round(Number(quantity) || min));
+    if (safeQuantity <= min) return min;
+    return min + Math.round((safeQuantity - min) / step) * step;
+}
+
+function getInitialQuantity(product) {
+    return Math.max(1, Number(product.minOrderQuantity || 1));
+}
+
+function removeFromCart(productId) {
+    state.cart = state.cart.filter(item => item.productId !== productId);
+    saveCart();
+}
+
+function getCartItem(productId) {
+    return state.cart.find(item => item.productId === productId) || null;
+}
+
+function getCartProducts() {
+    return state.cart
+        .map(item => ({ ...item, product: getProductById(item.productId) }))
+        .filter(item => item.product);
+}
+
+function sumCartUnits() {
+    return state.cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+}
+
+function formatApproximateTotal(items) {
+    const numeric = items.filter(item => item.product.price != null);
+    const hasRequest = items.some(item => item.product.price == null);
+    const total = numeric.reduce((sum, item) => sum + Number(item.product.price) * Number(item.quantity), 0);
+    if (!numeric.length && hasRequest) return "По запросу";
+    return `${hasRequest ? "~" : ""}${formatPrice(total)}`;
+}
+
+function toggleFavorite(productId) {
+    if (state.favorites.includes(productId)) {
+        state.favorites = state.favorites.filter(item => item !== productId);
+    } else {
+        state.favorites = [...state.favorites, productId];
+    }
+    saveStorage("alga-favorites", state.favorites);
+}
+
+function isFavorite(productId) {
+    return state.favorites.includes(productId);
+}
+
+function closeProductModal() {
+    state.productModal = { open: false, productId: null, quantity: 1, imageIndex: 0 };
+}
+
+function hydrateCheckoutFromProfile() {
+    if (!state.profile) return;
+    state.checkout.form.phone = state.profile.phone || "";
+    state.checkout.form.email = state.profile.email || "";
+    state.checkout.form.organization = state.profile.displayName || "";
+}
+
+function emptyFilters() {
+    return { sections: [], manufacturers: [], categories: [], priceMin: "", priceMax: "" };
+}
+
+function cloneFilters(filters) {
+    return {
+        sections: [...(filters.sections || [])],
+        manufacturers: [...(filters.manufacturers || [])],
+        categories: [...(filters.categories || [])],
+        priceMin: filters.priceMin || "",
+        priceMax: filters.priceMax || "",
+    };
+}
+
+function toggleDraftFilterArray(key, value, checked) {
+    const list = state.catalog.draft[key] || [];
+    state.catalog.draft[key] = checked ? [...list, value] : list.filter(item => item !== value);
+}
+
+function getProductById(productId) {
+    return state.products.find(product => product.id === productId) || null;
+}
+
+function normalize(value) {
+    return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function uniqueValues(values) {
+    return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), "ru", { sensitivity: "base" }));
+}
+
+function parseOptionalNumber(value) {
+    if (value == null || String(value).trim() === "") return null;
+    const parsed = Number(String(value).replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePrice(value) {
+    const parsed = parseOptionalNumber(value);
+    return parsed == null || parsed <= 0 ? null : parsed;
+}
+
+function formatPrice(value) {
+    const amount = Number(value || 0);
+    return `${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
+}
+
+function formatQuantity(value) {
+    const amount = Number(value || 0);
+    return Number.isInteger(amount) ? String(amount) : amount.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+
+function formatDate(value) {
+    if (!value) return "—";
+    return new Date(value).toLocaleString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        let message = `Ошибка ${response.status}`;
+        try {
+            const data = await response.json();
+            message = data.message || data.error || message;
+        } catch (error) {
+            // ignore json parse errors
+        }
+        throw new Error(message);
+    }
+    return response.json();
+}
+
+function handleActionError(error) {
+    console.error(error);
+    alert(error.message || "Что-то пошло не так");
+    if (state.admin.broadcastForm.sending) {
+        state.admin.broadcastForm.sending = false;
+        render();
+    }
+    if (state.checkout.submitting) {
+        state.checkout.submitting = false;
+        render();
+    }
+}
+
+function loadStorage(key, fallback) {
+    try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function saveStorage(key, value) {
+    try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+        console.warn("Storage save failed", error);
+    }
+}
+
+function saveCart() {
+    saveStorage("alga-cart", state.cart);
 }
 
 function resolveMaxUserId() {
     const candidates = [
         initDataUnsafe?.user?.id,
         initDataUnsafe?.user?.user_id,
-        parseUserIdFromInitData(maxBridge?.initData),
-        parseUserIdFromInitData(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash),
-        parseUserIdFromInitData(window.location.search.startsWith("?") ? window.location.search.slice(1) : window.location.search),
         queryUserId,
         window.localStorage?.getItem("algaAgroMaxUserId"),
     ];
@@ -349,1086 +2052,37 @@ function resolveMaxUserId() {
     return null;
 }
 
-function parseUserIdFromInitData(rawValue) {
-    if (!rawValue || typeof rawValue !== "string") {
-        return null;
-    }
-    try {
-        const params = new URLSearchParams(rawValue);
-        const directUserId = params.get("user_id");
-        if (directUserId) {
-            return directUserId;
-        }
-        const userRaw = params.get("user");
-        if (!userRaw) {
-            return null;
-        }
-        const parsedUser = JSON.parse(userRaw);
-        return parsedUser?.id || parsedUser?.user_id || null;
-    } catch (error) {
-        console.warn("Failed to parse MAX initData", error);
-        return null;
-    }
-}
-
 function rememberMaxUserId(userId) {
-    if (!userId) {
-        return;
-    }
+    if (!userId) return;
     try {
-        window.localStorage?.setItem("algaAgroMaxUserId", String(userId));
+        window.localStorage.setItem("algaAgroMaxUserId", String(userId));
     } catch (error) {
-        console.warn("Failed to store MAX user id", error);
+        console.warn("Failed to remember maxUserId", error);
     }
 }
 
-function showPage(page) {
-    state.currentPage = page;
-    nodes.homePage?.classList.toggle("page-active", false);
-    nodes.catalogPage.classList.toggle("page-active", page === "catalog" || page === "cart" || page === "results");
-    nodes.resultsPage.classList.toggle("page-active", false);
-    nodes.profilePage.classList.toggle("page-active", page === "profile");
-    nodes.checkoutPage?.classList.toggle("page-active", page === "checkout");
-    nodes.catalogBottomButton.classList.toggle("active", page === "catalog" || page === "results");
-    nodes.cartBottomButton.classList.toggle("active", page === "cart");
-    nodes.profileNavButton.classList.toggle("active", page === "profile");
-    if (page === "cart") {
-        setCatalogMode("cart");
-    } else if (page === "catalog") {
-        setCatalogMode("catalog");
-    }
-    const meta = {
-        catalog: ["Каталог", "Подбор товаров по культуре, группе и фильтрам."],
-        cart: ["Корзина", "Список товаров, объем и итоговая сумма заказа."],
-        results: ["Товары", "Подходящие позиции по выбранным параметрам."],
-        profile: ["Профиль", "Ваши заказы и управление данными."],
-        checkout: ["Оформление", "Отправка заявки администратору."],
-    }[page] || ["Каталог", ""];
-    nodes.pageTitle.textContent = meta[0];
-    nodes.pageCaption.textContent = meta[1];
-    nodes.pageCaption.classList.toggle("hidden", !meta[1]);
-    syncHeaderBackButton();
+function shouldShowBackButton() {
+    return Boolean(state.catalog.section || state.checkout.open || state.productModal.open || state.admin.orderModal.open || state.admin.productEditor.open || state.admin.manufacturerModal.open);
 }
 
-function hasActiveCatalogQuery() {
-    return Boolean(
-        getEffectiveSearchQuery()
-        || state.selection.culture
-        || state.selection.season
-        || state.selection.category
-        || state.selection.group
-    );
-}
-
-function getEffectiveSearchQuery() {
-    const query = (state.selection.search || "").trim();
-    return query.length >= MIN_SEARCH_LENGTH ? query : "";
-}
-
-function scheduleLiveCatalogUpdate() {
-    window.clearTimeout(liveSearchTimer);
-    liveSearchTimer = window.setTimeout(() => {
-        refreshCatalogPresentation().catch(error => {
-            console.error("Live catalog update failed", error);
-            showToast("Не удалось обновить каталог");
-        });
-    }, 220);
-}
-
-async function refreshCatalogPresentation() {
-    await loadProducts();
-    syncCatalogResultsVisibility();
-    if (shouldKeepCatalogPageOpen() || hasActiveCatalogQuery()) {
-        if (state.currentPage !== "cart" && state.currentPage !== "profile" && state.currentPage !== "checkout") {
-            showPage("catalog");
-        }
-    } else if (state.currentPage === "results") {
-        showPage("catalog");
-    }
-}
-
-function syncCatalogResultsVisibility() {
-    const shouldShow = hasActiveCatalogQuery() && !shouldKeepCatalogPageOpen();
-    nodes.catalogResultsCard?.classList.toggle("hidden", !shouldShow);
-    nodes.catalogGroupsCard?.classList.toggle("hidden", shouldShow);
-    syncHeaderBackButton();
-}
-
-function syncHeaderBackButton() {
-    const shouldShow = state.currentPage === "checkout"
-        || (state.currentPage === "catalog" && (hasActiveCatalogQuery() || shouldKeepCatalogPageOpen()));
-    nodes.headerBackButton?.classList.toggle("hidden", !shouldShow);
-}
-
-function shouldKeepCatalogPageOpen() {
-    return Boolean(
-        state.selection.culture
-        && !state.selection.season
-        && !getEffectiveSearchQuery()
-        && !state.selection.category
-        && !state.selection.group
-        && (state.filters.seasons || []).length
-    );
-}
-
-function setCatalogMode(mode) {
-    state.catalogMode = mode;
-    nodes.catalogModePanel.classList.toggle("mode-panel-active", mode === "catalog");
-    nodes.cartModePanel.classList.toggle("mode-panel-active", mode === "cart");
-}
-
-function renderHomeGroups() {
-    nodes.homeGroupGrid.innerHTML = "";
-    getGroupDefinitions().forEach(group => nodes.homeGroupGrid.appendChild(buildGroupCard(group, false)));
-}
-
-function renderCatalogGroups() {
-    nodes.groupGrid.innerHTML = "";
-    getGroupDefinitions().forEach(group => nodes.groupGrid.appendChild(buildGroupCard(group, true)));
-}
-
-function buildGroupCard(group, interactive) {
-    const visibleProducts = filterProductsByGroup(state.products, group);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "group-card";
-    if (state.selection.group === group.key) button.classList.add("active");
-    button.innerHTML = `
-        <div class="group-illustration">
-            <img class="group-icon-asset" src="${escapeAttr(group.iconPath)}" alt="${escapeAttr(group.title)}">
-        </div>
-        <div class="group-card-footer">
-            <p class="group-name">${escapeHtml(group.title)}</p>
-            <span class="group-count">${visibleProducts.length}</span>
-        </div>
-    `;
-    if (interactive) {
-        button.addEventListener("click", async () => {
-            state.selection.group = group.key;
-            state.selection.category = group.exactCategory || "";
-            renderCatalogGroups();
-            renderFilterPills();
-            await refreshCatalogPresentation();
-            nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-    } else {
-        button.addEventListener("click", async () => {
-            showPage("catalog");
-            state.selection.group = group.key;
-            state.selection.category = group.exactCategory || "";
-            renderCatalogGroups();
-            renderFilterPills();
-            await refreshCatalogPresentation();
-            nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-    }
-    return button;
-}
-
-function renderFilterPills() {
-    renderSelectableGroup(nodes.cultureChips, ["Все культуры", ...state.filters.cultures], state.selection.culture, async value => {
-        state.selection.culture = value === "Все культуры" ? "" : value;
-        state.selection.season = "";
-        await loadFilters();
-        await refreshCatalogPresentation();
-    });
-    renderSeasonPills();
-    renderSelectableGroup(nodes.categoryPills, ["Все категории", ...state.filters.categories], state.selection.category, async value => {
-        state.selection.category = value === "Все категории" ? "" : value;
-        state.selection.group = "";
-        renderFilterPills();
-        renderCatalogGroups();
-        await refreshCatalogPresentation();
-    });
-}
-
-function renderSeasonPills() {
-    const seasonOptions = (state.filters.seasons || []).filter(Boolean);
-    const hasCulture = Boolean(state.selection.culture);
-    const showSeasonBlock = hasCulture && seasonOptions.length > 0;
-    nodes.catalogSeasonFilterBlock.classList.toggle("hidden", !showSeasonBlock);
-    nodes.seasonFilterBlock.classList.toggle("hidden", !showSeasonBlock);
-    if (!showSeasonBlock) {
-        state.selection.season = "";
-        nodes.catalogSeasonChips.innerHTML = "";
-        nodes.seasonChips.innerHTML = "";
+function openManagerLink() {
+    const href = state.meta?.managerMaxLink || "#";
+    if (maxBridge?.openLink) {
+        maxBridge.openLink(href);
         return;
     }
-    if (state.selection.season && !seasonOptions.includes(state.selection.season)) {
-        state.selection.season = "";
-    }
-    const items = ["Все сезоны", ...seasonOptions];
-    const onSeasonClick = async value => {
-        state.selection.season = value === "Все сезоны" ? "" : value;
-        renderSeasonPills();
-        await refreshCatalogPresentation();
-    };
-    renderSelectableGroup(nodes.catalogSeasonChips, items, state.selection.season, onSeasonClick);
-    renderSelectableGroup(nodes.seasonChips, items, state.selection.season, onSeasonClick);
-}
-
-function renderSelectableGroup(container, items, selected, onClick) {
-    container.innerHTML = "";
-    items.forEach(item => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "chip";
-        button.textContent = item;
-        const active = (selected || "") === item || (!selected && ["Все культуры", "Все", "Все категории", "Все сезоны"].includes(item));
-        if (active) button.classList.add("active");
-        button.addEventListener("click", () => onClick(item));
-        container.appendChild(button);
-    });
-}
-
-function renderProducts() {
-    nodes.productGrid.innerHTML = "";
-    const selectedGroup = getGroupDefinitions().find(group => group.key === state.selection.group);
-    const visibleProducts = state.selection.group
-        ? state.products.filter(product => filterProductsByGroup([product], selectedGroup).length)
-        : state.products;
-    nodes.catalogCount.textContent = `${visibleProducts.length} позиций`;
-    nodes.catalogTitle.textContent = getCatalogTitle();
-    if (!visibleProducts.length) {
-        nodes.emptyState.classList.remove("hidden");
-        return;
-    }
-    nodes.emptyState.classList.add("hidden");
-    visibleProducts.forEach(product => {
-        const card = document.createElement("article");
-        card.className = "product-card";
-        card.tabIndex = 0;
-        card.innerHTML = `
-            <div class="product-visual">
-                <div class="product-badges">
-                    <span class="badge">${product.category || "Товар"}</span>
-                    ${product.subcategory ? `<span class="badge">${product.subcategory}</span>` : ""}
-                </div>
-                <strong>${escapeHtml(product.itemType || product.category || "АЛГА")}</strong>
-            </div>
-            <div class="product-copy">
-                <h4 class="product-name">${escapeHtml(product.name)}</h4>
-                <p class="product-description">${escapeHtml(compactDescription(product.description || "Товар доступен для заказа.", 132))}</p>
-            </div>
-            <div class="product-bottom">
-                <div class="price">
-                    <span class="stock">${product.stockQuantity == null ? "Наличие уточняется" : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`}</span>
-                    <strong>${formatPrice(product.price)}${product.unitName ? `/${escapeHtml(product.unitName)}` : ""}</strong>
-                </div>
-                <div class="product-actions">
-                    <button class="primary-button small-button" type="button">Добавить</button>
-                </div>
-            </div>
-        `;
-        card.addEventListener("click", () => openProductModal(product));
-        card.addEventListener("keydown", event => {
-            if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openProductModal(product);
-            }
-        });
-        card.querySelector(".primary-button").addEventListener("click", event => {
-            event.stopPropagation();
-            openProductModal(product);
-        });
-        nodes.productGrid.appendChild(card);
-    });
-}
-
-function openProductModal(product) {
-    nodes.productModalBadges.innerHTML = `
-        <span class="badge">${escapeHtml(product.category || "Товар")}</span>
-        ${product.subcategory ? `<span class="badge">${escapeHtml(product.subcategory)}</span>` : ""}
-    `;
-    nodes.productModalType.textContent = product.itemType || product.category || "Товар";
-    nodes.productModalTitle.textContent = product.name || "Товар";
-    nodes.productModalDescription.textContent = product.description || "Товар доступен для заказа.";
-    const modalTags = collectModalTags(product);
-    nodes.productModalTags.innerHTML = modalTags.map(value => `<span class="badge">${escapeHtml(value)}</span>`).join("");
-    nodes.productModalTags.classList.toggle("hidden", modalTags.length === 0);
-    nodes.productModalStock.textContent = product.stockQuantity == null
-        ? "Наличие уточняется"
-        : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`;
-    nodes.productModalPrice.textContent = `${formatPrice(product.price)}${product.unitName ? `/${product.unitName}` : ""}`;
-    nodes.productModalUnit.textContent = product.unitName || "шт";
-    nodes.productModalPackageDescription.textContent = product.packageDescription || (product.packageType ? `Фасовка: ${product.packageType}` : "");
-    nodes.productModalOrderHint.textContent = product.orderHint || "";
-    const minOrderQuantity = getMinOrderQuantity(product);
-    const orderStep = getOrderStep(product);
-    nodes.productModalQuantity.min = String(minOrderQuantity);
-    nodes.productModalQuantity.step = String(orderStep);
-    nodes.productModalQuantity.value = formatQuantityInput(minOrderQuantity);
-    nodes.productModalAddButton.dataset.productId = String(product.id);
-    nodes.productModalAddButton.dataset.unitPrice = String(Number(product.price || 0));
-    nodes.productModalAddButton.dataset.minOrderQuantity = String(minOrderQuantity);
-    nodes.productModalAddButton.dataset.orderStep = String(orderStep);
-    nodes.productModalAddButton.dataset.unitName = product.unitName || "шт";
-    nodes.productModal.classList.remove("hidden");
-    document.body.style.overflow = "hidden";
-    syncProductModalTotal();
-}
-
-function collectModalTags(product) {
-    const values = [
-        ...(product.cultures || []),
-        ...(product.tags || []),
-        ...(product.purposes || []),
-    ]
-        .map(value => String(value || "").trim())
-        .filter(Boolean);
-    const unique = [...new Set(values)];
-    const visibleLimit = 4;
-    const visible = unique.slice(0, visibleLimit);
-    const hiddenCount = unique.length - visible.length;
-    if (hiddenCount > 0) {
-        visible.push(`+${hiddenCount}`);
-    }
-    return visible;
-}
-
-function closeProductModal() {
-    nodes.productModal.classList.add("hidden");
-    document.body.style.overflow = "";
-}
-
-function openCheckoutModal() {
-    nodes.checkoutModalForm.reset();
-    nodes.checkoutModalTotal.textContent = nodes.cartTotal.textContent;
-    nodes.checkoutModal.classList.remove("hidden");
-    document.body.style.overflow = "hidden";
-}
-
-function closeCheckoutModal() {
-    nodes.checkoutModal.classList.add("hidden");
-    document.body.style.overflow = "";
-}
-
-async function resetCatalogSelection() {
-    state.selection.culture = "";
-    state.selection.season = "";
-    state.selection.category = "";
-    state.selection.search = "";
-    state.selection.group = "";
-    nodes.searchInput.value = "";
-    window.clearTimeout(liveSearchTimer);
-    syncSearchUi();
-    await loadFilters();
-    await loadProducts();
-    renderCatalogGroups();
-    syncCatalogResultsVisibility();
-}
-
-async function runSearchAndOpenResults() {
-    state.selection.search = nodes.searchInput.value.trim();
-    syncSearchUi();
-    await refreshCatalogPresentation();
-    if (hasActiveCatalogQuery()) {
-        nodes.catalogResultsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-}
-
-function renderCart() {
-    const totalCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
-    const totalPrice = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["товар", "товара", "товаров"])}`;
-    nodes.cartTotal.textContent = formatPrice(totalPrice);
-    nodes.checkoutModalTotal.textContent = formatPrice(totalPrice);
-    nodes.cartBottomBadge.textContent = String(totalCount);
-    nodes.cartBottomBadge.classList.toggle("hidden", totalCount <= 0);
-    nodes.cartItems.innerHTML = "";
-    if (!state.cart.length) {
-        nodes.cartItems.innerHTML = `<div class="empty-state"><h4>Корзина пуста</h4><p>Добавьте товары из каталога.</p></div>`;
-        return;
-    }
-    state.cart.forEach(item => {
-        const orderHint = item.orderHint || buildOrderHint(item);
-        const row = document.createElement("div");
-        row.className = "cart-item";
-        row.innerHTML = `
-            <div class="cart-row">
-                <strong>${escapeHtml(item.name)}</strong>
-                <span class="cart-line-total">${formatPrice(item.price * item.quantity)}</span>
-                <button class="remove-btn" type="button">✕</button>
-            </div>
-            <div class="cart-row">
-                <div class="cart-copy">
-                    <span>${formatPrice(item.price)} / ${escapeHtml(item.unitName)}</span>
-                    ${orderHint ? `<span class="cart-item-note">${escapeHtml(orderHint)}</span>` : ""}
-                </div>
-                <div class="cart-qty">
-                    <button class="qty-btn minus" type="button">−</button>
-                    <input class="qty-input" type="number" min="${formatQuantityInput(getMinOrderQuantity(item))}" step="${formatQuantityInput(getOrderStep(item))}" value="${formatQuantityInput(item.quantity)}">
-                    <button class="qty-btn plus" type="button">+</button>
-                </div>
-            </div>
-        `;
-        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -getOrderStep(item)));
-        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, getOrderStep(item)));
-        row.querySelector(".qty-input").addEventListener("change", event => setQuantity(item.id, event.target.value));
-        row.querySelector(".remove-btn").addEventListener("click", () => removeItem(item.id));
-        nodes.cartItems.appendChild(row);
-    });
-}
-
-function renderProfile() {
-    nodes.profileName.textContent = state.profile.displayName || "Пользователь MAX";
-    nodes.profileRole.textContent = state.profile.admin ? "Администратор каталога" : "Личный кабинет клиента";
-    nodes.profileOrdersCount.textContent = state.profile.ordersCount || 0;
-    nodes.profileStatus.textContent = state.profile.admin ? "Админ" : "Клиент";
-    nodes.profileAvatar.textContent = initials(state.profile.displayName || "AA");
-    nodes.profileOrdersSection.classList.toggle("hidden", Boolean(state.profile.admin));
-    renderOrdersList(nodes.profileOrders, state.profileOrders, "У вас пока нет заказов.");
-}
-
-function renderAdminSection() {
-    nodes.adminSection.classList.remove("hidden");
-    renderAdminCategoryFilter();
-    syncAdminSearchUi();
-    renderAdminProducts();
-    renderAdminOrdersPreview();
-    renderOrdersList(nodes.adminOrders, state.adminOrders, "Заказов пока нет.");
-}
-
-function renderAdminOrdersPreview() {
-    const lastOrder = state.adminOrders[0] ? [state.adminOrders[0]] : [];
-    renderOrdersList(nodes.adminOrdersPreview, lastOrder, "Заказов пока нет.");
-    if (nodes.adminOrdersHint) {
-        nodes.adminOrdersHint.textContent = state.adminOrders.length > 1
-            ? "Для просмотра всех заказов нажмите на этот блок."
-            : state.adminOrders.length === 1
-                ? "Показан последний заказ. Для просмотра списка нажмите на этот блок."
-                : "Заказов пока нет.";
-    }
-}
-
-function renderAdminProducts() {
-    nodes.adminProducts.innerHTML = "";
-    if (!state.adminProducts.length) {
-        nodes.adminProducts.innerHTML = `<div class="empty-state"><h4>Товаров пока нет</h4><p>Добавьте первую позицию через кнопку выше.</p></div>`;
-        return;
-    }
-    const filteredProducts = getFilteredAdminProducts();
-    if (!filteredProducts.length) {
-        nodes.adminProducts.innerHTML = `<div class="empty-state"><h4>Ничего не найдено</h4><p>Измените поиск или фильтр категории.</p></div>`;
-        return;
-    }
-    filteredProducts.forEach(product => nodes.adminProducts.appendChild(buildAdminProductCard(product)));
-}
-
-function buildAdminProductCard(product) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "admin-product-card";
-    card.innerHTML = `
-        <div class="admin-product-top">
-            <span class="admin-product-category">${escapeHtml(product.category || "Без категории")}</span>
-            <span class="admin-product-price">${formatPrice(product.price)}</span>
-        </div>
-        <div class="admin-product-summary">
-            <strong>${escapeHtml(product.name || "Новый товар")}</strong>
-            <p>${escapeHtml(product.description || "Нажмите, чтобы открыть карточку товара.")}</p>
-        </div>
-        <div class="admin-product-meta">
-            <span>${product.stockQuantity == null ? "Остаток не указан" : `Остаток: ${formatQuantityInput(product.stockQuantity)} ${escapeHtml(product.unitName || "шт")}`}</span>
-            <span>Изменить</span>
-        </div>
-    `;
-    card.addEventListener("click", () => openAdminProductEditor(product));
-    return card;
-}
-
-function renderProductEditor(product) {
-    const draft = product || {
-        name: "",
-        category: "",
-        subcategory: "",
-        price: "",
-        stockQuantity: "",
-        cultures: [],
-        tags: [],
-        description: "",
-        unitName: "шт",
-        packageType: "",
-        packageDescription: "",
-        minOrderQuantity: 1,
-        orderStep: 1,
-    };
-    openAdminProductEditor(draft);
-}
-
-function renderOrdersList(container, orders, emptyText) {
-    container.innerHTML = "";
-    if (!orders.length) {
-        container.innerHTML = `<div class="empty-state"><h4>${emptyText}</h4></div>`;
-        return;
-    }
-    orders.forEach(order => {
-        const card = document.createElement("div");
-        card.className = "order-card";
-        card.innerHTML = `
-            <div class="order-head">
-                <strong>${escapeHtml(order.publicCode)}</strong>
-                <span>${formatPrice(order.totalPrice)}</span>
-            </div>
-            <div>👤 ${escapeHtml(order.customerName || "")}</div>
-            <div>📞 ${escapeHtml(order.customerPhone || "")}</div>
-            <div>📦 ${order.items.length} позиций</div>
-        `;
-        container.appendChild(card);
-    });
-}
-
-function getFilteredAdminProducts() {
-    const query = normalizeToken(state.adminUi.search);
-    const category = state.adminUi.category;
-    return state.adminProducts.filter(product => {
-        const categoryMatches = category === "all" || (product.category || "") === category;
-        if (!categoryMatches) {
-            return false;
-        }
-        if (!query) {
-            return true;
-        }
-        const haystack = normalizeToken([
-            product.name,
-            product.category,
-            product.subcategory,
-            product.description,
-            ...(product.cultures || []),
-            ...(product.tags || []),
-        ].join(" "));
-        return haystack.includes(query);
-    });
-}
-
-function renderAdminCategoryFilter() {
-    if (!nodes.adminCategoryFilter) {
-        return;
-    }
-    const categories = [...new Set(state.adminProducts.map(item => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-    nodes.adminCategoryFilter.innerHTML = [
-        `<option value="all">Все категории</option>`,
-        ...categories.map(category => `<option value="${escapeAttr(category)}">${escapeHtml(category)}</option>`)
-    ].join("");
-    if (!categories.includes(state.adminUi.category) && state.adminUi.category !== "all") {
-        state.adminUi.category = "all";
-    }
-    nodes.adminCategoryFilter.value = state.adminUi.category;
-}
-
-function syncAdminSearchUi() {
-    nodes.adminProductClearSearch?.classList.toggle("hidden", !state.adminUi.search);
-}
-
-function openAdminProductEditor(product) {
-    const form = nodes.adminProductForm;
-    setFormValue(form, "productId", product.id || "");
-    setFormValue(form, "name", product.name || "");
-    setFormValue(form, "category", product.category || "");
-    setFormValue(form, "subcategory", product.subcategory || "");
-    setFormValue(form, "price", product.price ?? "");
-    setFormValue(form, "stockQuantity", product.stockQuantity == null ? "" : formatQuantityInput(product.stockQuantity));
-    setFormValue(form, "unitName", product.unitName || "шт");
-    ensureSelectOption(form.elements.namedItem("packageType"), product.packageType || "");
-    setFormValue(form, "packageType", product.packageType || "");
-    setFormValue(form, "packageDescription", product.packageDescription || "");
-    setFormValue(form, "minOrderQuantity", product.minOrderQuantity == null ? "" : formatQuantityInput(product.minOrderQuantity));
-    setFormValue(form, "orderStep", product.orderStep == null ? "" : formatQuantityInput(product.orderStep));
-    setFormValue(form, "cultures", (product.cultures || []).join(", "));
-    setFormValue(form, "tags", (product.tags || []).join(", "));
-    setFormValue(form, "description", product.description || "");
-    nodes.adminProductDeleteButton.classList.toggle("hidden", !product.id);
-    nodes.adminProductModal.classList.remove("hidden");
-    document.body.style.overflow = "hidden";
-}
-
-function closeAdminProductModal() {
-    nodes.adminProductModal.classList.add("hidden");
-    document.body.style.overflow = "";
-}
-
-function openAdminOrdersModal() {
-    nodes.adminOrdersModal?.classList.remove("hidden");
-    document.body.style.overflow = "hidden";
-}
-
-function closeAdminOrdersModal() {
-    nodes.adminOrdersModal?.classList.add("hidden");
-    document.body.style.overflow = "";
-}
-
-async function submitAdminProductForm(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const productIdRaw = getFormValue(form, "productId");
-    const productId = productIdRaw ? Number(productIdRaw) : null;
-    const submitButton = form.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = "Сохраняем...";
-    try {
-        await saveAdminProduct(productId, form);
-    } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = "Сохранить";
-    }
-}
-
-async function handleAdminDeleteFromModal() {
-    const productIdRaw = getFormValue(nodes.adminProductForm, "productId");
-    const productId = productIdRaw ? Number(productIdRaw) : null;
-    if (!productId) {
-        closeAdminProductModal();
-        return;
-    }
-    await deleteAdminProduct(productId);
-}
-
-async function saveAdminProduct(productId, form) {
-    const formData = new FormData(form);
-    const payload = {
-        name: String(formData.get("name") || "").trim(),
-        category: String(formData.get("category") || "").trim(),
-        subcategory: String(formData.get("subcategory") || "").trim(),
-        price: formData.get("price") ? Number(formData.get("price")) : null,
-        stockQuantity: formData.get("stockQuantity") ? parseQuantity(formData.get("stockQuantity")) : null,
-        packageType: String(formData.get("packageType") || "").trim(),
-        packageDescription: String(formData.get("packageDescription") || "").trim(),
-        minOrderQuantity: formData.get("minOrderQuantity") ? parseQuantity(formData.get("minOrderQuantity")) : null,
-        orderStep: formData.get("orderStep") ? parseQuantity(formData.get("orderStep")) : null,
-        cultures: String(formData.get("cultures") || "").trim(),
-        tags: String(formData.get("tags") || "").trim(),
-        description: String(formData.get("description") || "").trim(),
-        unitName: String(formData.get("unitName") || "").trim() || "шт",
-        itemType: String(formData.get("subcategory") || "").trim() || String(formData.get("category") || "").trim() || "Товар",
-        brand: "АЛГА АГРО",
-        purposes: "",
-        active: true,
-    };
-    const url = productId ? `/api/admin/products/${productId}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
-    const method = productId ? "PUT" : "POST";
-    const saved = await fetchJson(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    if (productId) {
-        state.adminProducts = state.adminProducts.map(item => item.id === productId ? saved : item);
-    } else {
-        state.adminProducts = [saved, ...state.adminProducts.filter(item => item.id)];
-    }
-    await Promise.all([loadFilters(), loadProducts()]);
-    renderAdminCategoryFilter();
-    renderAdminProducts();
-    closeAdminProductModal();
-    showToast("Товар сохранен");
-}
-
-async function deleteAdminProduct(productId) {
-    if (!productId) {
-        state.adminProducts = state.adminProducts.filter(item => item.id);
-        renderAdminProducts();
-        return;
-    }
-    await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
-    state.adminProducts = state.adminProducts.filter(item => item.id !== productId);
-    await Promise.all([loadFilters(), loadProducts()]);
-    renderAdminCategoryFilter();
-    renderAdminProducts();
-    closeAdminProductModal();
-    showToast("Товар удален");
-}
-
-function filterProductsByGroup(products, group) {
-    if (!group) return products;
-    return products.filter(product => categoryMatchesGroup(product.category, group));
-}
-
-function getCatalogTitle() {
-    if (state.selection.culture && state.selection.season) {
-        return `${state.selection.culture} · ${state.selection.season}`;
-    }
-    if (state.selection.group) {
-        const group = getGroupDefinitions().find(item => item.key === state.selection.group);
-        if (group) return group.title;
-    }
-    if (state.selection.culture) return state.selection.culture;
-    return "Все товары";
-}
-
-function getGroupDefinitions() {
-    const knownCategories = collectKnownCategories();
-    const baseGroups = BASE_GROUPS.map(group => {
-        const categories = knownCategories.filter(category => categoryMatchesGroup(category, group));
-        return {
-            ...group,
-            categories: categories.length ? categories : group.fallbackCategories,
-            exactCategory: null,
-        };
-    }).filter(group => group.categories.length > 0);
-
-    const covered = new Set(baseGroups.flatMap(group => group.categories.map(normalizeToken)));
-    const dynamicGroups = knownCategories
-        .filter(category => !covered.has(normalizeToken(category)))
-        .map(category => ({
-            key: `dynamic:${slugify(category)}`,
-            title: category,
-            iconPath: iconForCategory(category),
-            visualLabel: shortGroupLabel(category),
-            description: "Дополнительная группа",
-            categories: [category],
-            exactCategory: category,
-        }));
-
-    return [...baseGroups, ...dynamicGroups];
-}
-
-function collectKnownCategories() {
-    const set = new Set();
-    (state.filters.categories || []).forEach(category => {
-        if (category) {
-            set.add(category);
-        }
-    });
-    (state.products || []).forEach(product => {
-        if (product.category) {
-            set.add(product.category);
-        }
-    });
-    if (!set.size) {
-        BASE_GROUPS.forEach(group => group.fallbackCategories.forEach(category => set.add(category)));
-    }
-    return [...set];
-}
-
-function categoryMatchesGroup(category, group) {
-    if (!group || !category) {
-        return false;
-    }
-    const normalized = normalizeToken(category);
-    if (group.exactCategory) {
-        return normalized === normalizeToken(group.exactCategory);
-    }
-    return (group.matchers || []).some(keyword => normalized.includes(normalizeToken(keyword)));
-}
-
-function iconForCategory(category) {
-    const normalized = normalizeToken(category);
-    if (normalized.includes("сем") || normalized.includes("озим") || normalized.includes("яров")) return "./assets/category-seeds-flaticon.png";
-    if (normalized.includes("пест") || normalized.includes("герб") || normalized.includes("фунг") || normalized.includes("инсект") || normalized.includes("протрав") || normalized.includes("десик")) return "./assets/category-pesticides-flaticon.png";
-    if (normalized.includes("удоб") || normalized.includes("стим") || normalized.includes("микро") || normalized.includes("питан") || normalized.includes("азот") || normalized.includes("цинк") || normalized.includes("бор") || normalized.includes("npk")) return "./assets/category-nutrition-flaticon.png";
-    return "./assets/category-other.svg";
-}
-
-function shortGroupLabel(title) {
-    const words = String(title || "")
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2);
-    if (!words.length) {
-        return "Категория";
-    }
-    return words.join(" ");
-}
-
-function normalizeToken(value) {
-    return String(value || "")
-        .toLowerCase()
-        .replaceAll("ё", "е")
-        .trim();
-}
-
-function slugify(value) {
-    return normalizeToken(value)
-        .replace(/[^a-zа-я0-9]+/gi, "-")
-        .replace(/^-+|-+$/g, "") || "group";
-}
-
-function getMinOrderQuantity(product) {
-    return Math.max(1, roundQuantity(product?.minOrderQuantity || 1));
-}
-
-function getOrderStep(product) {
-    return Math.max(1, roundQuantity(product?.orderStep || getMinOrderQuantity(product)));
-}
-
-function buildOrderHint(product) {
-    const unitName = product?.unitName || "шт";
-    const minOrderQuantity = getMinOrderQuantity(product);
-    const orderStep = getOrderStep(product);
-    const hasPackageInfo = Boolean(product?.packageDescription || product?.packageType);
-    const meaningfulQuantityRule = minOrderQuantity > 1 || orderStep > 1;
-    if (!hasPackageInfo && !meaningfulQuantityRule) {
-        return "";
-    }
-    const parts = [];
-    if (product?.packageDescription) {
-        parts.push(product.packageDescription);
-    } else if (product?.packageType) {
-        parts.push(`Фасовка: ${product.packageType}`);
-    }
-    if (meaningfulQuantityRule) {
-        parts.push(`Мин. заказ: ${formatQuantityInput(minOrderQuantity)} ${unitName}`);
-        parts.push(`Кратно: ${formatQuantityInput(orderStep)} ${unitName}`);
-    }
-    return parts.join(" • ");
-}
-
-function normalizeQuantityForProduct(product, rawValue) {
-    const minOrderQuantity = getMinOrderQuantity(product);
-    const orderStep = getOrderStep(product);
-    const unitName = product?.unitName || "шт";
-    const requested = parseQuantity(rawValue);
-    if (requested < minOrderQuantity) {
-        return {
-            quantity: minOrderQuantity,
-            adjusted: true,
-            message: `Минимальный заказ: ${formatQuantityInput(minOrderQuantity)} ${unitName}`,
-        };
-    }
-    const offset = requested - minOrderQuantity;
-    const remainder = offset % orderStep;
-    if (remainder === 0) {
-        return { quantity: requested, adjusted: false, message: "" };
-    }
-    const corrected = minOrderQuantity + Math.ceil(offset / orderStep) * orderStep;
-    return {
-        quantity: corrected,
-        adjusted: true,
-        message: `Количество скорректировано до ${formatQuantityInput(corrected)} ${unitName}. Заказ кратен ${formatQuantityInput(orderStep)} ${unitName}.`,
-    };
-}
-
-function addToCart(product, quantity = 1) {
-    const normalized = normalizeQuantityForProduct(product, quantity);
-    const safeQuantity = normalized.quantity;
-    let notice = normalized.adjusted ? normalized.message : "";
-    const existing = state.cart.find(item => item.id === product.id);
-    if (existing) {
-        const merged = normalizeQuantityForProduct(existing, Number(existing.quantity) + safeQuantity);
-        existing.quantity = merged.quantity;
-        existing.orderStep = getOrderStep(product);
-        existing.minOrderQuantity = getMinOrderQuantity(product);
-        existing.packageType = product.packageType || "";
-        existing.packageDescription = product.packageDescription || "";
-        existing.orderHint = product.orderHint || buildOrderHint(product);
-        if (merged.adjusted) {
-            notice = merged.message;
-        }
-    } else {
-        state.cart.push({
-            id: product.id,
-            name: product.name,
-            price: Number(product.price || 0),
-            quantity: safeQuantity,
-            unitName: product.unitName || "шт",
-            orderStep: getOrderStep(product),
-            minOrderQuantity: getMinOrderQuantity(product),
-            packageType: product.packageType || "",
-            packageDescription: product.packageDescription || "",
-            orderHint: product.orderHint || buildOrderHint(product),
-        });
-    }
-    renderCart();
-    showToast(notice ? `${notice} Добавили: ${product.name}` : `Добавили: ${product.name}`);
-}
-
-function syncSearchUi() {
-    nodes.clearSearchButton.classList.toggle("hidden", !state.selection.search);
-}
-
-function updateQuantity(productId, delta) {
-    const item = state.cart.find(entry => entry.id === productId);
-    if (!item) return;
-    if (delta < 0 && Number(item.quantity) <= getMinOrderQuantity(item)) {
-        state.cart = state.cart.filter(entry => entry.id !== productId);
-        renderCart();
-        return;
-    }
-    const normalized = normalizeQuantityForProduct(item, Number(item.quantity) + delta);
-    item.quantity = normalized.quantity;
-    if (normalized.adjusted) {
-        showToast(normalized.message);
-    }
-    renderCart();
-}
-
-function setQuantity(productId, value) {
-    const item = state.cart.find(entry => entry.id === productId);
-    if (!item) return;
-    const quantity = parseQuantity(value);
-    if (quantity <= 0) {
-        state.cart = state.cart.filter(entry => entry.id !== productId);
-    } else {
-        const normalized = normalizeQuantityForProduct(item, quantity);
-        item.quantity = normalized.quantity;
-        if (normalized.adjusted) {
-            showToast(normalized.message);
-        }
-    }
-    renderCart();
-}
-
-function removeItem(productId) {
-    state.cart = state.cart.filter(item => item.id !== productId);
-    renderCart();
-}
-
-async function submitOrder(event) {
-    event.preventDefault();
-    if (!state.cart.length) {
-        showToast("Корзина пуста");
-        return;
-    }
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const payload = {
-        maxUserId: state.maxUserId,
-        name: formData.get("name"),
-        phone: formData.get("phone"),
-        company: "",
-        comment: "",
-        culture: state.selection.culture || null,
-        deliveryNote: "",
-        items: state.cart.map(item => ({ productId: item.id, quantity: item.quantity })),
-    };
-    const submitButton = form.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = "Отправляем...";
-    try {
-        const data = await fetchJson("/api/orders", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-        state.cart = [];
-        renderCart();
-        nodes.checkoutForm.reset();
-        nodes.checkoutModalForm.reset();
-        closeCheckoutModal();
-        await loadProfile();
-        showPage("profile");
-        showToast(`Заказ ${data.orderCode} отправлен`);
-    } catch (error) {
-        showToast(error.message || "Ошибка при отправке заказа");
-    } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = "Отправить заказ";
-    }
-}
-
-async function fetchJson(url, options) {
-    const response = await fetch(url, options);
-    const text = await response.text();
-    let data = {};
-    try {
-        data = text ? JSON.parse(text) : {};
-    } catch (error) {
-        data = { message: text || "Некорректный ответ сервера" };
-    }
-    if (!response.ok) throw new Error(data.message || data.error || "Ошибка запроса");
-    return data;
-}
-
-function showToast(message) {
-    nodes.toast.textContent = message;
-    nodes.toast.classList.remove("hidden");
-    window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(() => nodes.toast.classList.add("hidden"), 2500);
-}
-
-function formatPrice(value) {
-    const number = Number(value || 0);
-    if (!Number.isFinite(number) || number <= 0) return "По запросу";
-    return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number)} ₽`;
-}
-
-function parseQuantity(value) {
-    const number = Number(String(value || "").replace(",", "."));
-    if (!Number.isFinite(number) || number <= 0) {
-        return 1;
-    }
-    return roundQuantity(number);
-}
-
-function roundQuantity(value) {
-    return Math.max(1, Math.round(Number(value)));
-}
-
-function getQuantityStep() {
-    return 1;
-}
-
-function getDefaultQuantity() {
-    return 1;
-}
-
-function formatQuantityInput(value) {
-    return String(roundQuantity(value));
-}
-
-function syncProductModalTotal() {
-    const quantity = parseQuantity(nodes.productModalQuantity.value);
-    const price = Number(nodes.productModalAddButton.dataset.unitPrice || 0);
-    nodes.productModalTotal.textContent = formatPrice(price * quantity);
-}
-
-function compactDescription(value, maxLength) {
-    const text = String(value || "").replace(/\s+/g, " ").trim();
-    if (!text) {
-        return "Товар доступен для заказа.";
-    }
-    if (text.length <= maxLength) {
-        return text;
-    }
-    return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
-
-function initials(value) {
-    return String(value).split(" ").filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "AA";
-}
-
-function pluralize(value, forms) {
-    const mod10 = value % 10;
-    const mod100 = value % 100;
-    if (mod10 === 1 && mod100 !== 11) return forms[0];
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1];
-    return forms[2];
+    window.open(href, "_blank");
 }
 
 function escapeHtml(value) {
-    return String(value ?? "")
+    return String(value || "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
 }
 
 function escapeAttr(value) {
-    return escapeHtml(value).replaceAll("'", "&#39;");
-}
-
-function getFormValue(form, name) {
-    const field = form.elements.namedItem(name);
-    return field ? field.value : "";
-}
-
-function setFormValue(form, name, value) {
-    const field = form.elements.namedItem(name);
-    if (field) {
-        field.value = value;
-    }
-}
-
-function ensureSelectOption(field, value) {
-    if (!field || field.tagName !== "SELECT" || !value) {
-        return;
-    }
-    const exists = Array.from(field.options).some(option => option.value === value);
-    if (!exists) {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = value;
-        field.appendChild(option);
-    }
+    return escapeHtml(value);
 }

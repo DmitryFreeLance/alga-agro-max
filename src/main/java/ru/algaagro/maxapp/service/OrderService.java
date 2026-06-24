@@ -3,6 +3,7 @@ package ru.algaagro.maxapp.service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.algaagro.maxapp.model.CatalogOrder;
 import ru.algaagro.maxapp.model.CatalogOrderItem;
+import ru.algaagro.maxapp.model.OrderStatus;
 import ru.algaagro.maxapp.repository.CatalogOrderRepository;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
@@ -38,7 +40,10 @@ public class OrderService {
         order.setCustomerName(command.name());
         order.setCustomerPhone(command.phone());
         order.setCustomerCompany(command.company());
+        order.setCustomerEmail(command.email());
+        order.setDeliveryAddress(command.deliveryAddress());
         order.setComment(command.comment());
+        order.setAttachmentsJson(jsonHelper.writeValue(command.attachments() == null ? List.of() : command.attachments()));
 
         BigDecimal total = BigDecimal.ZERO;
         for (CreateOrderItem itemCommand : command.items()) {
@@ -58,6 +63,9 @@ public class OrderService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("culture", command.culture());
         payload.put("deliveryNote", command.deliveryNote());
+        payload.put("email", command.email());
+        payload.put("deliveryAddress", command.deliveryAddress());
+        payload.put("attachments", command.attachments());
         payload.put("items", command.items());
         order.setPayloadJson(jsonHelper.writeValue(payload));
         return catalogOrderRepository.save(order);
@@ -86,8 +94,18 @@ public class OrderService {
         if (order.getCustomerCompany() != null && !order.getCustomerCompany().isBlank()) {
             builder.append("🏢 ").append(order.getCustomerCompany()).append("\n");
         }
+        if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank()) {
+            builder.append("✉️ ").append(order.getCustomerEmail()).append("\n");
+        }
+        if (order.getDeliveryAddress() != null && !order.getDeliveryAddress().isBlank()) {
+            builder.append("📍 ").append(order.getDeliveryAddress()).append("\n");
+        }
         if (order.getComment() != null && !order.getComment().isBlank()) {
             builder.append("💬 ").append(order.getComment()).append("\n");
+        }
+        List<Map<String, Object>> attachments = jsonHelper.readValue(order.getAttachmentsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of());
+        if (!attachments.isEmpty()) {
+            builder.append("📎 Реквизиты: ").append(attachments.size()).append(" файл(а)\n");
         }
         builder.append("\n");
         order.getItems().forEach(item -> builder.append("• ")
@@ -132,10 +150,14 @@ public class OrderService {
         dto.put("customerName", order.getCustomerName());
         dto.put("customerPhone", order.getCustomerPhone());
         dto.put("customerCompany", order.getCustomerCompany());
+        dto.put("customerEmail", order.getCustomerEmail());
+        dto.put("deliveryAddress", order.getDeliveryAddress());
         dto.put("comment", order.getComment());
         dto.put("status", order.getStatus().name());
+        dto.put("statusLabel", statusLabel(order.getStatus()));
         dto.put("totalPrice", order.getTotalPrice());
         dto.put("createdAt", order.getCreatedAt());
+        dto.put("attachments", jsonHelper.readValue(order.getAttachmentsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of()));
         dto.put("items", order.getItems().stream().map(item -> Map.of(
                 "productId", item.getProductId(),
                 "productName", item.getProductName(),
@@ -145,14 +167,67 @@ public class OrderService {
         return dto;
     }
 
+    @Transactional
+    public CatalogOrder updateStatus(Long orderId, String targetStatus) {
+        CatalogOrder order = catalogOrderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Заявка не найдена"));
+        OrderStatus nextStatus = OrderStatus.valueOf(targetStatus);
+        validateTransition(order.getStatus(), nextStatus);
+        order.setStatus(nextStatus);
+        return catalogOrderRepository.save(order);
+    }
+
+    public Map<String, Object> buildAdminDashboard(long totalUsers, long usersAddedThisMonth, long totalProducts) {
+        List<CatalogOrder> latestOrders = listOrders(0, 10).getContent();
+        long totalOrders = catalogOrderRepository.count();
+        long pendingOrders = catalogOrderRepository.findAll().stream().filter(order -> order.getStatus() == OrderStatus.NEW).count();
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("ordersTotal", totalOrders);
+        dto.put("ordersPending", pendingOrders);
+        dto.put("productsTotal", totalProducts);
+        dto.put("usersTotal", totalUsers);
+        dto.put("usersAddedThisMonth", usersAddedThisMonth);
+        dto.put("latestOrders", latestOrders.stream().map(this::toDto).toList());
+        return dto;
+    }
+
+    private void validateTransition(OrderStatus current, OrderStatus next) {
+        if (current == OrderStatus.CANCELLED || current == OrderStatus.COMPLETED) {
+            throw new IllegalArgumentException("Эту заявку больше нельзя изменить");
+        }
+        if (current == next) {
+            return;
+        }
+        boolean allowed = switch (current) {
+            case NEW -> next == OrderStatus.IN_PROGRESS || next == OrderStatus.CANCELLED;
+            case IN_PROGRESS -> next == OrderStatus.COMPLETED || next == OrderStatus.CANCELLED;
+            default -> false;
+        };
+        if (!allowed) {
+            throw new IllegalArgumentException("Недопустимый переход статуса");
+        }
+    }
+
+    private String statusLabel(OrderStatus status) {
+        return switch (status) {
+            case NEW -> "В ожидании";
+            case IN_PROGRESS -> "В работе";
+            case COMPLETED -> "Оплачен";
+            case CANCELLED -> "Отменён";
+        };
+    }
+
     public record CreateOrderCommand(
             Long maxUserId,
             String name,
             String phone,
             String company,
+            String email,
+            String deliveryAddress,
             String comment,
             String culture,
             String deliveryNote,
+            List<Map<String, Object>> attachments,
             List<CreateOrderItem> items
     ) {
     }

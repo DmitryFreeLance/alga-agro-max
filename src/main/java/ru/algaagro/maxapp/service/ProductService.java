@@ -38,15 +38,18 @@ public class ProductService {
     private final CatalogProductRepository catalogProductRepository;
     private final JsonHelper jsonHelper;
     private final ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider;
+    private final ObjectProvider<ManufacturerService> manufacturerServiceProvider;
 
     public ProductService(
             CatalogProductRepository catalogProductRepository,
             JsonHelper jsonHelper,
-            ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider
+            ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider,
+            ObjectProvider<ManufacturerService> manufacturerServiceProvider
     ) {
         this.catalogProductRepository = catalogProductRepository;
         this.jsonHelper = jsonHelper;
         this.bitrixSyncServiceProvider = bitrixSyncServiceProvider;
+        this.manufacturerServiceProvider = manufacturerServiceProvider;
     }
 
     public List<CatalogProduct> getActiveProducts() {
@@ -157,6 +160,7 @@ public class ProductService {
         product.setRawDataJson(jsonHelper.writeValue(importedProduct.rawData()));
         product.setActive(true);
         CatalogProduct saved = catalogProductRepository.save(product);
+        ensureManufacturerExists(saved.getBrand());
         if (syncToBitrix) {
             syncProductWithBitrix(saved.getId());
         }
@@ -280,6 +284,8 @@ public class ProductService {
 
     public Map<String, Object> toMiniAppDto(CatalogProduct product) {
         OrderRules orderRules = resolveOrderRules(product);
+        Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
+        Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", product.getId());
         dto.put("name", product.getName());
@@ -294,13 +300,23 @@ public class ProductService {
         dto.put("cultures", getStringList(product.getCulturesJson()));
         dto.put("purposes", getStringList(product.getPurposesJson()));
         dto.put("tags", getStringList(product.getTagsJson()));
-        dto.put("filterMap", jsonHelper.readMap(product.getFilterMapJson()));
+        dto.put("filterMap", filterMap);
+        dto.put("rawData", rawData);
         dto.put("packageType", orderRules.packageType());
         dto.put("packageDescription", orderRules.packageDescription());
         dto.put("minOrderQuantity", orderRules.minOrderQuantity());
         dto.put("orderStep", orderRules.orderStep());
         dto.put("orderHint", buildOrderHint(orderRules));
         dto.put("imageStyle", buildImageStyle(product));
+        dto.put("oldPrice", firstPositive(
+                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("oldPrice", ""), "")),
+                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Старая цена", ""), ""))
+        ));
+        dto.put("activeIngredient", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("activeIngredient", ""), ""),
+                Objects.toString(rawData.getOrDefault("Действующее вещество", ""), ""),
+                Objects.toString(rawData.getOrDefault("действующее вещество", ""), "")
+        ));
         return dto;
     }
 
@@ -325,6 +341,7 @@ public class ProductService {
             product.setExternalId("manual-" + System.currentTimeMillis());
         }
         CatalogProduct saved = catalogProductRepository.save(product);
+        ensureManufacturerExists(saved.getBrand());
         syncProductWithBitrix(saved.getId());
         return saved;
     }
@@ -335,8 +352,19 @@ public class ProductService {
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
         applyPayload(product, payload);
         CatalogProduct saved = catalogProductRepository.save(product);
+        ensureManufacturerExists(saved.getBrand());
         syncProductWithBitrix(saved.getId());
         return saved;
+    }
+
+    @Transactional
+    public void updateManufacturerName(Long productId, String manufacturerName) {
+        CatalogProduct product = catalogProductRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
+        product.setBrand(blankToNull(manufacturerName));
+        CatalogProduct saved = catalogProductRepository.save(product);
+        ensureManufacturerExists(saved.getBrand());
+        syncProductWithBitrix(saved.getId());
     }
 
     @Transactional
@@ -756,6 +784,13 @@ public class ProductService {
             return "кг";
         }
         return blankToNull(value) == null ? "шт" : value.trim();
+    }
+
+    private void ensureManufacturerExists(String brand) {
+        ManufacturerService manufacturerService = manufacturerServiceProvider.getIfAvailable();
+        if (manufacturerService != null) {
+            manufacturerService.ensureExists(brand);
+        }
     }
 
     private void syncProductWithBitrix(Long productId) {
