@@ -169,6 +169,17 @@
                         </div>
                         <button class="primary-button small-button" id="addProductButton" type="button">Добавить товар</button>
                     </div>
+                    <div class="admin-toolbar">
+                        <label class="search-field admin-search-field">
+                            <span class="search-icon">⌕</span>
+                            <input id="adminProductSearch" type="search" placeholder="Найти товар">
+                            <button class="search-clear hidden" id="adminProductClearSearch" type="button">×</button>
+                        </label>
+                        <label class="select-field admin-category-field">
+                            <span>Категория</span>
+                            <select id="adminCategoryFilter"></select>
+                        </label>
+                    </div>
                     <div class="admin-products" id="adminProducts"></div>
                 </div>
 
@@ -225,16 +236,33 @@
 
         <nav class="bottom-nav">
             <button class="bottom-nav-button active" id="catalogBottomButton" type="button">
-                <span class="bottom-icon">▦</span>
+                <span class="bottom-icon" aria-hidden="true">
+                    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none">
+                        <path d="M4 6.5C4 5.672 4.672 5 5.5 5H18.5C19.328 5 20 5.672 20 6.5V8.5C20 9.328 19.328 10 18.5 10H5.5C4.672 10 4 9.328 4 8.5V6.5Z" stroke="currentColor" stroke-width="1.8"/>
+                        <path d="M4 15.5C4 14.672 4.672 14 5.5 14H10.5C11.328 14 12 14.672 12 15.5V17.5C12 18.328 11.328 19 10.5 19H5.5C4.672 19 4 18.328 4 17.5V15.5Z" stroke="currentColor" stroke-width="1.8"/>
+                        <path d="M14 15.5C14 14.672 14.672 14 15.5 14H18.5C19.328 14 20 14.672 20 15.5V17.5C20 18.328 19.328 19 18.5 19H15.5C14.672 19 14 18.328 14 17.5V15.5Z" stroke="currentColor" stroke-width="1.8"/>
+                    </svg>
+                </span>
                 <span>Каталог</span>
             </button>
             <button class="bottom-nav-button" id="cartBottomButton" type="button">
                 <span class="cart-badge hidden" id="cartBottomBadge">0</span>
-                <span class="bottom-icon">◫</span>
+                <span class="bottom-icon" aria-hidden="true">
+                    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none">
+                        <path d="M4.5 6H6.2C6.61 6 6.97 6.279 7.074 6.675L7.5 8.3M7.5 8.3H18.692C19.343 8.3 19.821 8.911 19.664 9.543L18.376 14.743C18.265 15.19 17.864 15.5 17.404 15.5H9.3C8.84 15.5 8.439 15.19 8.328 14.743L7.5 8.3Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="10" cy="18.5" r="1.5" fill="currentColor"/>
+                        <circle cx="16.7" cy="18.5" r="1.5" fill="currentColor"/>
+                    </svg>
+                </span>
                 <span>Корзина</span>
             </button>
             <button class="bottom-nav-button" id="profileNavButton" type="button">
-                <span class="bottom-icon">◌</span>
+                <span class="bottom-icon" aria-hidden="true">
+                    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/>
+                        <path d="M5.5 18.5C6.744 15.786 9.135 14.5 12 14.5C14.865 14.5 17.256 15.786 18.5 18.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </span>
                 <span>Профиль</span>
             </button>
         </nav>
@@ -256,7 +284,7 @@
                     <label class="input-field">
                         <span>Необходимый объем</span>
                         <div class="volume-input-row">
-                            <input id="productModalQuantity" type="number" min="0.001" step="0.001" value="1">
+                            <input id="productModalQuantity" type="number" min="1" step="1" value="1">
                             <span class="volume-unit" id="productModalUnit">шт</span>
                         </div>
                     </label>
@@ -300,6 +328,63 @@
                 <div class="checkout-actions">
                     <button class="ghost-button" id="checkoutModalCancel" type="button">Отмена</button>
                     <button class="primary-button" type="submit">Отправить заказ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="admin-modal hidden" id="adminProductModal">
+        <div class="product-modal-backdrop" id="adminProductModalBackdrop"></div>
+        <div class="admin-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="adminProductModalTitle">
+            <div class="section-head section-head-tight">
+                <div>
+                    <p class="section-kicker">Админ</p>
+                    <h3 id="adminProductModalTitle">Редактирование товара</h3>
+                </div>
+                <button class="product-modal-close" id="adminProductModalClose" type="button">×</button>
+            </div>
+            <form id="adminProductForm" class="admin-modal-form">
+                <input type="hidden" name="productId">
+                <label class="input-field input-field-full">
+                    <span>Название</span>
+                    <input name="name" type="text" placeholder="Название товара">
+                </label>
+                <label class="input-field">
+                    <span>Категория</span>
+                    <input name="category" type="text" placeholder="Семена, Пестициды...">
+                </label>
+                <label class="input-field">
+                    <span>Подкатегория</span>
+                    <input name="subcategory" type="text" placeholder="Например, NPK-комплексы">
+                </label>
+                <label class="input-field">
+                    <span>Цена</span>
+                    <input name="price" type="number" min="0" step="0.01" placeholder="0">
+                </label>
+                <label class="input-field">
+                    <span>Количество</span>
+                    <input name="stockQuantity" type="number" min="0" step="1" placeholder="0">
+                </label>
+                <label class="input-field">
+                    <span>Единица</span>
+                    <input name="unitName" type="text" placeholder="шт / кг / л">
+                </label>
+                <label class="input-field input-field-full">
+                    <span>Культуры</span>
+                    <input name="cultures" type="text" placeholder="Через запятую">
+                </label>
+                <label class="input-field input-field-full">
+                    <span>Теги</span>
+                    <input name="tags" type="text" placeholder="Через запятую">
+                </label>
+                <label class="input-field input-field-full">
+                    <span>Описание</span>
+                    <textarea name="description" rows="5" placeholder="Описание товара"></textarea>
+                </label>
+                <div class="admin-modal-actions">
+                    <button class="ghost-button small-button hidden" id="adminProductDeleteButton" type="button">Удалить</button>
+                    <button class="ghost-button small-button" id="adminProductCancelButton" type="button">Отмена</button>
+                    <button class="primary-button small-button" type="submit">Сохранить</button>
                 </div>
             </form>
         </div>

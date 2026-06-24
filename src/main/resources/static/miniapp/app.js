@@ -10,6 +10,7 @@ const state = {
     profileOrders: [],
     adminOrders: [],
     adminProducts: [],
+    adminUi: { search: "", category: "all" },
     filters: { cultures: [], categories: [], tags: [] },
     products: [],
     selection: { culture: "", category: "", search: "", sort: "name", group: "" },
@@ -63,6 +64,9 @@ const nodes = {
     adminProducts: document.getElementById("adminProducts"),
     adminOrders: document.getElementById("adminOrders"),
     addProductButton: document.getElementById("addProductButton"),
+    adminProductSearch: document.getElementById("adminProductSearch"),
+    adminProductClearSearch: document.getElementById("adminProductClearSearch"),
+    adminCategoryFilter: document.getElementById("adminCategoryFilter"),
     headerBackButton: document.getElementById("headerBackButton"),
     toast: document.getElementById("toast"),
     productModal: document.getElementById("productModal"),
@@ -85,6 +89,12 @@ const nodes = {
     checkoutModalCancel: document.getElementById("checkoutModalCancel"),
     checkoutModalForm: document.getElementById("checkoutModalForm"),
     checkoutModalTotal: document.getElementById("checkoutModalTotal"),
+    adminProductModal: document.getElementById("adminProductModal"),
+    adminProductModalBackdrop: document.getElementById("adminProductModalBackdrop"),
+    adminProductModalClose: document.getElementById("adminProductModalClose"),
+    adminProductForm: document.getElementById("adminProductForm"),
+    adminProductCancelButton: document.getElementById("adminProductCancelButton"),
+    adminProductDeleteButton: document.getElementById("adminProductDeleteButton"),
 };
 
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
@@ -174,6 +184,21 @@ function bindEvents() {
     nodes.checkoutForm.addEventListener("submit", submitOrder);
     nodes.checkoutModalForm.addEventListener("submit", submitOrder);
     nodes.addProductButton?.addEventListener("click", () => renderProductEditor(null));
+    nodes.adminProductSearch?.addEventListener("input", () => {
+        state.adminUi.search = nodes.adminProductSearch.value.trim();
+        syncAdminSearchUi();
+        renderAdminProducts();
+    });
+    nodes.adminProductClearSearch?.addEventListener("click", () => {
+        state.adminUi.search = "";
+        nodes.adminProductSearch.value = "";
+        syncAdminSearchUi();
+        renderAdminProducts();
+    });
+    nodes.adminCategoryFilter?.addEventListener("change", () => {
+        state.adminUi.category = nodes.adminCategoryFilter.value;
+        renderAdminProducts();
+    });
     nodes.headerBackButton.addEventListener("click", async () => {
         if (state.currentPage === "checkout") {
             await resetCatalogSelection();
@@ -207,12 +232,20 @@ function bindEvents() {
     nodes.checkoutModalBackdrop.addEventListener("click", closeCheckoutModal);
     nodes.checkoutModalClose.addEventListener("click", closeCheckoutModal);
     nodes.checkoutModalCancel.addEventListener("click", closeCheckoutModal);
+    nodes.adminProductModalBackdrop?.addEventListener("click", closeAdminProductModal);
+    nodes.adminProductModalClose?.addEventListener("click", closeAdminProductModal);
+    nodes.adminProductCancelButton?.addEventListener("click", closeAdminProductModal);
+    nodes.adminProductForm?.addEventListener("submit", submitAdminProductForm);
+    nodes.adminProductDeleteButton?.addEventListener("click", handleAdminDeleteFromModal);
     document.addEventListener("keydown", event => {
         if (event.key === "Escape" && !nodes.productModal.classList.contains("hidden")) {
             closeProductModal();
         }
         if (event.key === "Escape" && !nodes.checkoutModal.classList.contains("hidden")) {
             closeCheckoutModal();
+        }
+        if (event.key === "Escape" && !nodes.adminProductModal.classList.contains("hidden")) {
+            closeAdminProductModal();
         }
     });
 }
@@ -489,7 +522,6 @@ function renderProducts() {
                     <strong>${formatPrice(product.price)}${product.unitName ? `/${escapeHtml(product.unitName)}` : ""}</strong>
                 </div>
                 <div class="product-actions">
-                    <button class="ghost-button small-button details-button" type="button">Подробнее</button>
                     <button class="primary-button small-button" type="button">Добавить</button>
                 </div>
             </div>
@@ -500,10 +532,6 @@ function renderProducts() {
                 event.preventDefault();
                 openProductModal(product);
             }
-        });
-        card.querySelector(".details-button").addEventListener("click", event => {
-            event.stopPropagation();
-            openProductModal(product);
         });
         card.querySelector(".primary-button").addEventListener("click", event => {
             event.stopPropagation();
@@ -532,7 +560,7 @@ function openProductModal(product) {
         : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`;
     nodes.productModalPrice.textContent = `${formatPrice(product.price)}${product.unitName ? `/${product.unitName}` : ""}`;
     nodes.productModalUnit.textContent = product.unitName || "шт";
-    nodes.productModalQuantity.value = formatQuantityInput(getDefaultQuantity(product.unitName));
+    nodes.productModalQuantity.value = formatQuantityInput(getDefaultQuantity());
     nodes.productModalAddButton.dataset.productId = String(product.id);
     nodes.productModalAddButton.dataset.unitPrice = String(Number(product.price || 0));
     nodes.productModal.classList.remove("hidden");
@@ -577,9 +605,9 @@ async function runSearchAndOpenResults() {
 }
 
 function renderCart() {
-    const totalCount = state.cart.length;
+    const totalCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
     const totalPrice = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["позиция", "позиции", "позиций"])}`;
+    nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["товар", "товара", "товаров"])}`;
     nodes.cartTotal.textContent = formatPrice(totalPrice);
     nodes.checkoutModalTotal.textContent = formatPrice(totalPrice);
     nodes.cartBottomBadge.textContent = String(totalCount);
@@ -602,13 +630,13 @@ function renderCart() {
                 <span>${formatPrice(item.price)} / ${escapeHtml(item.unitName)}</span>
                 <div class="cart-qty">
                     <button class="qty-btn minus" type="button">−</button>
-                    <input class="qty-input" type="number" min="0.001" step="0.001" value="${formatQuantityInput(item.quantity)}">
+                    <input class="qty-input" type="number" min="1" step="1" value="${formatQuantityInput(item.quantity)}">
                     <button class="qty-btn plus" type="button">+</button>
                 </div>
             </div>
         `;
-        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -getQuantityStep(item.unitName)));
-        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, getQuantityStep(item.unitName)));
+        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -getQuantityStep()));
+        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, getQuantityStep()));
         row.querySelector(".qty-input").addEventListener("change", event => setQuantity(item.id, event.target.value));
         row.querySelector(".remove-btn").addEventListener("click", () => removeItem(item.id));
         nodes.cartItems.appendChild(row);
@@ -626,6 +654,8 @@ function renderProfile() {
 
 function renderAdminSection() {
     nodes.adminSection.classList.remove("hidden");
+    renderAdminCategoryFilter();
+    syncAdminSearchUi();
     renderAdminProducts();
     renderOrdersList(nodes.adminOrders, state.adminOrders, "Заказов пока нет.");
 }
@@ -633,43 +663,42 @@ function renderAdminSection() {
 function renderAdminProducts() {
     nodes.adminProducts.innerHTML = "";
     if (!state.adminProducts.length) {
-        nodes.adminProducts.innerHTML = `<div class="empty-state"><h4>Товаров пока нет</h4><p>Добавьте первую позицию.</p></div>`;
+        nodes.adminProducts.innerHTML = `<div class="empty-state"><h4>Товаров пока нет</h4><p>Добавьте первую позицию через кнопку выше.</p></div>`;
         return;
     }
-    state.adminProducts.forEach(product => nodes.adminProducts.appendChild(buildAdminProductCard(product)));
+    const filteredProducts = getFilteredAdminProducts();
+    if (!filteredProducts.length) {
+        nodes.adminProducts.innerHTML = `<div class="empty-state"><h4>Ничего не найдено</h4><p>Измените поиск или фильтр категории.</p></div>`;
+        return;
+    }
+    filteredProducts.forEach(product => nodes.adminProducts.appendChild(buildAdminProductCard(product)));
 }
 
 function buildAdminProductCard(product) {
-    const card = document.createElement("div");
+    const card = document.createElement("button");
+    card.type = "button";
     card.className = "admin-product-card";
     card.innerHTML = `
-        <div class="order-head">
-            <strong>${escapeHtml(product.name || "Новый товар")}</strong>
-            <span>${formatPrice(product.price)}</span>
+        <div class="admin-product-top">
+            <span class="admin-product-category">${escapeHtml(product.category || "Без категории")}</span>
+            <span class="admin-product-price">${formatPrice(product.price)}</span>
         </div>
-        <form class="admin-product-form">
-            <input name="name" value="${escapeAttr(product.name || "")}" placeholder="Название">
-            <input name="category" value="${escapeAttr(product.category || "")}" placeholder="Категория">
-            <input name="price" value="${escapeAttr(product.price ?? "")}" placeholder="Цена">
-            <input name="stockQuantity" value="${escapeAttr(product.stockQuantity ?? "")}" placeholder="Количество">
-            <input class="full" name="cultures" value="${escapeAttr((product.cultures || []).join(", "))}" placeholder="Культуры через запятую">
-            <input class="full" name="tags" value="${escapeAttr((product.tags || []).join(", "))}" placeholder="Теги через запятую">
-            <textarea class="full" name="description" placeholder="Описание">${escapeHtml(product.description || "")}</textarea>
-        </form>
-        <div class="admin-product-actions">
-            <button class="ghost-button small-button" type="button" data-action="save">Сохранить</button>
-            <button class="ghost-button small-button" type="button" data-action="delete">Удалить</button>
+        <div class="admin-product-summary">
+            <strong>${escapeHtml(product.name || "Новый товар")}</strong>
+            <p>${escapeHtml(compactDescription(product.description || "Нажмите, чтобы открыть карточку товара.", 96))}</p>
+        </div>
+        <div class="admin-product-meta">
+            <span>${product.stockQuantity == null ? "Остаток не указан" : `Остаток: ${formatQuantityInput(product.stockQuantity)} ${escapeHtml(product.unitName || "шт")}`}</span>
+            <span>Изменить</span>
         </div>
     `;
-    card.querySelector('[data-action="save"]').addEventListener("click", () => saveAdminProduct(product.id, card));
-    card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteAdminProduct(product.id));
+    card.addEventListener("click", () => openAdminProductEditor(product));
     return card;
 }
 
 function renderProductEditor(product) {
-    const draft = product || { name: "", category: "", price: "", stockQuantity: "", cultures: [], tags: [], description: "" };
-    state.adminProducts = [draft, ...state.adminProducts];
-    renderAdminProducts();
+    const draft = product || { name: "", category: "", subcategory: "", price: "", stockQuantity: "", cultures: [], tags: [], description: "", unitName: "шт" };
+    openAdminProductEditor(draft);
 }
 
 function renderOrdersList(container, orders, emptyText) {
@@ -694,19 +723,109 @@ function renderOrdersList(container, orders, emptyText) {
     });
 }
 
-async function saveAdminProduct(productId, card) {
-    const form = card.querySelector(".admin-product-form");
+function getFilteredAdminProducts() {
+    const query = normalizeToken(state.adminUi.search);
+    const category = state.adminUi.category;
+    return state.adminProducts.filter(product => {
+        const categoryMatches = category === "all" || (product.category || "") === category;
+        if (!categoryMatches) {
+            return false;
+        }
+        if (!query) {
+            return true;
+        }
+        const haystack = normalizeToken([
+            product.name,
+            product.category,
+            product.subcategory,
+            product.description,
+            ...(product.cultures || []),
+            ...(product.tags || []),
+        ].join(" "));
+        return haystack.includes(query);
+    });
+}
+
+function renderAdminCategoryFilter() {
+    if (!nodes.adminCategoryFilter) {
+        return;
+    }
+    const categories = [...new Set(state.adminProducts.map(item => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+    nodes.adminCategoryFilter.innerHTML = [
+        `<option value="all">Все категории</option>`,
+        ...categories.map(category => `<option value="${escapeAttr(category)}">${escapeHtml(category)}</option>`)
+    ].join("");
+    if (!categories.includes(state.adminUi.category) && state.adminUi.category !== "all") {
+        state.adminUi.category = "all";
+    }
+    nodes.adminCategoryFilter.value = state.adminUi.category;
+}
+
+function syncAdminSearchUi() {
+    nodes.adminProductClearSearch?.classList.toggle("hidden", !state.adminUi.search);
+}
+
+function openAdminProductEditor(product) {
+    const form = nodes.adminProductForm;
+    setFormValue(form, "productId", product.id || "");
+    setFormValue(form, "name", product.name || "");
+    setFormValue(form, "category", product.category || "");
+    setFormValue(form, "subcategory", product.subcategory || "");
+    setFormValue(form, "price", product.price ?? "");
+    setFormValue(form, "stockQuantity", product.stockQuantity == null ? "" : formatQuantityInput(product.stockQuantity));
+    setFormValue(form, "unitName", product.unitName || "шт");
+    setFormValue(form, "cultures", (product.cultures || []).join(", "));
+    setFormValue(form, "tags", (product.tags || []).join(", "));
+    setFormValue(form, "description", product.description || "");
+    nodes.adminProductDeleteButton.classList.toggle("hidden", !product.id);
+    nodes.adminProductModal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+}
+
+function closeAdminProductModal() {
+    nodes.adminProductModal.classList.add("hidden");
+    document.body.style.overflow = "";
+}
+
+async function submitAdminProductForm(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const productIdRaw = getFormValue(form, "productId");
+    const productId = productIdRaw ? Number(productIdRaw) : null;
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    submitButton.textContent = "Сохраняем...";
+    try {
+        await saveAdminProduct(productId, form);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Сохранить";
+    }
+}
+
+async function handleAdminDeleteFromModal() {
+    const productIdRaw = getFormValue(nodes.adminProductForm, "productId");
+    const productId = productIdRaw ? Number(productIdRaw) : null;
+    if (!productId) {
+        closeAdminProductModal();
+        return;
+    }
+    await deleteAdminProduct(productId);
+}
+
+async function saveAdminProduct(productId, form) {
+    const formData = new FormData(form);
     const payload = {
-        name: form.name.value.trim(),
-        category: form.category.value.trim(),
-        price: form.price.value ? Number(form.price.value) : null,
-        stockQuantity: form.stockQuantity.value ? Number(form.stockQuantity.value) : null,
-        cultures: form.cultures.value.trim(),
-        tags: form.tags.value.trim(),
-        description: form.description.value.trim(),
-        unitName: "шт",
-        subcategory: "",
-        itemType: form.category.value.trim() || "Товар",
+        name: String(formData.get("name") || "").trim(),
+        category: String(formData.get("category") || "").trim(),
+        subcategory: String(formData.get("subcategory") || "").trim(),
+        price: formData.get("price") ? Number(formData.get("price")) : null,
+        stockQuantity: formData.get("stockQuantity") ? parseQuantity(formData.get("stockQuantity")) : null,
+        cultures: String(formData.get("cultures") || "").trim(),
+        tags: String(formData.get("tags") || "").trim(),
+        description: String(formData.get("description") || "").trim(),
+        unitName: String(formData.get("unitName") || "").trim() || "шт",
+        itemType: String(formData.get("subcategory") || "").trim() || String(formData.get("category") || "").trim() || "Товар",
         brand: "АЛГА АГРО",
         purposes: "",
         active: true,
@@ -724,7 +843,9 @@ async function saveAdminProduct(productId, card) {
         state.adminProducts = [saved, ...state.adminProducts.filter(item => item.id)];
     }
     await Promise.all([loadFilters(), loadProducts()]);
+    renderAdminCategoryFilter();
     renderAdminProducts();
+    closeAdminProductModal();
     showToast("Товар сохранен");
 }
 
@@ -737,7 +858,9 @@ async function deleteAdminProduct(productId) {
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
     state.adminProducts = state.adminProducts.filter(item => item.id !== productId);
     await Promise.all([loadFilters(), loadProducts()]);
+    renderAdminCategoryFilter();
     renderAdminProducts();
+    closeAdminProductModal();
     showToast("Товар удален");
 }
 
@@ -960,19 +1083,19 @@ function parseQuantity(value) {
 }
 
 function roundQuantity(value) {
-    return Math.round(Number(value) * 1000) / 1000;
+    return Math.max(1, Math.round(Number(value)));
 }
 
-function getQuantityStep(unitName) {
-    return String(unitName || "").toLowerCase() === "шт" ? 1 : 0.1;
+function getQuantityStep() {
+    return 1;
 }
 
-function getDefaultQuantity(unitName) {
-    return getQuantityStep(unitName) === 1 ? 1 : 0.1;
+function getDefaultQuantity() {
+    return 1;
 }
 
 function formatQuantityInput(value) {
-    return String(roundQuantity(value)).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    return String(roundQuantity(value));
 }
 
 function syncProductModalTotal() {
@@ -1014,4 +1137,16 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
     return escapeHtml(value).replaceAll("'", "&#39;");
+}
+
+function getFormValue(form, name) {
+    const field = form.elements.namedItem(name);
+    return field ? field.value : "";
+}
+
+function setFormValue(form, name, value) {
+    const field = form.elements.namedItem(name);
+    if (field) {
+        field.value = value;
+    }
 }
