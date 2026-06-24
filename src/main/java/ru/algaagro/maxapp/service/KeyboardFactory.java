@@ -5,6 +5,8 @@ import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import org.springframework.stereotype.Component;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.model.PostButton;
@@ -20,7 +22,7 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> mainMenu(Long userId, boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(openAppButton("📋 Открыть каталог", buildMiniAppUrl(userId))));
+        rows.add(List.of(linkButton("📋 Открыть каталог", buildMiniAppUrl(userId))));
         rows.add(List.of(messageButton("💬 Связаться с менеджером")));
         if (admin) {
             rows.add(List.of(messageButton("🛠 Админ панель")));
@@ -107,7 +109,12 @@ public class KeyboardFactory {
     }
 
     private String buildMiniAppUrl(Long userId) {
-        return normalizeHttpLink(appProperties.getMiniAppUrl(), "https://algaagro.ru/miniapp/");
+        String baseUrl = normalizeHttpLink(appProperties.getMiniAppUrl(), "https://algaagro.ru/miniapp/");
+        if (userId == null || userId <= 0) {
+            return baseUrl;
+        }
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        return baseUrl + separator + "maxUserId=" + URLEncoder.encode(String.valueOf(userId), StandardCharsets.UTF_8);
     }
 
     private String normalizeHttpLink(String rawUrl) {
