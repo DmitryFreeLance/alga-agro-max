@@ -14,7 +14,7 @@ const state = {
     products: [],
     selection: { culture: "", category: "", search: "", sort: "name", group: "" },
     cart: [],
-    currentPage: "home",
+    currentPage: "catalog",
     maxUserId: null,
     catalogMode: "catalog",
 };
@@ -25,16 +25,15 @@ const nodes = {
     resultsPage: document.getElementById("resultsPage"),
     profilePage: document.getElementById("profilePage"),
     checkoutPage: document.getElementById("checkoutPage"),
-    homeNavButton: document.getElementById("homeNavButton"),
     catalogBottomButton: document.getElementById("catalogBottomButton"),
+    cartBottomButton: document.getElementById("cartBottomButton"),
+    cartBottomBadge: document.getElementById("cartBottomBadge"),
     profileNavButton: document.getElementById("profileNavButton"),
     pageTitle: document.getElementById("pageTitle"),
     pageCaption: document.getElementById("pageCaption"),
     openCatalogFromHome: document.getElementById("openCatalogFromHome"),
     openCartFromHome: document.getElementById("openCartFromHome"),
     homeGroupGrid: document.getElementById("homeGroupGrid"),
-    catalogModeButton: document.getElementById("catalogModeButton"),
-    cartModeButton: document.getElementById("cartModeButton"),
     catalogModePanel: document.getElementById("catalogModePanel"),
     cartModePanel: document.getElementById("cartModePanel"),
     searchInput: document.getElementById("searchInput"),
@@ -47,7 +46,6 @@ const nodes = {
     emptyState: document.getElementById("emptyState"),
     catalogTitle: document.getElementById("catalogTitle"),
     catalogCount: document.getElementById("catalogCount"),
-    cartCount: document.getElementById("cartCount"),
     cartSummaryCount: document.getElementById("cartSummaryCount"),
     cartItems: document.getElementById("cartItems"),
     cartTotal: document.getElementById("cartTotal"),
@@ -77,7 +75,16 @@ const nodes = {
     productModalTags: document.getElementById("productModalTags"),
     productModalStock: document.getElementById("productModalStock"),
     productModalPrice: document.getElementById("productModalPrice"),
+    productModalQuantity: document.getElementById("productModalQuantity"),
+    productModalUnit: document.getElementById("productModalUnit"),
+    productModalTotal: document.getElementById("productModalTotal"),
     productModalAddButton: document.getElementById("productModalAddButton"),
+    checkoutModal: document.getElementById("checkoutModal"),
+    checkoutModalBackdrop: document.getElementById("checkoutModalBackdrop"),
+    checkoutModalClose: document.getElementById("checkoutModalClose"),
+    checkoutModalCancel: document.getElementById("checkoutModalCancel"),
+    checkoutModalForm: document.getElementById("checkoutModalForm"),
+    checkoutModalTotal: document.getElementById("checkoutModalTotal"),
 };
 
 const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
@@ -116,20 +123,17 @@ async function bootstrap() {
     renderHomeGroups();
     renderCatalogGroups();
     renderCart();
-    showPage("home");
+    showPage("catalog");
 }
 
 function bindEvents() {
-    nodes.homeNavButton.addEventListener("click", () => showPage("home"));
     nodes.catalogBottomButton.addEventListener("click", () => showPage("catalog"));
+    nodes.cartBottomButton.addEventListener("click", () => showPage("cart"));
     nodes.profileNavButton.addEventListener("click", () => showPage("profile"));
-    nodes.openCatalogFromHome.addEventListener("click", () => showPage("catalog"));
-    nodes.openCartFromHome.addEventListener("click", () => {
-        showPage("catalog");
-        setCatalogMode("cart");
+    nodes.openCatalogFromHome?.addEventListener("click", () => showPage("catalog"));
+    nodes.openCartFromHome?.addEventListener("click", () => {
+        showPage("cart");
     });
-    nodes.catalogModeButton.addEventListener("click", () => setCatalogMode("catalog"));
-    nodes.cartModeButton.addEventListener("click", () => setCatalogMode("cart"));
     nodes.searchInput.addEventListener("input", event => {
         state.selection.search = event.target.value.trim();
         syncSearchUi();
@@ -158,23 +162,22 @@ function bindEvents() {
             showToast("Сначала добавьте товары в корзину");
             return;
         }
-        showPage("checkout");
+        openCheckoutModal();
     });
     nodes.backToCart.addEventListener("click", () => {
-        showPage("catalog");
-        setCatalogMode("cart");
+        showPage("cart");
     });
     nodes.backToCatalog.addEventListener("click", () => {
         showPage("catalog");
         setCatalogMode("catalog");
     });
     nodes.checkoutForm.addEventListener("submit", submitOrder);
+    nodes.checkoutModalForm.addEventListener("submit", submitOrder);
     nodes.addProductButton?.addEventListener("click", () => renderProductEditor(null));
     nodes.headerBackButton.addEventListener("click", async () => {
         if (state.currentPage === "checkout") {
             await resetCatalogSelection();
-            showPage("catalog");
-            setCatalogMode("cart");
+            showPage("cart");
         } else if (state.currentPage === "results") {
             await resetCatalogSelection();
             showPage("catalog");
@@ -182,25 +185,34 @@ function bindEvents() {
         } else if (state.currentPage === "catalog") {
             await resetCatalogSelection();
             setCatalogMode("catalog");
-            showPage("home");
+            showPage("catalog");
+        } else if (state.currentPage === "cart") {
+            showPage("catalog");
+            setCatalogMode("catalog");
         } else {
-            await resetCatalogSelection();
-            showPage("home");
+            showPage("catalog");
         }
     });
     nodes.productModalBackdrop.addEventListener("click", closeProductModal);
     nodes.productModalClose.addEventListener("click", closeProductModal);
+    nodes.productModalQuantity.addEventListener("input", syncProductModalTotal);
     nodes.productModalAddButton.addEventListener("click", () => {
         const productId = Number(nodes.productModalAddButton.dataset.productId);
         const product = state.products.find(item => item.id === productId);
         if (product) {
-            addToCart(product);
+            addToCart(product, parseQuantity(nodes.productModalQuantity.value));
             closeProductModal();
         }
     });
+    nodes.checkoutModalBackdrop.addEventListener("click", closeCheckoutModal);
+    nodes.checkoutModalClose.addEventListener("click", closeCheckoutModal);
+    nodes.checkoutModalCancel.addEventListener("click", closeCheckoutModal);
     document.addEventListener("keydown", event => {
         if (event.key === "Escape" && !nodes.productModal.classList.contains("hidden")) {
             closeProductModal();
+        }
+        if (event.key === "Escape" && !nodes.checkoutModal.classList.contains("hidden")) {
+            closeCheckoutModal();
         }
     });
 }
@@ -307,21 +319,26 @@ function rememberMaxUserId(userId) {
 
 function showPage(page) {
     state.currentPage = page;
-    nodes.homePage.classList.toggle("page-active", page === "home");
-    nodes.catalogPage.classList.toggle("page-active", page === "catalog");
+    nodes.homePage?.classList.toggle("page-active", false);
+    nodes.catalogPage.classList.toggle("page-active", page === "catalog" || page === "cart");
     nodes.resultsPage.classList.toggle("page-active", page === "results");
     nodes.profilePage.classList.toggle("page-active", page === "profile");
-    nodes.checkoutPage.classList.toggle("page-active", page === "checkout");
-    nodes.homeNavButton.classList.toggle("active", page === "home");
+    nodes.checkoutPage?.classList.toggle("page-active", page === "checkout");
     nodes.catalogBottomButton.classList.toggle("active", page === "catalog" || page === "results");
+    nodes.cartBottomButton.classList.toggle("active", page === "cart");
     nodes.profileNavButton.classList.toggle("active", page === "profile");
+    if (page === "cart") {
+        setCatalogMode("cart");
+    } else if (page === "catalog") {
+        setCatalogMode("catalog");
+    }
     const meta = {
-        home: ["Главная", ""],
         catalog: ["Каталог", "Подбор товаров по культуре, группе и фильтрам."],
+        cart: ["Корзина", "Список товаров, объем и итоговая сумма заказа."],
         results: ["Товары", "Подходящие позиции по выбранным параметрам."],
         profile: ["Профиль", "Ваши заказы и управление данными."],
         checkout: ["Оформление", "Отправка заявки администратору."],
-    }[page];
+    }[page] || ["Каталог", ""];
     nodes.pageTitle.textContent = meta[0];
     nodes.pageCaption.textContent = meta[1];
     nodes.pageCaption.classList.toggle("hidden", !meta[1]);
@@ -357,8 +374,6 @@ async function refreshCatalogPresentation() {
 
 function setCatalogMode(mode) {
     state.catalogMode = mode;
-    nodes.catalogModeButton.classList.toggle("active", mode === "catalog");
-    nodes.cartModeButton.classList.toggle("active", mode === "cart");
     nodes.catalogModePanel.classList.toggle("mode-panel-active", mode === "catalog");
     nodes.cartModePanel.classList.toggle("mode-panel-active", mode === "cart");
 }
@@ -492,7 +507,7 @@ function renderProducts() {
         });
         card.querySelector(".primary-button").addEventListener("click", event => {
             event.stopPropagation();
-            addToCart(product);
+            openProductModal(product);
         });
         nodes.productGrid.appendChild(card);
     });
@@ -516,13 +531,29 @@ function openProductModal(product) {
         ? "Наличие уточняется"
         : `Остаток: ${product.stockQuantity} ${product.unitName || ""}`;
     nodes.productModalPrice.textContent = `${formatPrice(product.price)}${product.unitName ? `/${product.unitName}` : ""}`;
+    nodes.productModalUnit.textContent = product.unitName || "шт";
+    nodes.productModalQuantity.value = formatQuantityInput(getDefaultQuantity(product.unitName));
     nodes.productModalAddButton.dataset.productId = String(product.id);
+    nodes.productModalAddButton.dataset.unitPrice = String(Number(product.price || 0));
     nodes.productModal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
+    syncProductModalTotal();
 }
 
 function closeProductModal() {
     nodes.productModal.classList.add("hidden");
+    document.body.style.overflow = "";
+}
+
+function openCheckoutModal() {
+    nodes.checkoutModalForm.reset();
+    nodes.checkoutModalTotal.textContent = nodes.cartTotal.textContent;
+    nodes.checkoutModal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+}
+
+function closeCheckoutModal() {
+    nodes.checkoutModal.classList.add("hidden");
     document.body.style.overflow = "";
 }
 
@@ -546,11 +577,13 @@ async function runSearchAndOpenResults() {
 }
 
 function renderCart() {
-    const totalCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+    const totalCount = state.cart.length;
     const totalPrice = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    nodes.cartCount.textContent = totalCount;
-    nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["товар", "товара", "товаров"])}`;
+    nodes.cartSummaryCount.textContent = `${totalCount} ${pluralize(totalCount, ["позиция", "позиции", "позиций"])}`;
     nodes.cartTotal.textContent = formatPrice(totalPrice);
+    nodes.checkoutModalTotal.textContent = formatPrice(totalPrice);
+    nodes.cartBottomBadge.textContent = String(totalCount);
+    nodes.cartBottomBadge.classList.toggle("hidden", totalCount <= 0);
     nodes.cartItems.innerHTML = "";
     if (!state.cart.length) {
         nodes.cartItems.innerHTML = `<div class="empty-state"><h4>Корзина пуста</h4><p>Добавьте товары из каталога.</p></div>`;
@@ -562,19 +595,21 @@ function renderCart() {
         row.innerHTML = `
             <div class="cart-row">
                 <strong>${escapeHtml(item.name)}</strong>
+                <span class="cart-line-total">${formatPrice(item.price * item.quantity)}</span>
                 <button class="remove-btn" type="button">✕</button>
             </div>
             <div class="cart-row">
                 <span>${formatPrice(item.price)} / ${escapeHtml(item.unitName)}</span>
                 <div class="cart-qty">
                     <button class="qty-btn minus" type="button">−</button>
-                    <strong>${item.quantity}</strong>
+                    <input class="qty-input" type="number" min="0.001" step="0.001" value="${formatQuantityInput(item.quantity)}">
                     <button class="qty-btn plus" type="button">+</button>
                 </div>
             </div>
         `;
-        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -1));
-        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, 1));
+        row.querySelector(".minus").addEventListener("click", () => updateQuantity(item.id, -getQuantityStep(item.unitName)));
+        row.querySelector(".plus").addEventListener("click", () => updateQuantity(item.id, getQuantityStep(item.unitName)));
+        row.querySelector(".qty-input").addEventListener("change", event => setQuantity(item.id, event.target.value));
         row.querySelector(".remove-btn").addEventListener("click", () => removeItem(item.id));
         nodes.cartItems.appendChild(row);
     });
@@ -809,10 +844,11 @@ function slugify(value) {
         .replace(/^-+|-+$/g, "") || "group";
 }
 
-function addToCart(product) {
+function addToCart(product, quantity = 1) {
+    const safeQuantity = parseQuantity(quantity);
     const existing = state.cart.find(item => item.id === product.id);
-    if (existing) existing.quantity += 1;
-    else state.cart.push({ id: product.id, name: product.name, price: Number(product.price || 0), quantity: 1, unitName: product.unitName || "шт" });
+    if (existing) existing.quantity = roundQuantity(existing.quantity + safeQuantity);
+    else state.cart.push({ id: product.id, name: product.name, price: Number(product.price || 0), quantity: safeQuantity, unitName: product.unitName || "шт" });
     renderCart();
     showToast(`Добавили: ${product.name}`);
 }
@@ -824,8 +860,20 @@ function syncSearchUi() {
 function updateQuantity(productId, delta) {
     const item = state.cart.find(entry => entry.id === productId);
     if (!item) return;
-    item.quantity += delta;
+    item.quantity = roundQuantity(item.quantity + delta);
     if (item.quantity <= 0) state.cart = state.cart.filter(entry => entry.id !== productId);
+    renderCart();
+}
+
+function setQuantity(productId, value) {
+    const item = state.cart.find(entry => entry.id === productId);
+    if (!item) return;
+    const quantity = parseQuantity(value);
+    if (quantity <= 0) {
+        state.cart = state.cart.filter(entry => entry.id !== productId);
+    } else {
+        item.quantity = quantity;
+    }
     renderCart();
 }
 
@@ -840,18 +888,19 @@ async function submitOrder(event) {
         showToast("Корзина пуста");
         return;
     }
-    const formData = new FormData(nodes.checkoutForm);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const payload = {
         maxUserId: state.maxUserId,
         name: formData.get("name"),
         phone: formData.get("phone"),
-        company: formData.get("company"),
-        comment: formData.get("comment"),
+        company: "",
+        comment: "",
         culture: state.selection.culture || null,
-        deliveryNote: formData.get("deliveryNote"),
+        deliveryNote: "",
         items: state.cart.map(item => ({ productId: item.id, quantity: item.quantity })),
     };
-    const submitButton = nodes.checkoutForm.querySelector('button[type="submit"]');
+    const submitButton = form.querySelector('button[type="submit"]');
     submitButton.disabled = true;
     submitButton.textContent = "Отправляем...";
     try {
@@ -863,6 +912,8 @@ async function submitOrder(event) {
         state.cart = [];
         renderCart();
         nodes.checkoutForm.reset();
+        nodes.checkoutModalForm.reset();
+        closeCheckoutModal();
         await loadProfile();
         showPage("profile");
         showToast(`Заказ ${data.orderCode} отправлен`);
@@ -898,6 +949,36 @@ function formatPrice(value) {
     const number = Number(value || 0);
     if (!Number.isFinite(number) || number <= 0) return "По запросу";
     return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number)} ₽`;
+}
+
+function parseQuantity(value) {
+    const number = Number(String(value || "").replace(",", "."));
+    if (!Number.isFinite(number) || number <= 0) {
+        return 1;
+    }
+    return roundQuantity(number);
+}
+
+function roundQuantity(value) {
+    return Math.round(Number(value) * 1000) / 1000;
+}
+
+function getQuantityStep(unitName) {
+    return String(unitName || "").toLowerCase() === "шт" ? 1 : 0.1;
+}
+
+function getDefaultQuantity(unitName) {
+    return getQuantityStep(unitName) === 1 ? 1 : 0.1;
+}
+
+function formatQuantityInput(value) {
+    return String(roundQuantity(value)).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function syncProductModalTotal() {
+    const quantity = parseQuantity(nodes.productModalQuantity.value);
+    const price = Number(nodes.productModalAddButton.dataset.unitPrice || 0);
+    nodes.productModalTotal.textContent = formatPrice(price * quantity);
 }
 
 function compactDescription(value, maxLength) {

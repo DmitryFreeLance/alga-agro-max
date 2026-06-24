@@ -29,7 +29,7 @@
             </div>
         </header>
 
-        <section class="page page-active" id="homePage">
+        <section class="page" id="homePage">
             <div class="content-card hero-card">
                 <div>
                     <h3>Подбор агро-товаров по культурам и задачам.</h3>
@@ -53,14 +53,6 @@
         </section>
 
         <section class="page" id="catalogPage">
-            <div class="catalog-switcher">
-                <button class="switcher-button active" id="catalogModeButton" type="button">Каталог</button>
-                <button class="switcher-button" id="cartModeButton" type="button">
-                    Корзина
-                    <span class="badge-count" id="cartCount">0</span>
-                </button>
-            </div>
-
             <div class="mode-panel mode-panel-active" id="catalogModePanel">
                 <div class="content-card search-card">
                     <label class="search-field">
@@ -232,13 +224,14 @@
         </section>
 
         <nav class="bottom-nav">
-            <button class="bottom-nav-button active" id="homeNavButton" type="button">
-                <span class="bottom-icon">⌂</span>
-                <span>Главная</span>
-            </button>
-            <button class="bottom-nav-button" id="catalogBottomButton" type="button">
+            <button class="bottom-nav-button active" id="catalogBottomButton" type="button">
                 <span class="bottom-icon">▦</span>
                 <span>Каталог</span>
+            </button>
+            <button class="bottom-nav-button" id="cartBottomButton" type="button">
+                <span class="cart-badge hidden" id="cartBottomBadge">0</span>
+                <span class="bottom-icon">◫</span>
+                <span>Корзина</span>
             </button>
             <button class="bottom-nav-button" id="profileNavButton" type="button">
                 <span class="bottom-icon">◌</span>
@@ -259,12 +252,56 @@
                 <h3 id="productModalTitle">Название товара</h3>
                 <p class="product-modal-description" id="productModalDescription"></p>
                 <div class="meta-badges product-modal-tags" id="productModalTags"></div>
+                <div class="product-volume-box">
+                    <label class="input-field">
+                        <span>Необходимый объем</span>
+                        <div class="volume-input-row">
+                            <input id="productModalQuantity" type="number" min="0.001" step="0.001" value="1">
+                            <span class="volume-unit" id="productModalUnit">шт</span>
+                        </div>
+                    </label>
+                    <div class="product-volume-total">
+                        <span>Сумма</span>
+                        <strong id="productModalTotal">0 ₽</strong>
+                    </div>
+                </div>
                 <div class="price product-modal-price">
                     <span class="stock" id="productModalStock"></span>
                     <strong id="productModalPrice"></strong>
                 </div>
                 <button class="primary-button" id="productModalAddButton" type="button">Добавить в корзину</button>
             </div>
+        </div>
+    </div>
+
+    <div class="checkout-modal hidden" id="checkoutModal">
+        <div class="product-modal-backdrop" id="checkoutModalBackdrop"></div>
+        <div class="checkout-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="checkoutModalTitle">
+            <div class="section-head section-head-tight">
+                <div>
+                    <p class="section-kicker">Оформление</p>
+                    <h3 id="checkoutModalTitle">Отправка заказа</h3>
+                </div>
+                <button class="product-modal-close" id="checkoutModalClose" type="button">×</button>
+            </div>
+            <form id="checkoutModalForm" class="checkout-modal-form">
+                <label class="input-field">
+                    <span>ФИО</span>
+                    <input name="name" type="text" required placeholder="Введите полное имя">
+                </label>
+                <label class="input-field">
+                    <span>Телефон</span>
+                    <input name="phone" type="tel" required placeholder="+7 (___) ___-__-__">
+                </label>
+                <div class="cart-summary checkout-modal-summary">
+                    <span>Итого к отправке</span>
+                    <strong id="checkoutModalTotal">0 ₽</strong>
+                </div>
+                <div class="checkout-actions">
+                    <button class="ghost-button" id="checkoutModalCancel" type="button">Отмена</button>
+                    <button class="primary-button" type="submit">Отправить заказ</button>
+                </div>
+            </form>
         </div>
     </div>
 

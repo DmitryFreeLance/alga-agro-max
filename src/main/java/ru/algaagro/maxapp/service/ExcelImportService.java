@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,6 +20,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
@@ -404,6 +410,17 @@ public class ExcelImportService {
             return List.of();
         }
         byte[] bytes = download(url);
+        if (isPdfFileName(fileName)) {
+            return parsePdfFile(bytes, fileName);
+        }
+        return parseWorkbookFile(bytes, fileName);
+    }
+
+    private boolean isPdfFileName(String fileName) {
+        return fileName != null && fileName.toLowerCase(Locale.ROOT).endsWith(".pdf");
+    }
+
+    private List<ImportRow> parseWorkbookFile(byte[] bytes, String fileName) {
         try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
             List<ImportRow> rows = new ArrayList<>();
             for (Sheet sheet : workbook) {
@@ -466,6 +483,260 @@ public class ExcelImportService {
         } catch (IOException e) {
             throw new IllegalStateException("Не удалось прочитать файл " + fileName, e);
         }
+    }
+
+    private List<ImportRow> parsePdfFile(byte[] bytes, String fileName) {
+        try (PDDocument document = Loader.loadPDF(bytes)) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            String text = stripper.getText(document);
+            if (text == null || text.isBlank()) {
+                return List.of();
+            }
+            List<MutableImportRow> parsedRows = new ArrayList<>();
+            String currentSection = "";
+            String[] lines = text.split("\\R");
+            int rowNumber = 0;
+            for (String rawLine : lines) {
+                String line = normalizePdfLine(rawLine);
+                if (line.isBlank() || isPdfNoiseLine(line)) {
+                    continue;
+                }
+                if (looksLikePdfSection(line)) {
+                    currentSection = line.replaceAll("[:;]+$", "").trim();
+                    continue;
+                }
+                if (shouldAppendPdfLineToPrevious(line, parsedRows)) {
+                    appendPdfLineToPrevious(parsedRows.get(parsedRows.size() - 1), line);
+                    continue;
+                }
+                Map<String, String> columns = buildPdfColumns(line, currentSection);
+                String position = extractName(columns);
+                if (position.isBlank()) {
+                    continue;
+                }
+                if (!currentSection.isBlank()) {
+                    columns.put("Раздел", currentSection);
+                }
+                rowNumber++;
+                parsedRows.add(new MutableImportRow(
+                        fileName + "#PDF#" + rowNumber,
+                        fileName,
+                        "PDF",
+                        rowNumber,
+                        columns,
+                        position,
+                        currentSection
+                ));
+            }
+            return parsedRows.stream()
+                    .map(MutableImportRow::toImmutable)
+                    .toList();
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось прочитать PDF-файл " + fileName, e);
+        }
+    }
+
+    private String normalizePdfLine(String rawLine) {
+        return rawLine == null
+                ? ""
+                : rawLine
+                .replace('\u00A0', ' ')
+                .replaceAll("[\\t\\r]+", " ")
+                .replaceAll("\\s{2,}", "  ")
+                .trim();
+    }
+
+    private boolean isPdfNoiseLine(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        if (normalized.isBlank() || normalized.length() < 3) {
+            return true;
+        }
+        if (!normalized.matches(".*[a-zа-я].*")) {
+            return true;
+        }
+        return normalized.contains("прайс")
+                || normalized.contains("price")
+                || normalized.contains("страница")
+                || normalized.matches("^page\\s+\\d+.*")
+                || normalized.contains("www.")
+                || normalized.contains("http://")
+                || normalized.contains("https://")
+                || normalized.contains("@")
+                || normalized.contains("тел.")
+                || normalized.contains("телефон")
+                || normalized.contains("эл. почт")
+                || normalized.contains("действует с")
+                || normalized.matches("^\\d{1,2}[./]\\d{1,2}[./]\\d{2,4}.*");
+    }
+
+    private boolean looksLikePdfSection(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        if (normalized.length() < 4 || normalized.length() > 90) {
+            return false;
+        }
+        if (!extractPdfPrice(line).isBlank() || !extractPdfDosage(line).isBlank()) {
+            return false;
+        }
+        if (normalized.endsWith(":")) {
+            return true;
+        }
+        if (normalized.contains("семена")
+                || normalized.contains("пестицид")
+                || normalized.contains("гербицид")
+                || normalized.contains("фунгицид")
+                || normalized.contains("инсектицид")
+                || normalized.contains("удобр")
+                || normalized.contains("агропит")
+                || normalized.contains("корректор")
+                || normalized.contains("биостим")
+                || normalized.contains("адъюв")) {
+            return true;
+        }
+        long letterCount = line.chars().filter(Character::isLetter).count();
+        long upperCount = line.chars().filter(ch -> Character.isLetter(ch) && Character.isUpperCase(ch)).count();
+        int wordCount = normalized.split("\\s+").length;
+        return letterCount > 0 && wordCount <= 6 && ((double) upperCount / (double) letterCount) > 0.72d;
+    }
+
+    private boolean shouldAppendPdfLineToPrevious(String line, List<MutableImportRow> parsedRows) {
+        if (parsedRows.isEmpty()) {
+            return false;
+        }
+        String normalized = TextUtils.normalizeToken(line);
+        return normalized.startsWith("состав")
+                || normalized.startsWith("норма расхода")
+                || normalized.startsWith("расход")
+                || normalized.startsWith("действующее вещество")
+                || normalized.startsWith("культуры")
+                || normalized.startsWith("назначение")
+                || normalized.startsWith("применение")
+                || normalized.startsWith("для ");
+    }
+
+    private void appendPdfLineToPrevious(MutableImportRow previous, String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        if (normalized.startsWith("состав")) {
+            String existing = previous.columns().getOrDefault("Состав", "");
+            previous.columns().put("Состав", existing.isBlank() ? line : (existing + " " + line).trim());
+        } else if (normalized.startsWith("норма расхода") || normalized.startsWith("расход")) {
+            String existing = previous.columns().getOrDefault("Норма расхода", "");
+            previous.columns().put("Норма расхода", existing.isBlank() ? line : (existing + " " + line).trim());
+        } else {
+            String existing = previous.columns().getOrDefault("Сырой текст", "");
+            previous.columns().put("Сырой текст", existing.isBlank() ? line : (existing + " " + line).trim());
+            String currentComposition = previous.columns().getOrDefault("Состав", "");
+            if (currentComposition.isBlank() && line.length() > 12) {
+                previous.columns().put("Состав", line);
+            }
+        }
+    }
+
+    private Map<String, String> buildPdfColumns(String line, String currentSection) {
+        Map<String, String> columns = new LinkedHashMap<>();
+        String name = extractPdfName(line);
+        String price = extractPdfPrice(line);
+        String dosage = extractPdfDosage(line);
+        String composition = extractPdfComposition(line, name, dosage, price);
+        columns.put("Позиция", name);
+        columns.put("Сырой текст", line);
+        if (!currentSection.isBlank()) {
+            columns.put("Раздел", currentSection);
+        }
+        if (!composition.isBlank()) {
+            columns.put("Состав", composition);
+        }
+        if (!dosage.isBlank()) {
+            columns.put("Норма расхода", dosage);
+        }
+        if (!price.isBlank()) {
+            columns.put("Цена", price);
+        }
+        if (line.contains("/л") || TextUtils.normalizeToken(line).contains("р/л")) {
+            columns.put("Ед.", "л");
+        } else if (line.contains("/кг") || TextUtils.normalizeToken(line).contains("р/кг")) {
+            columns.put("Ед.", "кг");
+        }
+        return columns;
+    }
+
+    private String extractPdfName(String line) {
+        List<String> segments = Arrays.stream(line.split("\\s{2,}|\\t+"))
+                .map(String::trim)
+                .filter(segment -> !segment.isBlank())
+                .toList();
+        if (!segments.isEmpty()) {
+            String firstSegment = segments.get(0).replaceFirst("^[\\d\\s().-]+", "").trim();
+            if (!firstSegment.isBlank()) {
+                return TextUtils.trimTo(firstSegment, 180);
+            }
+        }
+        String price = extractPdfPrice(line);
+        String dosage = extractPdfDosage(line);
+        String name = line;
+        if (!price.isBlank()) {
+            name = name.replace(price, " ");
+        }
+        if (!dosage.isBlank()) {
+            name = name.replace(dosage, " ");
+        }
+        name = name.replaceAll("\\s{2,}", " ").replaceAll("\\s*[;|]+\\s*", " ").trim();
+        return TextUtils.trimTo(name, 180);
+    }
+
+    private String extractPdfPrice(String line) {
+        Optional<String> explicit = findRegex(line,
+                "(?iu)(\\d[\\d\\s]{2,}(?:[.,]\\d{1,2})?\\s*(?:₽|руб(?:\\.|лей)?|р(?:/|\\s*)(?:л|кг|т)|руб(?:/|\\s*)(?:л|кг|т)))");
+        if (explicit.isPresent()) {
+            return explicit.get().trim();
+        }
+        List<String> segments = Arrays.stream(line.split("\\s{2,}|\\t+"))
+                .map(String::trim)
+                .filter(segment -> !segment.isBlank())
+                .toList();
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            String segment = segments.get(i);
+            if (segment.matches(".*\\d{3,}.*")) {
+                return segment;
+            }
+        }
+        return "";
+    }
+
+    private String extractPdfDosage(String line) {
+        return findRegex(line,
+                "(?iu)(норма расхода[^.;]*|расход[^.;]*|\\d+[\\d,.\\-–]*\\s*(?:л|мл|кг|г)\\s*/\\s*(?:га|т|100\\s*кг))")
+                .map(String::trim)
+                .orElse("");
+    }
+
+    private String extractPdfComposition(String line, String name, String dosage, String price) {
+        Optional<String> explicit = findRegex(line, "(?iu)(состав[^.;]*|действующее вещество[^.;]*)");
+        if (explicit.isPresent()) {
+            return TextUtils.trimTo(explicit.get().trim(), 220);
+        }
+        String tail = line;
+        if (name != null && !name.isBlank() && tail.startsWith(name)) {
+            tail = tail.substring(name.length()).trim();
+        }
+        if (dosage != null && !dosage.isBlank()) {
+            tail = tail.replace(dosage, " ");
+        }
+        if (price != null && !price.isBlank()) {
+            tail = tail.replace(price, " ");
+        }
+        tail = tail.replaceAll("\\s{2,}", " ").replaceAll("^[\\-–:;,./\\s]+", "").trim();
+        if (tail.length() < 12) {
+            return "";
+        }
+        return TextUtils.trimTo(tail, 220);
+    }
+
+    private Optional<String> findRegex(String value, String pattern) {
+        Matcher matcher = Pattern.compile(pattern).matcher(value);
+        if (matcher.find()) {
+            return Optional.ofNullable(matcher.group(1));
+        }
+        return Optional.empty();
     }
 
     private byte[] download(String url) {
