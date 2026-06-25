@@ -10,9 +10,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
@@ -24,39 +26,52 @@ public class ProductResearchService {
 
     private static final Logger log = LoggerFactory.getLogger(ProductResearchService.class);
     private static final int RESEARCH_AI_BATCH_SIZE = 20;
+    private static final Duration BITRIX_SYNC_WAIT_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration BITRIX_SYNC_POLL_INTERVAL = Duration.ofSeconds(2);
 
     private final ExecutorService importExecutorService;
     private final CatalogProductRepository catalogProductRepository;
     private final ProductService productService;
     private final AiClassificationService aiClassificationService;
     private final JsonHelper jsonHelper;
+    private final ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider;
+    private final AtomicBoolean researchInProgress = new AtomicBoolean(false);
 
     public ProductResearchService(
             ExecutorService importExecutorService,
             CatalogProductRepository catalogProductRepository,
             ProductService productService,
             AiClassificationService aiClassificationService,
-            JsonHelper jsonHelper
+            JsonHelper jsonHelper,
+            ObjectProvider<BitrixSyncService> bitrixSyncServiceProvider
     ) {
         this.importExecutorService = importExecutorService;
         this.catalogProductRepository = catalogProductRepository;
         this.productService = productService;
         this.aiClassificationService = aiClassificationService;
         this.jsonHelper = jsonHelper;
+        this.bitrixSyncServiceProvider = bitrixSyncServiceProvider;
     }
 
     public CompletableFuture<Void> researchUncategorizedProductsAsync(Long initiatedBy, Consumer<String> onSuccess, Consumer<String> onFailure) {
+        if (!researchInProgress.compareAndSet(false, true)) {
+            onFailure.accept("Research уже выполняется. Дождитесь завершения текущего запуска.");
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture
                 .supplyAsync(() -> researchUncategorizedProducts(initiatedBy), importExecutorService)
                 .thenAccept(onSuccess)
                 .exceptionally(error -> {
                     Throwable cause = error.getCause() == null ? error : error.getCause();
+                    log.error("Research failed for {}: {}", initiatedBy, cause.getMessage(), cause);
                     onFailure.accept(cause.getMessage());
                     return null;
-                });
+                })
+                .whenComplete((unused, error) -> researchInProgress.set(false));
     }
 
     private String researchUncategorizedProducts(Long initiatedBy) {
+        waitForBitrixSyncIfNeeded();
         List<CatalogProduct> activeProducts = catalogProductRepository.findAllByActiveTrue();
         List<CatalogProduct> targets = activeProducts.stream()
                 .filter(this::needsResearch)
@@ -71,10 +86,13 @@ public class ProductResearchService {
         for (CatalogProduct product : targets) {
             rows.add(toImportRow(product));
         }
+        log.info("Research prepared import rows. count={}", rows.size());
 
         LinkedHashSet<String> knownCultures = new LinkedHashSet<>();
         activeProducts.forEach(product -> knownCultures.addAll(productService.getStringList(product.getCulturesJson())));
+        log.info("Research prepared known cultures. count={}", knownCultures.size());
         List<AiClassificationService.ClassificationResult> classified = classifyForResearch(rows, new ArrayList<>(knownCultures));
+        log.info("Research classification completed. results={}", classified.size());
 
         int updated = 0;
         int unchanged = 0;
@@ -156,6 +174,30 @@ public class ProductResearchService {
         }
         summary.append("\nЕсли часть позиций все еще осталась в «Прочее», значит по текущим данным ИИ не смог уверенно определить тип товара.");
         return summary.toString();
+    }
+
+    private void waitForBitrixSyncIfNeeded() {
+        BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
+        if (bitrixSyncService == null) {
+            return;
+        }
+        if (!bitrixSyncService.isSyncInProgress()) {
+            return;
+        }
+        log.info("Research is waiting for Bitrix sync to finish");
+        long deadline = System.currentTimeMillis() + BITRIX_SYNC_WAIT_TIMEOUT.toMillis();
+        while (bitrixSyncService.isSyncInProgress() && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(BITRIX_SYNC_POLL_INTERVAL.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Research прерван во время ожидания завершения синхронизации Bitrix.", e);
+            }
+        }
+        if (bitrixSyncService.isSyncInProgress()) {
+            throw new IllegalStateException("Bitrix синхронизация все еще выполняется. Повторите /research чуть позже.");
+        }
+        log.info("Research resumed after Bitrix sync");
     }
 
     private List<AiClassificationService.ClassificationResult> classifyForResearch(

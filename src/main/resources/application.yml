@@ -7,7 +7,7 @@ spring:
     url: jdbc:sqlite:${APP_DB_PATH:/data/alga-agro.db}
     driver-class-name: org.sqlite.JDBC
     hikari:
-      maximum-pool-size: 1
+      maximum-pool-size: 4
       minimum-idle: 1
   jpa:
     hibernate:

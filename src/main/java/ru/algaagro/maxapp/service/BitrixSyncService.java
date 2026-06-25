@@ -110,6 +110,10 @@ public class BitrixSyncService {
                 && !appProperties.getBitrix().getWebhookBaseUrl().isBlank();
     }
 
+    public boolean isSyncInProgress() {
+        return syncInProgress.get();
+    }
+
     @EventListener(ApplicationReadyEvent.class)
     public void initialSync() {
         if (!enabled()) {
