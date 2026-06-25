@@ -250,7 +250,7 @@ public class ProductResearchService {
     }
 
     private String buildRawText(CatalogProduct product) {
-        return List.of(
+        return java.util.stream.Stream.of(
                         product.getName(),
                         product.getDescription(),
                         product.getBrand(),
@@ -259,7 +259,7 @@ public class ProductResearchService {
                         product.getItemType(),
                         firstRawValue(product, "Состав", "Действующее вещество", "действующее вещество"),
                         firstRawValue(product, "Норма расхода", "Расход", "дозировка")
-                ).stream()
+                )
                 .filter(value -> value != null && !value.isBlank())
                 .reduce((left, right) -> left + " | " + right)
                 .orElse("");
