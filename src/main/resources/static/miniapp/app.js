@@ -43,6 +43,12 @@ const SECTION_VISUALS = [
         description: "Комплексная защита растений",
     },
     {
+        match: ["десикант", "протрав", "роденти", "репелент", "регулятор рост", "красител", "специальн"],
+        icon: "./assets/category-pesticides-ref.png",
+        palette: ["#dff3d8", "#eaf7d8"],
+        description: "Специализированные препараты защиты растений",
+    },
+    {
         match: ["агрохим", "удобр", "агропитан", "питан", "микро", "биостим"],
         icon: "./assets/category-nutrition-flaticon.png",
         palette: ["#c8eff6", "#a8e0ee"],
@@ -393,6 +399,7 @@ function renderProductCard(product) {
     const favorite = isFavorite(product.id);
     const cartItem = getCartItem(product.id);
     const price = renderProductPrice(product);
+    const categoryLabel = getProductSectionName(product);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -401,7 +408,7 @@ function renderProductCard(product) {
             </div>
             <div class="product-card-body">
                 <p class="product-card-title">${escapeHtml(product.name)}</p>
-                <p class="product-card-subtitle">${escapeHtml(product.brand || product.category || "")}</p>
+                <p class="product-card-subtitle">${escapeHtml(product.brand || categoryLabel || "")}</p>
                 <div class="price-line">
                     ${price}
                     ${product.price == null
@@ -767,7 +774,7 @@ function renderAdminCatalog() {
     const activeSection = tree.find(item => item.name === activeSectionName) || null;
     const products = getAdminFilteredProducts();
     const sectionProducts = activeSectionName
-        ? state.admin.products.filter(item => (item.category || "Прочее") === activeSectionName)
+        ? state.admin.products.filter(item => getProductSectionName(item) === activeSectionName)
         : state.admin.products;
     const visibleCount = sectionProducts.filter(item => item.active).length;
     const sectionVisual = activeSection?.visual || getSectionVisual(activeSectionName || "Прочее");
@@ -1291,6 +1298,7 @@ function renderAdminProductModal() {
     const product = state.admin.productEditor.productId ? state.admin.products.find(item => item.id === state.admin.productEditor.productId) : null;
     const categories = getCatalogSections().map(item => item.name);
     const visual = getProductVisual(product || { category: state.admin.catalogSection || "Прочее" });
+    const selectedCategory = product ? getProductSectionName(product) : (state.admin.catalogSection || "");
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
@@ -1307,7 +1315,7 @@ function renderAdminProductModal() {
                     <div class="admin-form-section">
                         <div class="admin-form-section-title">Основное</div>
                         <div class="admin-form-row">
-                            <div class="admin-field"><label>Раздел</label><select name="category">${renderOptions(categories.map(item => [item, item]), product?.category || state.admin.catalogSection || "")}</select></div>
+                            <div class="admin-field"><label>Раздел</label><select name="category">${renderOptions(categories.map(item => [item, item]), selectedCategory)}</select></div>
                             <div class="admin-field"><label>Подкатегория</label><input name="subcategory" value="${escapeAttr(product?.subcategory || "")}"></div>
                         </div>
                         <div class="admin-field"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
@@ -2278,10 +2286,9 @@ function renderOptions(options, selected) {
 }
 
 function getCatalogSections() {
-    if (state.sections?.length) return state.sections;
     const grouped = new Map();
     state.products.forEach(product => {
-        const name = product.category || "Прочее";
+        const name = getProductSectionName(product);
         if (!grouped.has(name)) {
             grouped.set(name, { name, description: getSectionVisual(name).description, productsCount: 0 });
         }
@@ -2291,7 +2298,7 @@ function getCatalogSections() {
 }
 
 function getSectionProducts(sectionName) {
-    return state.products.filter(product => (product.category || "Прочее") === sectionName);
+    return state.products.filter(product => getProductSectionName(product) === sectionName);
 }
 
 function getSearchResults(query) {
@@ -2311,7 +2318,7 @@ function applyCatalogFilters(products) {
     let filtered = [...products];
     const applied = state.catalog.applied;
     if (applied.sections.length) {
-        filtered = filtered.filter(product => applied.sections.includes(product.category || "Прочее"));
+        filtered = filtered.filter(product => applied.sections.includes(getProductSectionName(product)));
     }
     if (applied.cultures.length) {
         filtered = filtered.filter(product => (product.cultures || []).some(item => applied.cultures.includes(item)));
@@ -2360,7 +2367,7 @@ function compareNames(left, right) {
 }
 
 function getProductVisual(product) {
-    return getSectionVisual(product.category || "Прочее");
+    return getSectionVisual(getProductSectionName(product));
 }
 
 function getSectionVisual(name) {
@@ -2369,7 +2376,7 @@ function getSectionVisual(name) {
     return matched || {
         icon: "./assets/category-other.svg",
         palette: ["#e1f1de", "#d7e9f6"],
-        description: "Актуальные позиции каталога",
+        description: getSectionDescription(name),
     };
 }
 
@@ -2378,13 +2385,87 @@ function getSectionDisplayName(name) {
     if (normalized.includes("пестиц")) {
         return "СЗР";
     }
+    if (normalized.includes("мелиор")) {
+        return "Мелиоранты";
+    }
     return name || "Прочее";
+}
+
+function getSectionDescription(name) {
+    const normalized = normalize(name);
+    const matched = SECTION_VISUALS.find(item => item.match.some(match => normalized.includes(match)));
+    if (matched?.description) {
+        return matched.description;
+    }
+    if (normalized.includes("адъюв") || normalized.includes("адьюв")) {
+        return "Прилипатели и вспомогательные компоненты";
+    }
+    if (normalized.includes("сзр") || normalized.includes("пестиц")) {
+        return "Комплексная защита растений";
+    }
+    if (normalized.includes("десикант")) {
+        return "Препараты для десикации культур";
+    }
+    if (normalized.includes("протрав")) {
+        return "Защита семян перед посевом";
+    }
+    if (normalized.includes("роденти")) {
+        return "Средства против грызунов";
+    }
+    if (normalized.includes("репелент")) {
+        return "Средства отпугивания вредителей";
+    }
+    if (normalized.includes("регулятор рост")) {
+        return "Контроль роста и развития растений";
+    }
+    if (normalized.includes("красител")) {
+        return "Красители и специальные добавки для семян";
+    }
+    if (normalized.includes("проч")) {
+        return "Дополнительные товары каталога";
+    }
+    return name ? `Товары раздела ${name}` : "Товары каталога";
+}
+
+function isSpecificSectionName(name) {
+    const normalized = normalize(name);
+    if (!normalized) {
+        return false;
+    }
+    return SECTION_VISUALS.some(item => item.match.some(match => normalized.includes(match)))
+        || normalized.includes("гербиц")
+        || normalized.includes("фунгиц")
+        || normalized.includes("инсекти")
+        || normalized.includes("десикант")
+        || normalized.includes("протрав")
+        || normalized.includes("роденти")
+        || normalized.includes("репелент")
+        || normalized.includes("регулятор рост")
+        || normalized.includes("красител")
+        || normalized.includes("специальн");
+}
+
+function getProductSectionName(product) {
+    const category = String(product?.category || "").trim();
+    const subcategory = String(product?.subcategory || product?.itemType || "").trim();
+    const normalizedCategory = normalize(category);
+    const genericCategory = !normalizedCategory || normalizedCategory.includes("проч") || normalizedCategory.includes("пестиц") || normalizedCategory.includes("сзр");
+    if (subcategory && (genericCategory || isSpecificSectionName(subcategory))) {
+        return getSectionDisplayName(subcategory);
+    }
+    if (category) {
+        return getSectionDisplayName(category);
+    }
+    if (subcategory) {
+        return getSectionDisplayName(subcategory);
+    }
+    return "Прочее";
 }
 
 function buildCategoriesTree(products) {
     const tree = {};
     products.forEach(product => {
-        const parent = product.category || "Прочее";
+        const parent = getProductSectionName(product);
         const child = product.subcategory || product.itemType || "Без категории";
         if (!tree[parent]) tree[parent] = [];
         if (!tree[parent].includes(child)) tree[parent].push(child);
@@ -2396,7 +2477,7 @@ function buildCategoriesTree(products) {
 function getAdminSectionTree() {
     const grouped = {};
     state.admin.products.forEach(product => {
-        const section = product.category || "Прочее";
+        const section = getProductSectionName(product);
         const child = product.subcategory || product.itemType || "Без категории";
         if (!grouped[section]) {
             grouped[section] = {
@@ -2427,9 +2508,9 @@ function getAdminFilteredProducts() {
     return state.admin.products.filter(product => {
         if (state.admin.catalogStatus === "ACTIVE" && !product.active) return false;
         if (state.admin.catalogStatus === "HIDDEN" && product.active) return false;
-        if (effectiveSection && (product.category || "Прочее") !== effectiveSection) return false;
+        if (effectiveSection && getProductSectionName(product) !== effectiveSection) return false;
         if (state.admin.catalogCategory && (product.subcategory || product.itemType || "Без категории") !== state.admin.catalogCategory) return false;
-        if (search && !normalize([product.name, product.brand, product.category, product.subcategory].join(" ")).includes(search)) return false;
+        if (search && !normalize([product.name, product.brand, getProductSectionName(product), product.category, product.subcategory].join(" ")).includes(search)) return false;
         return true;
     });
 }

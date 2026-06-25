@@ -650,6 +650,30 @@ public class MiniAppApiController {
         if (normalized.contains("инсект")) {
             return "Защита от вредителей";
         }
+        if (normalized.contains("адъюв") || normalized.contains("адьюв")) {
+            return "Прилипатели и вспомогательные компоненты";
+        }
+        if (normalized.contains("сзр") || normalized.contains("пестиц")) {
+            return "Комплексная защита растений";
+        }
+        if (normalized.contains("десикант")) {
+            return "Препараты для десикации культур";
+        }
+        if (normalized.contains("протрав")) {
+            return "Защита семян перед посевом";
+        }
+        if (normalized.contains("роденти")) {
+            return "Средства против грызунов";
+        }
+        if (normalized.contains("репелент")) {
+            return "Средства отпугивания вредителей";
+        }
+        if (normalized.contains("регулятор рост")) {
+            return "Контроль роста и развития растений";
+        }
+        if (normalized.contains("красител")) {
+            return "Красители и специальные добавки для семян";
+        }
         if (normalized.contains("сем")) {
             return "Зерновые, масличные, бобовые";
         }
@@ -659,6 +683,9 @@ public class MiniAppApiController {
         if (normalized.contains("мелиор")) {
             return "Известкование почв";
         }
-        return "Актуальные позиции каталога";
+        if (normalized.contains("проч")) {
+            return "Дополнительные товары каталога";
+        }
+        return sectionName == null || sectionName.isBlank() ? "Товары каталога" : "Товары раздела " + sectionName;
     }
 }

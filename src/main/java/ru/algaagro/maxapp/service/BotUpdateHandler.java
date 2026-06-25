@@ -1083,6 +1083,10 @@ public class BotUpdateHandler {
 
     private Long extractUserId(JsonNode update) {
         return firstLong(update,
+                "/message_callback/user/user_id",
+                "/message_callback/user_id",
+                "/message_callback/sender/user_id",
+                "/message_callback/from/user_id",
                 "/message/sender/user_id",
                 "/message/body/sender/user_id",
                 "/callback/user/user_id",
@@ -1094,11 +1098,20 @@ public class BotUpdateHandler {
     }
 
     private Long extractChatId(JsonNode update) {
-        return firstLong(update, "/message/chat_id", "/chat_id", "/callback/chat_id", "/callback/message/chat_id");
+        return firstLong(update,
+                "/message_callback/chat_id",
+                "/message_callback/message/chat_id",
+                "/message/chat_id",
+                "/chat_id",
+                "/callback/chat_id",
+                "/callback/message/chat_id");
     }
 
     private String extractDisplayName(JsonNode update) {
         return firstText(update,
+                "/message_callback/user/name",
+                "/message_callback/sender/name",
+                "/message_callback/from/name",
                 "/message/sender/name",
                 "/callback/user/name",
                 "/user/name");
@@ -1106,6 +1119,9 @@ public class BotUpdateHandler {
 
     private String extractUsername(JsonNode update) {
         return firstText(update,
+                "/message_callback/user/username",
+                "/message_callback/sender/username",
+                "/message_callback/from/username",
                 "/message/sender/username",
                 "/callback/user/username",
                 "/user/username");
@@ -1126,7 +1142,11 @@ public class BotUpdateHandler {
     }
 
     private String extractCallbackId(JsonNode update) {
-        return firstText(update, "/callback/callback_id", "/callback/id", "/message_callback/callback_id");
+        return firstText(update,
+                "/message_callback/callback_id",
+                "/message_callback/id",
+                "/callback/callback_id",
+                "/callback/id");
     }
 
     private List<Map<String, Object>> extractAttachments(JsonNode update) {
