@@ -11,6 +11,8 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
@@ -19,6 +21,8 @@ import ru.algaagro.maxapp.util.TextUtils;
 
 @Service
 public class ProductResearchService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductResearchService.class);
 
     private final ExecutorService importExecutorService;
     private final CatalogProductRepository catalogProductRepository;
@@ -57,6 +61,7 @@ public class ProductResearchService {
                 .filter(this::needsResearch)
                 .sorted((left, right) -> String.valueOf(left.getName()).compareToIgnoreCase(String.valueOf(right.getName())))
                 .toList();
+        log.info("Research started by {}. targets={}", initiatedBy, targets.size());
         if (targets.isEmpty()) {
             return "🔎 В разделе <b>«Прочее»</b> не найдено активных товаров для пересмотра.";
         }
@@ -72,7 +77,9 @@ public class ProductResearchService {
 
         int updated = 0;
         int unchanged = 0;
+        int failed = 0;
         Map<String, Integer> bySection = new LinkedHashMap<>();
+        List<String> failedProducts = new ArrayList<>();
         for (int i = 0; i < targets.size(); i++) {
             CatalogProduct product = targets.get(i);
             AiClassificationService.ClassificationResult result = classified.get(i);
@@ -114,9 +121,15 @@ public class ProductResearchService {
                     jsonHelper.readMap(product.getRawDataJson()),
                     product.isActive()
             );
-            productService.updateProduct(product.getId(), payload);
-            updated++;
-            bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
+            try {
+                productService.updateProduct(product.getId(), payload, false);
+                updated++;
+                bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
+            } catch (Exception e) {
+                failed++;
+                failedProducts.add(firstNonBlank(product.getName(), "ID " + product.getId()));
+                log.warn("Research update failed for product {} (id={}): {}", product.getName(), product.getId(), e.getMessage());
+            }
         }
 
         StringBuilder summary = new StringBuilder();
@@ -125,12 +138,19 @@ public class ProductResearchService {
         summary.append("• Проверено товаров из «Прочее»: <b>").append(targets.size()).append("</b>\n");
         summary.append("• Обновлено: <b>").append(updated).append("</b>\n");
         summary.append("• Без изменений: <b>").append(unchanged).append("</b>\n");
+        summary.append("• Ошибок обновления: <b>").append(failed).append("</b>\n");
         if (!bySection.isEmpty()) {
             summary.append("• Разнесено по разделам: <b>")
                     .append(bySection.entrySet().stream()
                             .map(entry -> entry.getKey() + " (" + entry.getValue() + ")")
                             .reduce((left, right) -> left + ", " + right)
                             .orElse("—"))
+                    .append("</b>\n");
+        }
+        if (!failedProducts.isEmpty()) {
+            summary.append("• Проблемные позиции: <b>")
+                    .append(failedProducts.stream().limit(8).reduce((left, right) -> left + ", " + right).orElse("—"))
+                    .append(failedProducts.size() > 8 ? " и еще " + (failedProducts.size() - 8) : "")
                     .append("</b>\n");
         }
         summary.append("\nЕсли часть позиций все еще осталась в «Прочее», значит по текущим данным ИИ не смог уверенно определить тип товара.");
