@@ -762,13 +762,18 @@ public class BotUpdateHandler {
         BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
         Map<String, Object> payload = new HashMap<>();
         payload.put("mode", "button_waiting");
+        payload.put("buttonStage", "label_waiting");
         botSessionService.update(session, SessionState.IDLE, payload);
         maxApiClient.sendToUser(user.getMaxUserId(),
                 """
                 🔗 <b>Новая кнопка для постов</b>
 
-                Отправьте текст в формате:
-                <code>Название кнопки - https://example.com</code>
+                Шаг 1 из 2. Отправьте <b>название кнопки</b>.
+
+                Например: <code>Каталог</code>
+
+                Можно и одним сообщением:
+                <code>Каталог - https://example.com</code>
                 """,
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                 "html");
@@ -777,6 +782,7 @@ public class BotUpdateHandler {
 
     private void handleButtonDraftMessage(AppUser user, BotSession session, JsonNode update, String text) {
         Map<String, Object> payload = botSessionService.getPayload(session);
+        String stage = cleanValue(payload.get("buttonStage"));
         String resolvedInput = resolveButtonInput(update, text);
         ButtonDraft draft = parseButtonDraft(resolvedInput);
         String pendingTitle = cleanValue(payload.get("pendingButtonTitle"));
@@ -802,7 +808,32 @@ public class BotUpdateHandler {
         if (resolvedInput == null || resolvedInput.isBlank()) {
             log.info("Button flow received message without recognizable text/url. update={}", update.toString());
             maxApiClient.sendToUser(user.getMaxUserId(),
-                    "Нужен текст в формате:\n<code>Название кнопки - https://example.com</code>",
+                    "Не вижу текст сообщения. Отправьте название кнопки, например:\n<code>Каталог</code>",
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            return;
+        }
+
+        if ("url_waiting".equals(stage) && pendingTitle != null && pendingUrl == null) {
+            String normalizedUrl = normalizeButtonUrlCandidate(resolvedInput);
+            if (normalizedUrl != null) {
+                postButtonService.createButton(pendingTitle, normalizedUrl);
+                botSessionService.reset(user.getMaxUserId());
+                maxApiClient.sendToUser(user.getMaxUserId(),
+                        "✅ Кнопка добавлена.",
+                        keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                        "html");
+                return;
+            }
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    """
+                    Ссылка не распознана.
+
+                    Отправьте ссылку в одном из форматов:
+                    <code>https://max.ru/id9729390997_bot</code>
+                    <code>max.ru/id9729390997_bot</code>
+                    <code>id9729390997_bot</code>
+                    """,
                     keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                     "html");
             return;
@@ -820,9 +851,28 @@ public class BotUpdateHandler {
         } else {
             nextPayload.remove("pendingButtonUrl");
         }
+        if (pendingTitle != null && pendingUrl == null) {
+            nextPayload.put("buttonStage", "url_waiting");
+        } else {
+            nextPayload.put("buttonStage", "label_waiting");
+        }
         botSessionService.update(session, SessionState.IDLE, nextPayload);
 
         if (pendingUrl == null) {
+            if (pendingTitle != null) {
+                maxApiClient.sendToUser(user.getMaxUserId(),
+                        """
+                        Шаг 2 из 2. Теперь отправьте ссылку для кнопки.
+
+                        Лучше без предпросмотра, в одном из форматов:
+                        <code>https://max.ru/id9729390997_bot</code>
+                        <code>max.ru/id9729390997_bot</code>
+                        <code>id9729390997_bot</code>
+                        """,
+                        keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                        "html");
+                return;
+            }
             maxApiClient.sendToUser(user.getMaxUserId(),
                     "Ссылка не распознана. Отправьте так:\n<code>Каталог - https://max.ru/...</code>",
                     keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
@@ -1072,6 +1122,37 @@ public class BotUpdateHandler {
         }
         if (linkUrl != null && !linkUrl.isBlank()) {
             return linkUrl.trim();
+        }
+        return null;
+    }
+
+    private String normalizeButtonUrlCandidate(String rawInput) {
+        if (rawInput == null) {
+            return null;
+        }
+        String candidate = rawInput.trim();
+        if (candidate.isBlank()) {
+            return null;
+        }
+        if (candidate.contains(" ")) {
+            ButtonDraft draft = parseButtonDraft(candidate);
+            if (draft.url() != null) {
+                return draft.url();
+            }
+        }
+        if (isValidUrl(candidate)) {
+            return candidate;
+        }
+        String normalized = candidate
+                .replaceFirst("^(?i)https?://", "")
+                .replaceFirst("^(?i)max\\.ru/", "")
+                .trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+        if (normalized.startsWith("join/") || normalized.startsWith("id") || normalized.contains("_bot") || normalized.contains("/")) {
+            String url = "https://max.ru/" + normalized;
+            return isValidUrl(url) ? url : null;
         }
         return null;
     }
