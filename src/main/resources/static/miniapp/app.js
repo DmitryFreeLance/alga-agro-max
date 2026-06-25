@@ -2452,8 +2452,7 @@ function isSpecificSectionName(name) {
 
 function isSzrSectionName(name) {
     const normalized = normalize(name);
-    return !normalized
-        || normalized.includes("проч")
+    return normalized.includes("проч")
         || normalized.includes("пестиц")
         || normalized.includes("сзр")
         || normalized.includes("гербиц")
@@ -2466,6 +2465,53 @@ function isSzrSectionName(name) {
         || normalized.includes("регулятор рост")
         || normalized.includes("красител")
         || normalized.includes("специальн");
+}
+
+function isSeedsSectionName(name) {
+    const normalized = normalize(name);
+    return normalized.includes("семен")
+        || normalized.includes("озим")
+        || normalized.includes("яров")
+        || normalized.includes("пшениц")
+        || normalized.includes("рож")
+        || normalized.includes("тритикал")
+        || normalized.includes("кукуруз")
+        || normalized.includes("подсолнеч")
+        || normalized.includes("соя")
+        || normalized.includes("рапс")
+        || normalized.includes("гречих")
+        || normalized.includes("горох")
+        || normalized.includes("бобов")
+        || normalized.includes("зернов")
+        || normalized.includes("маслич")
+        || normalized.includes("травосм")
+        || normalized.includes("злаков")
+        || normalized.includes("посевн");
+}
+
+function isAdjuvantsSectionName(name) {
+    const normalized = normalize(name);
+    return normalized.includes("адъюв")
+        || normalized.includes("адьюв")
+        || normalized.includes("прилип")
+        || normalized.includes("смачив")
+        || normalized.includes("сурфакт");
+}
+
+function isNutritionSectionName(name) {
+    const normalized = normalize(name);
+    return normalized.includes("агрохим")
+        || normalized.includes("удобр")
+        || normalized.includes("агропитан")
+        || normalized.includes("питан")
+        || normalized.includes("микроудобр")
+        || normalized.includes("микроэлемент")
+        || normalized.includes("биостим")
+        || normalized.includes("мелиор")
+        || normalized.includes("аминокислот")
+        || normalized.includes("гумат")
+        || normalized.includes("листов")
+        || normalized.includes("подкорм");
 }
 
 function getProductLeafSectionName(product) {
@@ -2487,10 +2533,22 @@ function getProductLeafSectionName(product) {
 
 function getProductSectionName(product) {
     const leafSection = getProductLeafSectionName(product);
-    if (isSzrSectionName(leafSection)) {
+    const category = String(product?.category || "").trim();
+    const subcategory = String(product?.subcategory || product?.itemType || "").trim();
+    const context = [leafSection, category, subcategory].join(" ");
+    if (isSeedsSectionName(context)) {
+        return "Семена";
+    }
+    if (isAdjuvantsSectionName(context)) {
+        return "Адъюванты";
+    }
+    if (isNutritionSectionName(context)) {
+        return "Агропитание";
+    }
+    if (isSzrSectionName(context) || !normalize(context)) {
         return "СЗР";
     }
-    return leafSection;
+    return "СЗР";
 }
 
 function buildCategoriesTree(products) {
