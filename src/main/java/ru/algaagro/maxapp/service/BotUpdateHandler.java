@@ -2,6 +2,8 @@ package ru.algaagro.maxapp.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -34,6 +36,7 @@ public class BotUpdateHandler {
     private final MaxApiClient maxApiClient;
     private final PostButtonService postButtonService;
     private final ExcelImportService excelImportService;
+    private final ProductResearchService productResearchService;
     private final OrderService orderService;
     private final AppProperties appProperties;
 
@@ -44,6 +47,7 @@ public class BotUpdateHandler {
             MaxApiClient maxApiClient,
             PostButtonService postButtonService,
             ExcelImportService excelImportService,
+            ProductResearchService productResearchService,
             OrderService orderService,
             AppProperties appProperties
     ) {
@@ -53,6 +57,7 @@ public class BotUpdateHandler {
         this.maxApiClient = maxApiClient;
         this.postButtonService = postButtonService;
         this.excelImportService = excelImportService;
+        this.productResearchService = productResearchService;
         this.orderService = orderService;
         this.appProperties = appProperties;
     }
@@ -128,6 +133,10 @@ public class BotUpdateHandler {
         }
         if (isManagerContactCommand(text)) {
             sendManagerContact(user.getMaxUserId(), user.isAdmin());
+            return;
+        }
+        if (user.isAdmin() && text != null && text.trim().startsWith("/research")) {
+            startProductsResearch(user);
             return;
         }
 
@@ -553,11 +562,12 @@ public class BotUpdateHandler {
     }
 
     private void updateImportMode(AppUser user, String callbackId, String requestedMode) {
-        if (!user.isAdmin()) {
+        ResolvedImportFlow resolved = resolveImportFlow(user);
+        if (resolved == null) {
             maxApiClient.answerCallback(callbackId, "Эта кнопка доступна только администраторам");
             return;
         }
-        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        BotSession session = resolved.session();
         if (session.getState() != SessionState.IMPORT_WAITING_FILES) {
             maxApiClient.answerCallback(callbackId, "Сначала откройте загрузку номенклатуры");
             return;
@@ -566,13 +576,29 @@ public class BotUpdateHandler {
         String normalizedMode = normalizeImportMode(requestedMode);
         payload.put(IMPORT_MODE_KEY, normalizedMode);
         botSessionService.update(session, SessionState.IMPORT_WAITING_FILES, payload);
-        maxApiClient.sendToUser(user.getMaxUserId(),
+        maxApiClient.sendToUser(resolved.user().getMaxUserId(),
                 buildImportFlowMessage(normalizedMode),
                 keyboardFactory.importKeyboard(normalizedMode),
                 "html");
         maxApiClient.answerCallback(callbackId, normalizedMode.equals(ExcelImportService.IMPORT_MODE_FULL_FILE_KIE)
                 ? "Включена полная отправка в KIE"
                 : "Включен текущий режим");
+    }
+
+    private void startProductsResearch(AppUser user) {
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "🔎 Запускаю AI-пересмотр товаров из раздела «Прочее». Это может занять некоторое время.",
+                null,
+                "html");
+        productResearchService.researchUncategorizedProductsAsync(
+                user.getMaxUserId(),
+                summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
+                error -> maxApiClient.sendToUser(
+                        user.getMaxUserId(),
+                        "⚠️ Не удалось завершить research.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
+                        keyboardFactory.adminMenu(),
+                        "html")
+        );
     }
 
     private void confirmImportPreview(AppUser user, BotSession session) {
@@ -1403,6 +1429,24 @@ public class BotUpdateHandler {
         return normalizeImportMode(botSessionService.getPayload(session).get(IMPORT_MODE_KEY));
     }
 
+    private ResolvedImportFlow resolveImportFlow(AppUser user) {
+        BotSession currentSession = botSessionService.getOrCreate(user.getMaxUserId());
+        if (user.isAdmin() && currentSession.getState() == SessionState.IMPORT_WAITING_FILES) {
+            return new ResolvedImportFlow(user, currentSession);
+        }
+        Instant threshold = Instant.now().minus(Duration.ofMinutes(30));
+        for (BotSession session : botSessionService.findByState(SessionState.IMPORT_WAITING_FILES)) {
+            if (session.getUpdatedAt() != null && session.getUpdatedAt().isBefore(threshold)) {
+                continue;
+            }
+            AppUser owner = userService.findByMaxUserId(session.getMaxUserId()).orElse(null);
+            if (owner != null && owner.isAdmin()) {
+                return new ResolvedImportFlow(owner, session);
+            }
+        }
+        return null;
+    }
+
     private String normalizeImportMode(Object rawMode) {
         String mode = rawMode == null ? "" : rawMode.toString().trim();
         return ExcelImportService.IMPORT_MODE_FULL_FILE_KIE.equalsIgnoreCase(mode)
@@ -1424,6 +1468,12 @@ public class BotUpdateHandler {
                 <b>Режим:</b> %s
                 %s
                 """.formatted(modeTitle, modeDescription);
+    }
+
+    private record ResolvedImportFlow(
+            AppUser user,
+            BotSession session
+    ) {
     }
 
     private int parseTailNumber(String payload, String prefix) {

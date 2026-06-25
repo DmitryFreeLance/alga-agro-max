@@ -2,6 +2,7 @@ package ru.algaagro.maxapp.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,10 @@ public class BotSessionService {
 
     public Map<String, Object> getPayload(BotSession session) {
         return jsonHelper.readValue(session.getPayloadJson(), new TypeReference<>() { }, new HashMap<>());
+    }
+
+    public List<BotSession> findByState(SessionState state) {
+        return botSessionRepository.findAllByStateOrderByUpdatedAtDesc(state);
     }
 
     @Transactional
