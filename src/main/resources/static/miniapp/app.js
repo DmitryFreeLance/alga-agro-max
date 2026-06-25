@@ -399,7 +399,7 @@ function renderProductCard(product) {
     const favorite = isFavorite(product.id);
     const cartItem = getCartItem(product.id);
     const price = renderProductPrice(product);
-    const categoryLabel = getProductSectionName(product);
+    const categoryLabel = getProductLeafSectionName(product);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -2372,7 +2372,7 @@ function compareNames(left, right) {
 }
 
 function getProductVisual(product) {
-    return getSectionVisual(getProductSectionName(product));
+    return getSectionVisual(getProductLeafSectionName(product));
 }
 
 function getSectionVisual(name) {
@@ -2450,7 +2450,25 @@ function isSpecificSectionName(name) {
         || normalized.includes("специальн");
 }
 
-function getProductSectionName(product) {
+function isSzrSectionName(name) {
+    const normalized = normalize(name);
+    return !normalized
+        || normalized.includes("проч")
+        || normalized.includes("пестиц")
+        || normalized.includes("сзр")
+        || normalized.includes("гербиц")
+        || normalized.includes("фунгиц")
+        || normalized.includes("инсекти")
+        || normalized.includes("десикант")
+        || normalized.includes("протрав")
+        || normalized.includes("роденти")
+        || normalized.includes("репелент")
+        || normalized.includes("регулятор рост")
+        || normalized.includes("красител")
+        || normalized.includes("специальн");
+}
+
+function getProductLeafSectionName(product) {
     const category = String(product?.category || "").trim();
     const subcategory = String(product?.subcategory || product?.itemType || "").trim();
     const normalizedCategory = normalize(category);
@@ -2465,6 +2483,14 @@ function getProductSectionName(product) {
         return getSectionDisplayName(subcategory);
     }
     return "Прочее";
+}
+
+function getProductSectionName(product) {
+    const leafSection = getProductLeafSectionName(product);
+    if (isSzrSectionName(leafSection)) {
+        return "СЗР";
+    }
+    return leafSection;
 }
 
 function buildCategoriesTree(products) {
