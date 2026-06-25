@@ -40,11 +40,11 @@ public class AppUser {
     private Instant lastSeenAt;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "CLOB NOT NULL DEFAULT '[]'")
     private String cartJson = "[]";
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "CLOB NOT NULL DEFAULT '{}'")
     private String checkoutDraftJson = "{}";
 
     private Instant cartUpdatedAt;
