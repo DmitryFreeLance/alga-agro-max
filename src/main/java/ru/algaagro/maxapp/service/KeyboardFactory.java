@@ -69,12 +69,21 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(messageButton("➕ Добавить кнопку")));
         for (PostButton button : postButtons) {
             rows.add(List.of(messageButton("🗑 Удалить кнопку " + button.getId())));
         }
         rows.add(List.of(messageButton("🛠 Админка")));
         return inlineKeyboard(rows);
+    }
+
+    public List<Map<String, Object>> buttonTargetKeyboard() {
+        return inlineKeyboard(List.of(
+                List.of(callbackButton("🤖 Этот бот", "buttons:target:self_bot")),
+                List.of(callbackButton("📱 Мини-апп", "buttons:target:mini_app")),
+                List.of(callbackButton("💬 Менеджер", "buttons:target:manager")),
+                List.of(callbackButton("✍️ Ввести вручную", "buttons:target:manual")),
+                List.of(callbackButton("❌ Отмена", "flow:cancel"))
+        ));
     }
 
     public Map<String, Object> callbackButton(String text, String payload) {

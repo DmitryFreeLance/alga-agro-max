@@ -268,7 +268,7 @@ public class BotUpdateHandler {
             return true;
         }
         if (normalized.equals("добавить кнопку")) {
-            startButtonFlow(user, null);
+            notifyButtonCreationDisabled(user, null);
             return true;
         }
         if (normalized.equals("подтвердить импорт")) {
@@ -433,7 +433,7 @@ public class BotUpdateHandler {
             case "post:publish" -> publishPost(user, callbackId);
             case "post:cancel", "flow:cancel" -> cancelFlow(user, callbackId);
             case "admin:buttons" -> showButtons(user, callbackId);
-            case "buttons:add" -> explainButtonCommand(user, callbackId);
+            case "buttons:add" -> notifyButtonCreationDisabled(user, callbackId);
             default -> {
                 log.info("Dispatch dynamic callback. userId={}, payload={}", user.getMaxUserId(), callbackPayload);
                 handleDynamicCallback(callbackPayload, callbackId, user, chatId);
@@ -462,6 +462,10 @@ public class BotUpdateHandler {
                     keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                     "html");
             maxApiClient.answerCallback(callbackId, deleted ? "Удалено" : "Не найдено");
+            return;
+        }
+        if (payload.startsWith("buttons:target:")) {
+            applyButtonTargetSelection(user, callbackId, payload.substring("buttons:target:".length()));
             return;
         }
         if (payload.startsWith("admin:grant:")) {
@@ -641,10 +645,11 @@ public class BotUpdateHandler {
         List<PostButton> buttons = postButtonService.getActiveButtons();
         StringBuilder text = new StringBuilder("🔗 <b>Постоянные кнопки постов</b>\n\n");
         if (buttons.isEmpty()) {
-            text.append("Пока ни одной кнопки не добавлено.\n");
+            text.append("Активных кнопок сейчас нет.\n");
         } else {
             buttons.forEach(button -> text.append("• #").append(button.getId()).append(" — ").append(button.getLabel()).append(" — ").append(button.getUrl()).append("\n"));
         }
+        text.append("\nНовые кнопки сейчас зашиты в коде и через бота не добавляются.");
         maxApiClient.sendToUser(user.getMaxUserId(),
                 text.toString(),
                 keyboardFactory.buttonsManagementKeyboard(buttons),
@@ -654,6 +659,21 @@ public class BotUpdateHandler {
 
     private void explainButtonCommand(AppUser user, String callbackId) {
         startButtonFlow(user, callbackId);
+    }
+
+    private void notifyButtonCreationDisabled(AppUser user, String callbackId) {
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                """
+                Добавление кнопок через бота сейчас отключено.
+
+                Доступна заранее зашитая кнопка:
+                <code>\uD83D\uDED2 Каталог — https://max.ru/id9729390997_bot</code>
+
+                В боте ее можно только удалить.
+                """,
+                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Добавление отключено");
     }
 
     private void showUsers(AppUser user, int page) {
@@ -839,6 +859,29 @@ public class BotUpdateHandler {
             return;
         }
 
+        if ("target_waiting".equals(stage) && pendingTitle != null && pendingUrl == null) {
+            String normalizedUrl = normalizeButtonUrlCandidate(resolvedInput);
+            if (normalizedUrl != null) {
+                postButtonService.createButton(pendingTitle, normalizedUrl);
+                botSessionService.reset(user.getMaxUserId());
+                maxApiClient.sendToUser(user.getMaxUserId(),
+                        "✅ Кнопка добавлена.",
+                        keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                        "html");
+                return;
+            }
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    """
+                    Не удалось распознать адрес.
+
+                    Выберите готовый вариант ниже или отправьте адрес в формате:
+                    <code>id9729390997_bot</code>
+                    """,
+                    keyboardFactory.buttonTargetKeyboard(),
+                    "html");
+            return;
+        }
+
         Map<String, Object> nextPayload = new HashMap<>(payload);
         nextPayload.put("mode", "button_waiting");
         if (pendingTitle != null) {
@@ -852,7 +895,7 @@ public class BotUpdateHandler {
             nextPayload.remove("pendingButtonUrl");
         }
         if (pendingTitle != null && pendingUrl == null) {
-            nextPayload.put("buttonStage", "url_waiting");
+            nextPayload.put("buttonStage", "target_waiting");
         } else {
             nextPayload.put("buttonStage", "label_waiting");
         }
@@ -862,14 +905,11 @@ public class BotUpdateHandler {
             if (pendingTitle != null) {
                 maxApiClient.sendToUser(user.getMaxUserId(),
                         """
-                        Шаг 2 из 2. Теперь отправьте ссылку для кнопки.
+                        Шаг 2 из 2. Выберите, куда должна вести кнопка.
 
-                        Лучше без предпросмотра, в одном из форматов:
-                        <code>https://max.ru/id9729390997_bot</code>
-                        <code>max.ru/id9729390997_bot</code>
-                        <code>id9729390997_bot</code>
+                        Если нужен произвольный адрес, нажмите «Ввести вручную».
                         """,
-                        keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                        keyboardFactory.buttonTargetKeyboard(),
                         "html");
                 return;
             }
@@ -1143,6 +1183,9 @@ public class BotUpdateHandler {
         if (isValidUrl(candidate)) {
             return candidate;
         }
+        if (candidate.startsWith("@")) {
+            candidate = candidate.substring(1).trim();
+        }
         String normalized = candidate
                 .replaceFirst("^(?i)https?://", "")
                 .replaceFirst("^(?i)max\\.ru/", "")
@@ -1155,6 +1198,64 @@ public class BotUpdateHandler {
             return isValidUrl(url) ? url : null;
         }
         return null;
+    }
+
+    private void applyButtonTargetSelection(AppUser user, String callbackId, String targetType) {
+        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        String pendingTitle = cleanValue(payload.get("pendingButtonTitle"));
+        if (pendingTitle == null) {
+            maxApiClient.answerCallback(callbackId, "Сначала укажите название кнопки");
+            startButtonFlow(user, null);
+            return;
+        }
+
+        String targetUrl = switch (targetType) {
+            case "self_bot" -> maxApiClient.getBotPublicUrl();
+            case "mini_app" -> appProperties.getMiniAppUrl();
+            case "manager" -> appProperties.getManagerContactUrl();
+            case "manual" -> null;
+            default -> null;
+        };
+
+        if ("manual".equals(targetType)) {
+            Map<String, Object> nextPayload = new HashMap<>(payload);
+            nextPayload.put("mode", "button_waiting");
+            nextPayload.put("buttonStage", "url_waiting");
+            botSessionService.update(session, SessionState.IDLE, nextPayload);
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    """
+                    Отправьте адрес вручную.
+
+                    Самый надежный формат в MAX:
+                    <code>id9729390997_bot</code>
+
+                    Также можно:
+                    <code>join/XXXXXXXX</code>
+                    <code>example.com/page</code>
+                    """,
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            maxApiClient.answerCallback(callbackId, "Жду адрес");
+            return;
+        }
+
+        if (targetUrl == null || targetUrl.isBlank()) {
+            maxApiClient.answerCallback(callbackId, "Не удалось подготовить ссылку");
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "Не удалось автоматически получить ссылку для этого варианта. Выберите «Ввести вручную».",
+                    keyboardFactory.buttonTargetKeyboard(),
+                    "html");
+            return;
+        }
+
+        postButtonService.createButton(pendingTitle, targetUrl);
+        botSessionService.reset(user.getMaxUserId());
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "✅ Кнопка добавлена.",
+                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Кнопка сохранена");
     }
 
     private ButtonDraft parseButtonDraft(String rawInput) {

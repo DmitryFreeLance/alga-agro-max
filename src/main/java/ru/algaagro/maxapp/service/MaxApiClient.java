@@ -32,6 +32,7 @@ public class MaxApiClient {
     private final JsonHelper jsonHelper;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
     private final ConcurrentMap<String, String> uploadedImageTokens = new ConcurrentHashMap<>();
+    private volatile String cachedBotPublicUrl;
 
     public MaxApiClient(AppProperties appProperties, JsonHelper jsonHelper) {
         this.appProperties = appProperties;
@@ -73,6 +74,37 @@ public class MaxApiClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("notification", notification);
         sendPost("/answers?callback_id=" + URLEncoder.encode(callbackId, StandardCharsets.UTF_8), body);
+    }
+
+    public String getBotPublicUrl() {
+        if (cachedBotPublicUrl != null && !cachedBotPublicUrl.isBlank()) {
+            return cachedBotPublicUrl;
+        }
+        if (!enabled()) {
+            return null;
+        }
+        try {
+            HttpRequest request = baseRequest(appProperties.getMax().getApiBaseUrl() + "/me")
+                    .GET()
+                    .timeout(Duration.ofSeconds(20))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            ensureSuccess(response);
+            JsonNode botInfo = jsonHelper.readTree(response.body());
+            String username = botInfo.path("username").asText("").trim();
+            if (username.isBlank()) {
+                return null;
+            }
+            cachedBotPublicUrl = "https://max.ru/" + username;
+            return cachedBotPublicUrl;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("MAX /me request interrupted: {}", e.getMessage());
+            return null;
+        } catch (IOException | RuntimeException e) {
+            log.warn("MAX /me request failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     public Map<String, Object> classpathImageAttachment(String classpathLocation) {

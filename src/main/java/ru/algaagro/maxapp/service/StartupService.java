@@ -13,19 +13,23 @@ public class StartupService {
 
     private final AppProperties appProperties;
     private final UserService userService;
+    private final PostButtonService postButtonService;
 
-    public StartupService(AppProperties appProperties, UserService userService) {
+    public StartupService(AppProperties appProperties, UserService userService, PostButtonService postButtonService) {
         this.appProperties = appProperties;
         this.userService = userService;
+        this.postButtonService = postButtonService;
     }
 
     @PostConstruct
-    public void initAdmins() {
+    public void init() {
         appProperties.getStartupAdminUserIds().stream()
                 .filter(id -> id != null && id > 0)
                 .forEach(userService::ensureAdminPlaceholder);
         if (!appProperties.getStartupAdminUserIds().isEmpty()) {
             log.info("Loaded {} startup admins", appProperties.getStartupAdminUserIds().size());
         }
+        postButtonService.ensureDefaultButtons();
+        log.info("Default post buttons ensured");
     }
 }
