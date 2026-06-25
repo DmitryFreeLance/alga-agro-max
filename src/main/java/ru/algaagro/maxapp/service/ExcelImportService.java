@@ -58,6 +58,8 @@ import ru.algaagro.maxapp.util.TextUtils;
 public class ExcelImportService {
 
     private static final Logger log = LoggerFactory.getLogger(ExcelImportService.class);
+    public static final String IMPORT_MODE_HYBRID = "hybrid";
+    public static final String IMPORT_MODE_FULL_FILE_KIE = "full_file_kie";
 
     private final ExecutorService importExecutorService;
     private final ImportJobRepository importJobRepository;
@@ -88,11 +90,11 @@ public class ExcelImportService {
     }
 
     @Transactional
-    public ImportJob createJob(Long initiatedBy, List<Map<String, Object>> files) {
+    public ImportJob createJob(Long initiatedBy, List<Map<String, Object>> files, String importMode) {
         ImportJob job = new ImportJob();
         job.setInitiatedByMaxUserId(initiatedBy);
         job.setStatus(ImportStatus.PENDING);
-        job.setSourceFilesJson(jsonHelper.writeValue(files));
+        job.setSourceFilesJson(jsonHelper.writeValue(prepareSourceFiles(files, importMode)));
         job.setPreviewJson("[]");
         return importJobRepository.save(job);
     }
@@ -179,9 +181,10 @@ public class ExcelImportService {
 
     private AnalyzedImport analyze(ImportJob job) {
         List<Map<String, Object>> files = jsonHelper.readValue(job.getSourceFilesJson(), new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of());
+        String importMode = resolveImportMode(files);
         List<ImportRow> rows = new ArrayList<>();
         for (Map<String, Object> file : files) {
-            rows.addAll(parseFile(file));
+            rows.addAll(parseFile(file, importMode));
         }
         if (rows.isEmpty()) {
             throw new IllegalStateException("Не удалось извлечь строки из Excel-файлов.");
@@ -435,13 +438,52 @@ public class ExcelImportService {
         return "/" + unitName;
     }
 
-    private List<ImportRow> parseFile(Map<String, Object> fileMeta) {
+    private List<Map<String, Object>> prepareSourceFiles(List<Map<String, Object>> files, String importMode) {
+        String normalizedMode = normalizeImportMode(importMode);
+        List<Map<String, Object>> prepared = new ArrayList<>();
+        for (Map<String, Object> file : files) {
+            Map<String, Object> item = new LinkedHashMap<>(file);
+            item.put("importMode", normalizedMode);
+            prepared.add(item);
+        }
+        return prepared;
+    }
+
+    private String resolveImportMode(List<Map<String, Object>> files) {
+        if (files == null || files.isEmpty()) {
+            return IMPORT_MODE_HYBRID;
+        }
+        for (Map<String, Object> file : files) {
+            String importMode = Objects.toString(file.get("importMode"), "");
+            if (!importMode.isBlank()) {
+                return normalizeImportMode(importMode);
+            }
+        }
+        return IMPORT_MODE_HYBRID;
+    }
+
+    private String normalizeImportMode(String importMode) {
+        return IMPORT_MODE_FULL_FILE_KIE.equalsIgnoreCase(importMode) ? IMPORT_MODE_FULL_FILE_KIE : IMPORT_MODE_HYBRID;
+    }
+
+    private List<ImportRow> parseFile(Map<String, Object> fileMeta, String importMode) {
         String url = Objects.toString(fileMeta.get("url"), "");
         String fileName = Objects.toString(fileMeta.get("name"), "import.xlsx");
         if (url.isBlank()) {
             return List.of();
         }
         byte[] bytes = download(url);
+        if (IMPORT_MODE_FULL_FILE_KIE.equals(importMode)) {
+            List<ImportRow> aiRows = filterNoiseRows(aiClassificationService.extractRowsFromOriginalFile(fileName, bytes));
+            if (!aiRows.isEmpty()) {
+                log.info("Full-file KIE extraction selected for {}. aiRows={}, aiScore={}",
+                        fileName,
+                        aiRows.size(),
+                        scoreParsedRows(aiRows));
+                return aiRows;
+            }
+            log.warn("Full-file KIE extraction returned no rows for {}. Falling back to local parsing.", fileName);
+        }
         List<ImportRow> rows;
         if (isPdfFileName(fileName)) {
             rows = parsePdfFile(bytes, fileName);

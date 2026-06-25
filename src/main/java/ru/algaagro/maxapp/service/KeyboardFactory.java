@@ -40,8 +40,11 @@ public class KeyboardFactory {
         return inlineKeyboard(rows);
     }
 
-    public List<Map<String, Object>> importKeyboard() {
+    public List<Map<String, Object>> importKeyboard(String importMode) {
+        boolean fullFileMode = "full_file_kie".equalsIgnoreCase(importMode);
         return inlineKeyboard(List.of(
+                List.of(callbackButton(fullFileMode ? "○ Как сейчас" : "● Как сейчас", "import:mode:hybrid")),
+                List.of(callbackButton(fullFileMode ? "● Полная отправка в KIE" : "○ Полная отправка в KIE", "import:mode:full_file_kie")),
                 List.of(messageButton("✅ Готово"), messageButton("❌ Отмена"))
         ));
     }

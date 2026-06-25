@@ -26,6 +26,7 @@ public class BotUpdateHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BotUpdateHandler.class);
     private static final Pattern URL_PATTERN = Pattern.compile("(https?://\\S+)", Pattern.CASE_INSENSITIVE);
+    private static final String IMPORT_MODE_KEY = "importMode";
 
     private final UserService userService;
     private final BotSessionService botSessionService;
@@ -138,12 +139,12 @@ public class BotUpdateHandler {
             if (captureImportFile(update, session)) {
                 maxApiClient.sendToUser(user.getMaxUserId(),
                         "📥 Файл добавлен. Можете отправить еще Excel / Word / PDF или нажать «Готово».",
-                        keyboardFactory.importKeyboard(),
+                        keyboardFactory.importKeyboard(currentImportMode(session)),
                         "html");
             } else {
                 maxApiClient.sendToUser(user.getMaxUserId(),
                         "Я жду файл номенклатуры. Отправьте документ `.xlsx`, `.xlsm`, `.xls`, `.docx`, `.doc` или `.pdf`, затем нажмите «Готово».",
-                        keyboardFactory.importKeyboard(),
+                        keyboardFactory.importKeyboard(currentImportMode(session)),
                         "html");
             }
             return;
@@ -493,33 +494,39 @@ public class BotUpdateHandler {
                     keyboardFactory.adminMenu(),
                     "html");
             maxApiClient.answerCallback(callbackId, granted ? "Готово" : "Не найдено");
+            return;
+        }
+        if (payload.startsWith("import:mode:")) {
+            updateImportMode(user, callbackId, payload.substring("import:mode:".length()));
         }
     }
 
     private void startImportFlow(AppUser user, String callbackId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("files", new ArrayList<>());
+        payload.put(IMPORT_MODE_KEY, ExcelImportService.IMPORT_MODE_HYBRID);
         botSessionService.update(botSessionService.getOrCreate(user.getMaxUserId()), SessionState.IMPORT_WAITING_FILES, payload);
         maxApiClient.sendToUser(user.getMaxUserId(),
-                """
-                📦 <b>Загрузка номенклатуры</b>
-
-                Отправьте один или несколько файлов номенклатуры: <b>Excel</b> (`.xlsx`, `.xlsm`, `.xls`), <b>Word</b> (`.docx`, `.doc`) или <b>PDF</b> (`.pdf`).
-                """,
-                keyboardFactory.importKeyboard(),
+                buildImportFlowMessage(ExcelImportService.IMPORT_MODE_HYBRID),
+                keyboardFactory.importKeyboard(ExcelImportService.IMPORT_MODE_HYBRID),
                 "html");
-        maxApiClient.answerCallback(callbackId, "Жду файлы номенклатуры");
+        if (callbackId != null) {
+            maxApiClient.answerCallback(callbackId, "Жду файлы номенклатуры");
+        }
     }
 
     private void runImport(AppUser user, String callbackId) {
         BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
         Map<String, Object> payload = botSessionService.getPayload(session);
         List<Map<String, Object>> files = castList(payload.get("files"));
+        String importMode = currentImportMode(session);
         if (files.isEmpty()) {
-            maxApiClient.answerCallback(callbackId, "Сначала загрузите хотя бы один Excel, Word или PDF файл");
+            if (callbackId != null) {
+                maxApiClient.answerCallback(callbackId, "Сначала загрузите хотя бы один Excel, Word или PDF файл");
+            }
             return;
         }
-        var job = excelImportService.createJob(user.getMaxUserId(), files);
+        var job = excelImportService.createJob(user.getMaxUserId(), files, importMode);
         maxApiClient.sendToUser(user.getMaxUserId(),
                 "🤖 Импорт запущен. Анализирую Excel / Word / PDF, извлекаю поля и готовлю предварительное распределение по категориям.",
                 null,
@@ -540,7 +547,32 @@ public class BotUpdateHandler {
                         keyboardFactory.adminMenu(),
                         "html");
                 });
-        maxApiClient.answerCallback(callbackId, "Импорт запущен");
+        if (callbackId != null) {
+            maxApiClient.answerCallback(callbackId, "Импорт запущен");
+        }
+    }
+
+    private void updateImportMode(AppUser user, String callbackId, String requestedMode) {
+        if (!user.isAdmin()) {
+            maxApiClient.answerCallback(callbackId, "Эта кнопка доступна только администраторам");
+            return;
+        }
+        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        if (session.getState() != SessionState.IMPORT_WAITING_FILES) {
+            maxApiClient.answerCallback(callbackId, "Сначала откройте загрузку номенклатуры");
+            return;
+        }
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        String normalizedMode = normalizeImportMode(requestedMode);
+        payload.put(IMPORT_MODE_KEY, normalizedMode);
+        botSessionService.update(session, SessionState.IMPORT_WAITING_FILES, payload);
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                buildImportFlowMessage(normalizedMode),
+                keyboardFactory.importKeyboard(normalizedMode),
+                "html");
+        maxApiClient.answerCallback(callbackId, normalizedMode.equals(ExcelImportService.IMPORT_MODE_FULL_FILE_KIE)
+                ? "Включена полная отправка в KIE"
+                : "Включен текущий режим");
     }
 
     private void confirmImportPreview(AppUser user, BotSession session) {
@@ -1345,6 +1377,33 @@ public class BotUpdateHandler {
             }
         }
         return null;
+    }
+
+    private String currentImportMode(BotSession session) {
+        return normalizeImportMode(botSessionService.getPayload(session).get(IMPORT_MODE_KEY));
+    }
+
+    private String normalizeImportMode(Object rawMode) {
+        String mode = rawMode == null ? "" : rawMode.toString().trim();
+        return ExcelImportService.IMPORT_MODE_FULL_FILE_KIE.equalsIgnoreCase(mode)
+                ? ExcelImportService.IMPORT_MODE_FULL_FILE_KIE
+                : ExcelImportService.IMPORT_MODE_HYBRID;
+    }
+
+    private String buildImportFlowMessage(String importMode) {
+        boolean fullFileMode = ExcelImportService.IMPORT_MODE_FULL_FILE_KIE.equals(importMode);
+        String modeTitle = fullFileMode ? "Полная отправка файла в KIE" : "Как сейчас";
+        String modeDescription = fullFileMode
+                ? "Файл целиком отправляется в KIE для извлечения позиций. Полезно, если локальный парсер теряет товары в PDF или Word."
+                : "Сначала используется текущий локальный разбор, а полная отправка в KIE подключается только как запасной вариант.";
+        return """
+                📦 <b>Загрузка номенклатуры</b>
+
+                Отправьте один или несколько файлов номенклатуры: <b>Excel</b> (`.xlsx`, `.xlsm`, `.xls`), <b>Word</b> (`.docx`, `.doc`) или <b>PDF</b> (`.pdf`).
+
+                <b>Режим:</b> %s
+                %s
+                """.formatted(modeTitle, modeDescription);
     }
 
     private int parseTailNumber(String payload, String prefix) {
