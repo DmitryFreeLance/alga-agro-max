@@ -68,6 +68,10 @@ public class AiClassificationService {
         return results;
     }
 
+    public List<ClassificationResult> classifyHeuristically(List<ExcelImportService.ImportRow> rows) {
+        return buildHeuristicResults(rows);
+    }
+
     public List<ExcelImportService.ImportRow> extractRowsFromOriginalFile(String fileName, byte[] bytes) {
         if (!appProperties.getAi().isDirectFileFallbackEnabled() || bytes == null || bytes.length == 0) {
             return List.of();

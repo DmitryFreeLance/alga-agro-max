@@ -23,6 +23,7 @@ import ru.algaagro.maxapp.util.TextUtils;
 public class ProductResearchService {
 
     private static final Logger log = LoggerFactory.getLogger(ProductResearchService.class);
+    private static final int RESEARCH_AI_BATCH_SIZE = 20;
 
     private final ExecutorService importExecutorService;
     private final CatalogProductRepository catalogProductRepository;
@@ -73,7 +74,7 @@ public class ProductResearchService {
 
         LinkedHashSet<String> knownCultures = new LinkedHashSet<>();
         activeProducts.forEach(product -> knownCultures.addAll(productService.getStringList(product.getCulturesJson())));
-        List<AiClassificationService.ClassificationResult> classified = aiClassificationService.classify(rows, new ArrayList<>(knownCultures));
+        List<AiClassificationService.ClassificationResult> classified = classifyForResearch(rows, new ArrayList<>(knownCultures));
 
         int updated = 0;
         int unchanged = 0;
@@ -155,6 +156,25 @@ public class ProductResearchService {
         }
         summary.append("\nЕсли часть позиций все еще осталась в «Прочее», значит по текущим данным ИИ не смог уверенно определить тип товара.");
         return summary.toString();
+    }
+
+    private List<AiClassificationService.ClassificationResult> classifyForResearch(
+            List<ExcelImportService.ImportRow> rows,
+            List<String> knownCultures
+    ) {
+        List<AiClassificationService.ClassificationResult> results = new ArrayList<>();
+        for (int start = 0; start < rows.size(); start += RESEARCH_AI_BATCH_SIZE) {
+            int end = Math.min(rows.size(), start + RESEARCH_AI_BATCH_SIZE);
+            List<ExcelImportService.ImportRow> batch = rows.subList(start, end);
+            try {
+                log.info("Research AI batch started. start={}, end={}, size={}", start + 1, end, batch.size());
+                results.addAll(aiClassificationService.classify(batch, knownCultures));
+            } catch (Exception error) {
+                log.warn("Research AI batch failed. start={}, end={}, reason={}", start + 1, end, error.getMessage());
+                results.addAll(aiClassificationService.classifyHeuristically(batch));
+            }
+        }
+        return results;
     }
 
     private boolean needsResearch(CatalogProduct product) {
