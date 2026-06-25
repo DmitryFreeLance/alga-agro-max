@@ -720,7 +720,7 @@ public class BotUpdateHandler {
 
     private void sendWelcome(Long userId, boolean admin) {
         String text = """
-                🌱 <b>АЛГА АГРО ГРУПП</b>
+                🌱 <b>ООО Алга Агро Групп</b>
 
                 Мы предлагаем:
                 🌾 Семена — озимые и яровые культуры
