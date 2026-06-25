@@ -49,7 +49,8 @@ public class FileStorageService {
             dto.put("contentType", file.getContentType());
             dto.put("size", file.getSize());
             String relativeUrl = "/api/files/" + URLEncoder.encode(safeScope, StandardCharsets.UTF_8)
-                    + "/" + URLEncoder.encode(storedName, StandardCharsets.UTF_8);
+                    + "/" + URLEncoder.encode(storedName, StandardCharsets.UTF_8)
+                    + "?filename=" + URLEncoder.encode(originalName, StandardCharsets.UTF_8);
             dto.put("downloadUrl", publicBaseUrl + relativeUrl);
             return dto;
         } catch (IOException e) {

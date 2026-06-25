@@ -12,9 +12,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.http.ContentDisposition;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import java.nio.charset.StandardCharsets;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.model.CatalogOrder;
 import ru.algaagro.maxapp.service.BitrixSyncService;
@@ -185,10 +188,22 @@ public class MiniAppApiController {
     }
 
     @GetMapping("/files/{scope}/{storedName}")
-    public ResponseEntity<Resource> downloadFile(@PathVariable String scope, @PathVariable String storedName) {
+    public ResponseEntity<Resource> downloadFile(
+            @PathVariable String scope,
+            @PathVariable String storedName,
+            @RequestParam(required = false) String filename
+    ) {
         Resource resource = fileStorageService.loadAsResource(scope, storedName);
+        String resolvedFilename = filename == null || filename.isBlank() ? resource.getFilename() : filename;
+        MediaType contentType = MediaTypeFactory.getMediaType(resolvedFilename)
+                .orElse(MediaType.APPLICATION_OCTET_STREAM);
+        boolean forceDownload = !"media".equalsIgnoreCase(scope);
+        ContentDisposition disposition = forceDownload
+                ? ContentDisposition.attachment().filename(resolvedFilename, StandardCharsets.UTF_8).build()
+                : ContentDisposition.inline().filename(resolvedFilename, StandardCharsets.UTF_8).build();
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
+                .contentType(contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .body(resource);
     }
 
