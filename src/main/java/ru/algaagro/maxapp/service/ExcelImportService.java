@@ -30,12 +30,19 @@ import java.util.regex.Pattern;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -373,6 +380,7 @@ public class ExcelImportService {
         summary.append("• Файлов обработано: <b>").append(jsonHelper.readValue(job.getSourceFilesJson(), new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { }, List.of()).size()).append("</b>\n");
         summary.append("• Добавлено товаров: <b>").append(result.created()).append("</b>\n");
         summary.append("• Обновлено товаров: <b>").append(result.updated()).append("</b>\n");
+        summary.append("• Без изменений: <b>").append(result.unchanged()).append("</b>\n");
         summary.append("• Скрыто старых позиций: <b>").append(result.deactivated()).append("</b>\n");
         summary.append("• Всего применено: <b>").append(stagedProducts.size()).append("</b>\n");
         summary.append("• Категории: ").append(formatCountMap(countByCategory(stagedProducts), 6));
@@ -434,79 +442,998 @@ public class ExcelImportService {
             return List.of();
         }
         byte[] bytes = download(url);
+        List<ImportRow> rows;
         if (isPdfFileName(fileName)) {
-            return parsePdfFile(bytes, fileName);
+            rows = parsePdfFile(bytes, fileName);
+        } else if (isWordFileName(fileName)) {
+            rows = parseWordFile(bytes, fileName);
+        } else {
+            rows = parseWorkbookFile(bytes, fileName);
         }
-        return parseWorkbookFile(bytes, fileName);
+        List<ImportRow> filteredRows = filterNoiseRows(rows);
+        if (shouldUseAiFileFallback(fileName, filteredRows)) {
+            log.info("Local parsing looks weak for {}. Trying direct AI file extraction. localRows={}, localScore={}",
+                    fileName,
+                    filteredRows.size(),
+                    scoreParsedRows(filteredRows));
+            List<ImportRow> aiRows = filterNoiseRows(aiClassificationService.extractRowsFromOriginalFile(fileName, bytes));
+            List<ImportRow> bestRows = chooseBestParsedRows(aiRows, filteredRows);
+            if (bestRows == aiRows && !aiRows.isEmpty()) {
+                log.info("Direct AI file extraction selected for {}. aiRows={}, aiScore={}",
+                        fileName,
+                        aiRows.size(),
+                        scoreParsedRows(aiRows));
+            }
+            return bestRows;
+        }
+        return filteredRows;
     }
 
     private boolean isPdfFileName(String fileName) {
         return fileName != null && fileName.toLowerCase(Locale.ROOT).endsWith(".pdf");
     }
 
+    private boolean isWordFileName(String fileName) {
+        if (fileName == null) {
+            return false;
+        }
+        String normalized = fileName.toLowerCase(Locale.ROOT);
+        return normalized.endsWith(".docx") || normalized.endsWith(".doc");
+    }
+
+    private boolean shouldUseAiFileFallback(String fileName, List<ImportRow> rows) {
+        if (!appProperties.getAi().isDirectFileFallbackEnabled()) {
+            return false;
+        }
+        if (rows == null || rows.isEmpty()) {
+            return true;
+        }
+        boolean documentLike = isPdfFileName(fileName) || isWordFileName(fileName);
+        boolean workbookLike = fileName != null && fileName.toLowerCase(Locale.ROOT).matches(".*\\.(xlsx|xlsm|xls)$");
+        if (!documentLike && !workbookLike) {
+            return false;
+        }
+        long pricedRows = rows.stream()
+                .filter(row -> findFirst(row.columns(), "цена", "price", "стоимость").isPresent())
+                .count();
+        long rawOnlyRows = rows.stream()
+                .filter(row -> row.columns().size() <= 2 && row.columns().containsKey("Сырой текст"))
+                .count();
+        long longNameRows = rows.stream()
+                .filter(row -> {
+                    String name = row.nameGuess() == null ? "" : row.nameGuess().trim();
+                    return name.length() > 110 || name.split("\\s+").length > 12;
+                })
+                .count();
+        int score = scoreParsedRows(rows);
+        if (rows.size() < appProperties.getAi().getDirectFileFallbackMinRows()) {
+            return true;
+        }
+        if (documentLike && pricedRows == 0) {
+            return true;
+        }
+        if (rawOnlyRows * 2 >= rows.size()) {
+            return true;
+        }
+        if (longNameRows * 2 >= rows.size()) {
+            return true;
+        }
+        return score < Math.max(12, rows.size() * 2);
+    }
+
     private List<ImportRow> parseWorkbookFile(byte[] bytes, String fileName) {
-        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
             List<ImportRow> rows = new ArrayList<>();
             for (Sheet sheet : workbook) {
-                int headerRowIndex = detectHeaderRowIndex(sheet);
-                if (headerRowIndex < 0) {
-                    continue;
+                List<List<String>> matrix = readSheetMatrix(sheet);
+                List<ImportRow> parsed = parseStructuredGrid(matrix, fileName, sheet.getSheetName());
+                if (parsed.isEmpty()) {
+                    parsed = parseGenericWorkbookGrid(matrix, fileName, sheet.getSheetName());
                 }
-                List<String> headers = readHeaders(sheet, headerRowIndex);
-                List<MutableImportRow> parsedRows = new ArrayList<>();
-                String currentSection = "";
-                for (int rowIndex = headerRowIndex + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-                    Row row = sheet.getRow(rowIndex);
-                    if (row == null || rowIsEmpty(row)) {
-                        continue;
-                    }
-                    List<String> rawValues = readRowValues(row, headers.size());
-                    if (isHeaderLikeRow(rawValues)) {
-                        headers = readHeaders(sheet, rowIndex);
-                        continue;
-                    }
-                    Map<String, String> columns = new LinkedHashMap<>();
-                    for (int cellIndex = 0; cellIndex < headers.size(); cellIndex++) {
-                        String header = headers.get(cellIndex);
-                        if (header.isBlank()) {
-                            continue;
-                        }
-                        Cell cell = row.getCell(cellIndex);
-                        columns.put(header, dataFormatter.formatCellValue(cell).trim());
-                    }
-                    if (columns.values().stream().allMatch(String::isBlank)) {
-                        continue;
-                    }
-                    String position = extractName(columns);
-                    if (shouldAppendToPrevious(columns, position, parsedRows)) {
-                        appendToPrevious(parsedRows.get(parsedRows.size() - 1), columns, position);
-                        continue;
-                    }
-                    if (isSectionRow(columns, position)) {
-                        currentSection = position;
-                        continue;
-                    }
-                    if (!currentSection.isBlank()) {
-                        columns.put("Раздел", currentSection);
-                    }
-                    parsedRows.add(new MutableImportRow(
-                            fileName + "#" + sheet.getSheetName() + "#" + rowIndex,
-                            fileName,
-                            sheet.getSheetName(),
-                            rowIndex,
-                            columns,
-                            extractName(columns),
-                            currentSection
-                    ));
-                }
-                for (MutableImportRow parsedRow : parsedRows) {
-                    rows.add(parsedRow.toImmutable());
-                }
+                rows.addAll(parsed);
             }
             return rows;
         } catch (IOException e) {
             throw new IllegalStateException("Не удалось прочитать файл " + fileName, e);
         }
+    }
+
+    private List<ImportRow> parseWordFile(byte[] bytes, String fileName) {
+        String normalized = fileName.toLowerCase(Locale.ROOT);
+        if (normalized.endsWith(".docx")) {
+            return parseDocxFile(bytes, fileName);
+        }
+        if (normalized.endsWith(".doc")) {
+            return parseDocFile(bytes, fileName);
+        }
+        return List.of();
+    }
+
+    private List<ImportRow> parseDocxFile(byte[] bytes, String fileName) {
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes))) {
+            List<ImportRow> tableRows = new ArrayList<>();
+            int tableIndex = 0;
+            for (XWPFTable table : document.getTables()) {
+                List<List<String>> matrix = new ArrayList<>();
+                for (XWPFTableRow row : table.getRows()) {
+                    List<String> values = new ArrayList<>();
+                    for (XWPFTableCell cell : row.getTableCells()) {
+                        values.add(cell.getText() == null ? "" : cell.getText().trim());
+                    }
+                    if (values.stream().anyMatch(value -> value != null && !value.isBlank())) {
+                        matrix.add(values);
+                    }
+                }
+                if (!matrix.isEmpty()) {
+                    List<ImportRow> parsed = parseStructuredGrid(matrix, fileName, "DOCX-" + (++tableIndex));
+                    if (parsed.isEmpty()) {
+                        parsed = parseGenericWorkbookGrid(matrix, fileName, "DOCX-" + tableIndex);
+                    }
+                    tableRows.addAll(parsed);
+                }
+            }
+            try (XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
+                List<ImportRow> textRows = parseTextDocument(extractor.getText(), fileName, "DOCX");
+                return filterNoiseRows(chooseBestParsedRows(tableRows, textRows));
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось прочитать Word-файл " + fileName, e);
+        }
+    }
+
+    private List<ImportRow> parseDocFile(byte[] bytes, String fileName) {
+        try (HWPFDocument document = new HWPFDocument(new ByteArrayInputStream(bytes));
+             WordExtractor extractor = new WordExtractor(document)) {
+            return filterNoiseRows(parseTextDocument(extractor.getText(), fileName, "DOC"));
+        } catch (IOException e) {
+            throw new IllegalStateException("Не удалось прочитать Word-файл " + fileName, e);
+        }
+    }
+
+    private List<ImportRow> parseStructuredGrid(List<List<String>> matrix, String fileName, String sheetName) {
+        if (matrix.isEmpty()) {
+            return List.of();
+        }
+        int headerRowIndex = detectHeaderRowIndex(matrix);
+        if (headerRowIndex < 0) {
+            return List.of();
+        }
+        List<String> headers = readHeaders(matrix, headerRowIndex);
+        List<MutableImportRow> parsedRows = new ArrayList<>();
+        String currentSection = "";
+        for (int rowIndex = headerRowIndex + 1; rowIndex < matrix.size(); rowIndex++) {
+            List<String> rawValues = readRowValues(matrix, rowIndex, headers.size());
+            if (rowIsEmpty(rawValues)) {
+                continue;
+            }
+            if (isHeaderLikeRow(rawValues)) {
+                headers = readHeaders(matrix, rowIndex);
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            for (int cellIndex = 0; cellIndex < headers.size(); cellIndex++) {
+                String header = headers.get(cellIndex);
+                if (header == null || header.isBlank()) {
+                    continue;
+                }
+                columns.put(header, cellIndex < rawValues.size() ? Objects.toString(rawValues.get(cellIndex), "").trim() : "");
+            }
+            if (columns.values().stream().allMatch(String::isBlank)) {
+                continue;
+            }
+            String position = extractName(columns);
+            if (shouldAppendToPrevious(columns, position, parsedRows)) {
+                appendToPrevious(parsedRows.get(parsedRows.size() - 1), columns, position);
+                continue;
+            }
+            if (isSectionRow(columns, position)) {
+                currentSection = position;
+                continue;
+            }
+            if (!currentSection.isBlank()) {
+                columns.put("Раздел", currentSection);
+            }
+            parsedRows.add(new MutableImportRow(
+                    fileName + "#" + sheetName + "#" + rowIndex,
+                    fileName,
+                    sheetName,
+                    rowIndex,
+                    columns,
+                    extractName(columns),
+                    currentSection
+            ));
+        }
+        return parsedRows.stream()
+                .map(MutableImportRow::toImmutable)
+                .toList();
+    }
+
+    private List<ImportRow> parseTextDocument(String text, String fileName, String sheetName) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        List<String> lines = extractDocumentLines(text);
+        List<List<ImportRow>> candidates = List.of(
+                parseChemicalVerticalDocument(lines, fileName, sheetName),
+                parseCornSeedDocument(lines, fileName, sheetName),
+                parseGeneralSeedDocument(lines, fileName, sheetName),
+                parseInlineCornSeedDocument(lines, fileName, sheetName),
+                parseInlineSeedDocument(lines, fileName, sheetName),
+                parseWinterSeedDocument(lines, fileName, sheetName),
+                parseQuoteDocument(lines, fileName, sheetName)
+        );
+        List<ImportRow> bestCandidate = candidates.stream()
+                .max(java.util.Comparator.comparingInt(List::size))
+                .orElse(List.of());
+        if (bestCandidate.size() >= 3) {
+            return bestCandidate;
+        }
+        List<MutableImportRow> parsedRows = new ArrayList<>();
+        String currentSection = "";
+        int rowNumber = 0;
+        for (String rawLine : lines) {
+            String line = normalizePdfLine(rawLine);
+            if (line.isBlank() || isPdfNoiseLine(line)) {
+                continue;
+            }
+            if (looksLikePdfSection(line)) {
+                currentSection = line.replaceAll("[:;]+$", "").trim();
+                continue;
+            }
+            if (shouldAppendPdfLineToPrevious(line, parsedRows)) {
+                appendPdfLineToPrevious(parsedRows.get(parsedRows.size() - 1), line);
+                continue;
+            }
+            Map<String, String> columns = buildPdfColumns(line, currentSection);
+            String position = extractName(columns);
+            if (position.isBlank()) {
+                continue;
+            }
+            if (!currentSection.isBlank()) {
+                columns.put("Раздел", currentSection);
+            }
+            rowNumber++;
+            parsedRows.add(new MutableImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    position,
+                    currentSection
+            ));
+        }
+        return parsedRows.stream()
+                .map(MutableImportRow::toImmutable)
+                .toList();
+    }
+
+    private List<String> extractDocumentLines(String text) {
+        return Arrays.stream(text.split("\\R"))
+                .map(this::normalizePdfLine)
+                .filter(line -> !line.isBlank())
+                .toList();
+    }
+
+    private List<ImportRow> parseGenericWorkbookGrid(List<List<String>> matrix, String fileName, String sheetName) {
+        if (matrix.isEmpty()) {
+            return List.of();
+        }
+        List<ImportRow> rows = new ArrayList<>();
+        String currentSection = "";
+        int rowNumber = 0;
+        for (int rowIndex = 0; rowIndex < matrix.size(); rowIndex++) {
+            List<String> source = matrix.get(rowIndex);
+            List<String> values = source.stream()
+                    .map(value -> value == null ? "" : value.trim())
+                    .filter(value -> !value.isBlank())
+                    .toList();
+            if (values.isEmpty()) {
+                continue;
+            }
+            if (values.size() == 1 && !looksLikeLoosePrice(values.get(0)) && values.get(0).length() < 80) {
+                currentSection = values.get(0);
+                continue;
+            }
+            if (values.size() < 3) {
+                continue;
+            }
+            if (values.size() >= 6 && looksLikeInteger(values.get(0)) && !findCornMaturityGroup(values.get(1)).isBlank() && looksLikeLoosePrice(values.get(values.size() - 1))) {
+                String maturityGroup = values.get(1);
+                String name = values.get(2);
+                String fao = values.get(3);
+                String regions = values.get(4);
+                String price = values.get(values.size() - 1);
+                Map<String, String> columns = new LinkedHashMap<>();
+                columns.put("Позиция", name);
+                columns.put("Группа спелости", maturityGroup);
+                columns.put("ФАО", fao);
+                columns.put("Регионы допуска", regions);
+                columns.put("Цена", price);
+                columns.put("Сырой текст", String.join(" | ", values));
+                rowNumber++;
+                rows.add(new ImportRow(
+                        fileName + "#" + sheetName + "#" + rowIndex,
+                        fileName,
+                        sheetName,
+                        rowNumber,
+                        columns,
+                        name,
+                        "Кукуруза"
+                ));
+                continue;
+            }
+            if (values.size() == 3 && looksLikeInteger(values.get(0)) && looksLikeLoosePrice(values.get(2))) {
+                String details = values.get(1);
+                List<String> detailParts = Arrays.stream(details.split("\\s*,\\s*"))
+                        .map(String::trim)
+                        .filter(part -> !part.isBlank())
+                        .toList();
+                String name = detailParts.isEmpty() ? details : String.join(", ", detailParts.subList(0, Math.max(1, detailParts.size() - 1)));
+                String packaging = detailParts.size() > 1 ? detailParts.get(detailParts.size() - 1) : "";
+                Map<String, String> columns = new LinkedHashMap<>();
+                columns.put("Позиция", name);
+                columns.put("Сырой текст", String.join(" | ", values));
+                if (!currentSection.isBlank()) {
+                    columns.put("Раздел", currentSection);
+                }
+                if (!packaging.isBlank()) {
+                    columns.put("Упаковка", packaging);
+                }
+                columns.put("Цена", values.get(2));
+                rowNumber++;
+                rows.add(new ImportRow(
+                        fileName + "#" + sheetName + "#" + rowIndex,
+                        fileName,
+                        sheetName,
+                        rowNumber,
+                        columns,
+                        name,
+                        currentSection
+                ));
+                continue;
+            }
+            int start = looksLikeInteger(values.get(0)) && values.size() >= 4 ? 1 : 0;
+            String name = valueAt(values, start);
+            String second = valueAt(values, start + 1);
+            String packaging = valueAt(values, values.size() - 2);
+            String price = valueAt(values, values.size() - 1);
+            if (name.isBlank() || price.isBlank() || !looksLikeLoosePrice(price)) {
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            columns.put("Сырой текст", String.join(" | ", values));
+            if (!currentSection.isBlank()) {
+                columns.put("Раздел", currentSection);
+            }
+            if (!second.isBlank() && !second.equals(packaging) && !second.equals(price)) {
+                columns.put("Состав", second);
+            }
+            if (!packaging.isBlank() && !packaging.equals(price) && !packaging.equals(name)) {
+                columns.put("Упаковка", packaging);
+            }
+            columns.put("Цена", price);
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowIndex,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    currentSection
+            ));
+        }
+        return rows;
+    }
+
+    private List<ImportRow> parseChemicalVerticalDocument(List<String> lines, String fileName, String sheetName) {
+        int headerIndex = findLineIndex(lines, "препарат");
+        int compositionIndex = findLineIndex(lines, "действующее вещество");
+        int dosageIndex = findLineIndex(lines, "норма расхода");
+        if (headerIndex < 0 || compositionIndex < 0 || dosageIndex < 0) {
+            return List.of();
+        }
+        int startIndex = Math.max(Math.max(headerIndex, compositionIndex), dosageIndex) + 1;
+        List<ImportRow> rows = new ArrayList<>();
+        String currentSection = "";
+        int rowNumber = 0;
+        int index = startIndex;
+        while (index < lines.size()) {
+            String line = lines.get(index);
+            if (isLikelyCorporateNoiseLine(line)) {
+                index++;
+                continue;
+            }
+            if (isLikelyPesticideSection(line)) {
+                currentSection = line;
+                index++;
+                continue;
+            }
+            if (looksLikeChemicalName(line)) {
+                String name = line;
+                index++;
+                List<String> compositionParts = new ArrayList<>();
+                while (index < lines.size() && !looksLikeDosageLine(lines.get(index)) && !isLikelyPesticideSection(lines.get(index))) {
+                    if (!isLikelyCorporateNoiseLine(lines.get(index))) {
+                        compositionParts.add(lines.get(index));
+                    }
+                    index++;
+                }
+                String dosage = index < lines.size() ? lines.get(index) : "";
+                if (looksLikeDosageLine(dosage)) {
+                    index++;
+                } else {
+                    dosage = "";
+                }
+                String registrant = "";
+                while (index < lines.size() && !looksLikeLoosePrice(lines.get(index)) && !looksLikeChemicalName(lines.get(index)) && !isLikelyPesticideSection(lines.get(index))) {
+                    String candidate = lines.get(index);
+                    if (!isLikelyCorporateNoiseLine(candidate) && !candidate.equalsIgnoreCase("Да") && !candidate.matches("^\\d+[.]\\d+$")) {
+                        registrant = registrant.isBlank() ? candidate : registrant + " " + candidate;
+                    }
+                    index++;
+                }
+                String price = index < lines.size() && looksLikeLoosePrice(lines.get(index)) ? lines.get(index++) : "";
+                if (price.isBlank()) {
+                    continue;
+                }
+                Map<String, String> columns = new LinkedHashMap<>();
+                columns.put("Позиция", name);
+                columns.put("Сырой текст", String.join(" | ", compositionParts));
+                if (!currentSection.isBlank()) {
+                    columns.put("Раздел", currentSection);
+                }
+                if (!compositionParts.isEmpty()) {
+                    columns.put("Состав", String.join(" ", compositionParts).trim());
+                }
+                if (!dosage.isBlank()) {
+                    columns.put("Норма расхода", dosage);
+                }
+                if (!registrant.isBlank()) {
+                    columns.put("Производитель", registrant);
+                }
+                columns.put("Цена", price);
+                rowNumber++;
+                rows.add(new ImportRow(
+                        fileName + "#" + sheetName + "#" + rowNumber,
+                        fileName,
+                        sheetName,
+                        rowNumber,
+                        columns,
+                        name,
+                        currentSection
+                ));
+                continue;
+            }
+            index++;
+        }
+        return rows;
+    }
+
+    private List<ImportRow> parseCornSeedDocument(List<String> lines, String fileName, String sheetName) {
+        int headerIndex = findLineIndex(lines, "группа спелости");
+        int faoIndex = findLineIndex(lines, "фао");
+        int priceIndex = findLineIndex(lines, "цена п.е");
+        if (headerIndex < 0 || faoIndex < 0 || priceIndex < 0) {
+            return List.of();
+        }
+        int startIndex = Math.max(Math.max(headerIndex, faoIndex), priceIndex) + 1;
+        List<ImportRow> rows = new ArrayList<>();
+        int rowNumber = 0;
+        for (int index = startIndex; index + 5 < lines.size(); ) {
+            if (!looksLikeInteger(lines.get(index))) {
+                index++;
+                continue;
+            }
+            String maturity = lines.get(index + 1);
+            String name = lines.get(index + 2);
+            String fao = lines.get(index + 3);
+            String regions = lines.get(index + 4);
+            String price = lines.get(index + 5);
+            if (!looksLikeLoosePrice(price)) {
+                index++;
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            columns.put("Секция", maturity);
+            columns.put("ФАО", fao);
+            columns.put("Регионы допуска", regions);
+            columns.put("Цена", price);
+            columns.put("Сырой текст", String.join(" | ", List.of(maturity, name, fao, regions, price)));
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    "Кукуруза"
+            ));
+            index += 6;
+        }
+        return rows;
+    }
+
+    private List<ImportRow> parseGeneralSeedDocument(List<String> lines, String fileName, String sheetName) {
+        int headerIndex = findLineIndex(lines, "культура");
+        int sortIndex = findLineIndex(lines, "сорт");
+        int packagingIndex = findLineIndex(lines, "упаковка");
+        int priceIndex = findLineIndex(lines, "цена");
+        if (headerIndex < 0 || sortIndex < 0 || packagingIndex < 0 || priceIndex < 0) {
+            return List.of();
+        }
+        int startIndex = Math.max(Math.max(headerIndex, sortIndex), Math.max(packagingIndex, priceIndex)) + 1;
+        List<ImportRow> rows = new ArrayList<>();
+        int rowNumber = 0;
+        for (int index = startIndex; index + 5 < lines.size(); ) {
+            String culture = lines.get(index);
+            if (isLikelyCorporateNoiseLine(culture) || culture.length() > 120) {
+                index++;
+                continue;
+            }
+            String name = lines.get(index + 1);
+            String category = lines.get(index + 2);
+            String region = lines.get(index + 3);
+            String packaging = lines.get(index + 4);
+            String price = lines.get(index + 5);
+            if (!looksLikePackagingLine(packaging) || !(looksLikeLoosePrice(price) || TextUtils.normalizeToken(price).contains("нет в наличии"))) {
+                index++;
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            columns.put("Культура", culture);
+            columns.put("Категория", category);
+            columns.put("Регион допуска", region);
+            columns.put("Упаковка", packaging);
+            columns.put("Цена", price);
+            columns.put("Сырой текст", String.join(" | ", List.of(culture, name, category, region, packaging, price)));
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    culture
+            ));
+            index += 6;
+        }
+        return rows;
+    }
+
+    private List<ImportRow> parseWinterSeedDocument(List<String> lines, String fileName, String sheetName) {
+        int sortIndex = findLineIndex(lines, "сорт");
+        int regionIndex = findLineIndex(lines, "регион допуска");
+        int originatorIndex = findLineIndex(lines, "оригинатор");
+        if (sortIndex < 0 || regionIndex < 0 || originatorIndex < 0) {
+            return List.of();
+        }
+        int startIndex = Math.max(Math.max(sortIndex, regionIndex), originatorIndex) + 1;
+        List<ImportRow> rows = new ArrayList<>();
+        String currentCulture = "";
+        int rowNumber = 0;
+        int index = startIndex;
+        while (index < lines.size()) {
+            String line = lines.get(index);
+            String normalized = TextUtils.normalizeToken(line);
+            if (normalized.contains("озимая пшеница") || normalized.contains("озимый рапс") || normalized.contains("озимая рожь")) {
+                currentCulture = line;
+                index++;
+                continue;
+            }
+            if (isLikelyCorporateNoiseLine(line) || line.startsWith("•") || line.length() > 90) {
+                index++;
+                continue;
+            }
+            String name = line;
+            index++;
+            List<String> regionParts = new ArrayList<>();
+            while (index < lines.size() && looksLikeRegionLine(lines.get(index))) {
+                regionParts.add(lines.get(index));
+                index++;
+            }
+            List<String> originatorParts = new ArrayList<>();
+            while (index < lines.size()
+                    && !looksLikeRegionLine(lines.get(index))
+                    && !TextUtils.normalizeToken(lines.get(index)).contains("оказываем услуги")
+                    && !TextUtils.normalizeToken(lines.get(index)).contains("приглашаем вас")
+                    && !TextUtils.normalizeToken(lines.get(index)).contains("озимая пшеница")
+                    && !TextUtils.normalizeToken(lines.get(index)).contains("озимый рапс")
+                    && originatorParts.size() < 2) {
+                originatorParts.add(lines.get(index));
+                index++;
+            }
+            if (currentCulture.isBlank() || name.length() < 3 || regionParts.isEmpty()) {
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            columns.put("Культура", currentCulture);
+            columns.put("Регион допуска", String.join(" ", regionParts));
+            if (!originatorParts.isEmpty()) {
+                columns.put("Оригинатор", String.join(" ", originatorParts));
+            }
+            columns.put("Сырой текст", String.join(" | ", columns.values()));
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    currentCulture
+            ));
+        }
+        return rows;
+    }
+
+    private List<ImportRow> parseInlineCornSeedDocument(List<String> lines, String fileName, String sheetName) {
+        if (findLineIndex(lines, "группа спелости") < 0 || findLineIndex(lines, "цена п.е") < 0) {
+            return List.of();
+        }
+        List<ImportRow> rows = new ArrayList<>();
+        int rowNumber = 0;
+        for (String line : lines) {
+            String normalizedLine = line.replace('\u00A0', ' ').trim();
+            Matcher leadingIndex = Pattern.compile("^(\\d+)\\s+(.+)$").matcher(normalizedLine);
+            if (!leadingIndex.matches()) {
+                continue;
+            }
+            String bodyWithIndexRemoved = leadingIndex.group(2).trim();
+            String price = extractTrailingAvailabilityOrPrice(bodyWithIndexRemoved);
+            if (!looksLikeLoosePrice(price)) {
+                continue;
+            }
+            String bodyWithoutPrice = stripTrailingToken(bodyWithIndexRemoved, price);
+            String maturityGroup = findCornMaturityGroup(bodyWithoutPrice);
+            if (maturityGroup.isBlank()) {
+                continue;
+            }
+            String afterMaturity = bodyWithoutPrice.substring(maturityGroup.length()).trim();
+            Matcher faoMatcher = Pattern.compile("^(.*)\\s+(\\d{2,3})\\s+([\\d,*/\\s.-]+)$").matcher(afterMaturity);
+            if (!faoMatcher.matches()) {
+                continue;
+            }
+            String name = faoMatcher.group(1).trim();
+            String fao = faoMatcher.group(2).trim();
+            String regions = faoMatcher.group(3).trim();
+            if (name.isBlank()) {
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            columns.put("Группа спелости", maturityGroup);
+            columns.put("ФАО", fao);
+            columns.put("Регионы допуска", regions);
+            columns.put("Цена", price);
+            columns.put("Сырой текст", line);
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    "Кукуруза"
+            ));
+        }
+        return rows;
+    }
+
+    private String findCornMaturityGroup(String text) {
+        for (String value : List.of("Скороспелый", "Раннеспелый", "Среднеранний", "Среднеспелый", "Среднепоздний", "Позднеспелый")) {
+            if (text.startsWith(value + " ") || text.equals(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private List<ImportRow> parseInlineSeedDocument(List<String> lines, String fileName, String sheetName) {
+        List<ImportRow> rows = new ArrayList<>();
+        String currentSection = "";
+        int rowNumber = 0;
+        for (String line : lines) {
+            String normalized = TextUtils.normalizeToken(line);
+            if (isLikelyCorporateNoiseLine(line) || normalized.contains("минимальный объем заказа")) {
+                continue;
+            }
+            if (normalized.contains("сорта и гибриды")
+                    || normalized.contains("семена зерновых")
+                    || normalized.contains("семена масличных")
+                    || normalized.contains("предложение на семена")) {
+                currentSection = line;
+                continue;
+            }
+            if (!looksLikePackagingLine(line) || !(looksLikeLoosePrice(line) || normalized.contains("нет в наличии"))) {
+                continue;
+            }
+            String price = extractTrailingAvailabilityOrPrice(line);
+            String body = stripTrailingToken(line, price);
+            String packaging = extractTrailingPackaging(body);
+            String name = stripTrailingToken(body, packaging).trim();
+            if (name.isBlank()) {
+                continue;
+            }
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            if (!packaging.isBlank()) {
+                columns.put("Упаковка", packaging);
+            }
+            if (!price.isBlank()) {
+                columns.put("Цена", price);
+            }
+            columns.put("Сырой текст", line);
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    currentSection
+            ));
+        }
+        return rows;
+    }
+
+    private List<ImportRow> parseQuoteDocument(List<String> lines, String fileName, String sheetName) {
+        int nameIndex = findLineIndex(lines, "наименование");
+        int compositionIndex = findLineIndex(lines, "состав");
+        int priceIndex = findLineIndex(lines, "цена");
+        if (nameIndex < 0 || compositionIndex < 0 || priceIndex < 0) {
+            return List.of();
+        }
+        int startIndex = Math.max(Math.max(nameIndex, compositionIndex), priceIndex) + 1;
+        List<ImportRow> rows = new ArrayList<>();
+        int rowNumber = 0;
+        int index = startIndex;
+        while (index < lines.size()) {
+            String name = lines.get(index);
+            if (isLikelyCorporateNoiseLine(name) || looksLikeLoosePrice(name) || name.length() < 4) {
+                index++;
+                continue;
+            }
+            index++;
+            List<String> descriptionParts = new ArrayList<>();
+            while (index < lines.size() && !looksLikeLoosePrice(lines.get(index))) {
+                if (!isLikelyCorporateNoiseLine(lines.get(index))) {
+                    descriptionParts.add(lines.get(index));
+                }
+                index++;
+            }
+            String price = index < lines.size() ? lines.get(index) : "";
+            if (!looksLikeLoosePrice(price)) {
+                continue;
+            }
+            index++;
+            Map<String, String> columns = new LinkedHashMap<>();
+            columns.put("Позиция", name);
+            if (!descriptionParts.isEmpty()) {
+                columns.put("Состав", String.join(" ", descriptionParts));
+            }
+            columns.put("Цена", price);
+            columns.put("Сырой текст", String.join(" | ", lines.subList(Math.max(startIndex, index - descriptionParts.size() - 2), Math.min(lines.size(), index))));
+            rowNumber++;
+            rows.add(new ImportRow(
+                    fileName + "#" + sheetName + "#" + rowNumber,
+                    fileName,
+                    sheetName,
+                    rowNumber,
+                    columns,
+                    name,
+                    ""
+            ));
+        }
+        return rows;
+    }
+
+    private List<ImportRow> chooseBestParsedRows(List<ImportRow> primary, List<ImportRow> fallback) {
+        if (primary == null || primary.isEmpty()) {
+            return fallback == null ? List.of() : fallback;
+        }
+        if (fallback == null || fallback.isEmpty()) {
+            return primary;
+        }
+        return scoreParsedRows(fallback) > scoreParsedRows(primary) ? fallback : primary;
+    }
+
+    private int scoreParsedRows(List<ImportRow> rows) {
+        int score = 0;
+        for (ImportRow row : rows) {
+            String name = row.nameGuess() == null ? "" : row.nameGuess().trim();
+            String raw = row.columns().getOrDefault("Сырой текст", "");
+            if (!name.isBlank() && !isLikelyCorporateNoiseLine(name) && !name.toLowerCase(Locale.ROOT).contains("уважаемые коллеги")) {
+                score += 3;
+            }
+            if (findFirst(row.columns(), "цена", "price").isPresent()) {
+                score += 2;
+            }
+            if (findFirst(row.columns(), "состав", "composition").isPresent()) {
+                score += 1;
+            }
+            if (!raw.isBlank() && raw.length() < 260) {
+                score += 1;
+            }
+        }
+        return score;
+    }
+
+    private List<ImportRow> filterNoiseRows(List<ImportRow> rows) {
+        return rows.stream()
+                .filter(row -> {
+                    String name = row.nameGuess() == null ? "" : row.nameGuess().trim();
+                    if (name.isBlank()) {
+                        return false;
+                    }
+                    String normalized = TextUtils.normalizeToken(name);
+                    if (isLikelyCorporateNoiseLine(name)) {
+                        return false;
+                    }
+                    return !normalized.contains("уважаемые коллеги")
+                            && !normalized.contains("срок действия прайс")
+                            && !normalized.contains("предлагаем семена")
+                            && !normalized.contains("на посев")
+                            && !normalized.contains("предоплата")
+                            && !normalized.contains("прайс лист");
+                })
+                .toList();
+    }
+
+    private int findLineIndex(List<String> lines, String needle) {
+        String normalizedNeedle = TextUtils.normalizeToken(needle);
+        for (int index = 0; index < lines.size(); index++) {
+            if (TextUtils.normalizeToken(lines.get(index)).contains(normalizedNeedle)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isLikelyCorporateNoiseLine(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        return normalized.contains("инн")
+                || normalized.contains("кпп")
+                || normalized.contains("огрн")
+                || normalized.startsWith("ооо ")
+                || normalized.contains("тел")
+                || normalized.contains("email")
+                || normalized.contains("e mail")
+                || normalized.contains("www")
+                || normalized.contains("http")
+                || normalized.contains("юридическ")
+                || normalized.contains("почтовый адрес")
+                || normalized.contains("уважаемые коллеги")
+                || normalized.contains("предлагает")
+                || normalized.contains("приглашаем вас")
+                || normalized.contains("контакты")
+                || normalized.contains("памятка")
+                || normalized.contains("общество с ограниченной ответственностью")
+                || normalized.contains("срок действия прайс")
+                || normalized.contains("от объема заказа")
+                || normalized.contains("офис")
+                || normalized.contains("ул ")
+                || normalized.matches("^\\d{6}.*");
+    }
+
+    private boolean isLikelyPesticideSection(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        return normalized.equals("инсектициды")
+                || normalized.equals("фунгициды")
+                || normalized.equals("гербициды")
+                || normalized.equals("десиканты")
+                || normalized.equals("протравители")
+                || normalized.equals("родентициды")
+                || normalized.equals("репеленты")
+                || normalized.equals("адъюванты")
+                || normalized.equals("агрохимикаты")
+                || normalized.contains("регуляторы роста");
+    }
+
+    private boolean looksLikeChemicalName(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        return !normalized.isBlank()
+                && !isLikelyCorporateNoiseLine(line)
+                && line.length() < 90
+                && (line.contains(",") || normalized.matches(".*\\b(кэ|кс|вдг|вр|вск|мд|ск|сп|ж|мэ|сэ)\\b.*"));
+    }
+
+    private boolean looksLikeDosageLine(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        return normalized.matches(".*\\d+[.,]?\\d*(?:\\s*[\\-–]\\s*\\d+[.,]?\\d*)?.*")
+                && (normalized.contains("л т")
+                || normalized.contains("л га")
+                || normalized.contains("кг га")
+                || normalized.contains("кг т")
+                || normalized.matches("^\\d+[.,]?\\d*(?:\\s*[\\-–]\\s*\\d+[.,]?\\d*)?$"));
+    }
+
+    private boolean looksLikeLoosePrice(String line) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+        String normalized = line.replace('\u00A0', ' ').trim();
+        if (TextUtils.normalizeToken(normalized).contains("по запросу")) {
+            return true;
+        }
+        return normalized.matches(".*\\d[\\d\\s]*(?:[.,]\\d{1,2})?.*");
+    }
+
+    private boolean looksLikeInteger(String line) {
+        return line != null && line.trim().matches("^\\d+$");
+    }
+
+    private boolean looksLikePackagingLine(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        return normalized.contains("кг")
+                || normalized.contains("л")
+                || normalized.contains("п.е")
+                || normalized.contains("мешок")
+                || normalized.contains("биг бэг")
+                || normalized.contains("канистр")
+                || normalized.contains("пакет")
+                || normalized.contains("тн");
+    }
+
+    private String extractTrailingAvailabilityOrPrice(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        if (normalized.contains("нет в наличии")) {
+            return "Нет в наличии";
+        }
+        Matcher matcher = Pattern.compile("(\\d[\\d\\s]*(?:[.,]\\d{1,2})?)\\s*$").matcher(line.replace('\u00A0', ' '));
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
+    }
+
+    private String extractTrailingPackaging(String line) {
+        Matcher matcher = Pattern.compile("((?:биг-бэг|биг бэг|бумажный мешок|канистра|мешок|пакет)[^\\d]*(?:\\d+[\\d\\s.,]*\\s*(?:кг|л|п\\.е\\.))?)\\s*$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(line);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        matcher = Pattern.compile("(\\d+[\\d\\s.,]*\\s*(?:кг|л|п\\.е\\.))\\s*$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(line);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
+    }
+
+    private String stripTrailingToken(String source, String token) {
+        if (source == null || source.isBlank() || token == null || token.isBlank()) {
+            return source == null ? "" : source.trim();
+        }
+        int index = source.lastIndexOf(token);
+        if (index < 0) {
+            return source.trim();
+        }
+        return source.substring(0, index).trim();
+    }
+
+    private boolean looksLikeRegionLine(String line) {
+        String normalized = TextUtils.normalizeToken(line);
+        return normalized.matches("^[\\d,*/\\s.-]+$")
+                || normalized.contains("москва")
+                || normalized.contains("краснодар")
+                || normalized.contains("щелково")
+                || normalized.contains("республика")
+                || normalized.startsWith("г ");
+    }
+
+    private String valueAt(List<String> values, int index) {
+        if (index < 0 || index >= values.size()) {
+            return "";
+        }
+        return values.get(index) == null ? "" : values.get(index).trim();
     }
 
     private List<ImportRow> parsePdfFile(byte[] bytes, String fileName) {
@@ -630,48 +1557,7 @@ public class ExcelImportService {
         try (PDDocument document = Loader.loadPDF(bytes)) {
             PDFTextStripper stripper = new PDFTextStripper();
             String text = stripper.getText(document);
-            if (text == null || text.isBlank()) {
-                return List.of();
-            }
-            List<MutableImportRow> parsedRows = new ArrayList<>();
-            String currentSection = "";
-            String[] lines = text.split("\\R");
-            int rowNumber = 0;
-            for (String rawLine : lines) {
-                String line = normalizePdfLine(rawLine);
-                if (line.isBlank() || isPdfNoiseLine(line)) {
-                    continue;
-                }
-                if (looksLikePdfSection(line)) {
-                    currentSection = line.replaceAll("[:;]+$", "").trim();
-                    continue;
-                }
-                if (shouldAppendPdfLineToPrevious(line, parsedRows)) {
-                    appendPdfLineToPrevious(parsedRows.get(parsedRows.size() - 1), line);
-                    continue;
-                }
-                Map<String, String> columns = buildPdfColumns(line, currentSection);
-                String position = extractName(columns);
-                if (position.isBlank()) {
-                    continue;
-                }
-                if (!currentSection.isBlank()) {
-                    columns.put("Раздел", currentSection);
-                }
-                rowNumber++;
-                parsedRows.add(new MutableImportRow(
-                        fileName + "#PDF#" + rowNumber,
-                        fileName,
-                        "PDF",
-                        rowNumber,
-                        columns,
-                        position,
-                        currentSection
-                ));
-            }
-            return parsedRows.stream()
-                    .map(MutableImportRow::toImmutable)
-                    .toList();
+            return parseTextDocument(text, fileName, "PDF");
         } catch (IOException e) {
             throw new IllegalStateException("Не удалось прочитать PDF-файл " + fileName, e);
         }
@@ -931,6 +1817,16 @@ public class ExcelImportService {
         return -1;
     }
 
+    private int detectHeaderRowIndex(List<List<String>> matrix) {
+        int limit = Math.min(matrix.size() - 1, 20);
+        for (int rowIndex = 0; rowIndex <= limit; rowIndex++) {
+            if (isHeaderLikeRow(matrix.get(rowIndex))) {
+                return rowIndex;
+            }
+        }
+        return -1;
+    }
+
     private List<String> readHeaders(Sheet sheet, int headerRowIndex) {
         Row headerRow = sheet.getRow(headerRowIndex);
         List<String> headers = new ArrayList<>();
@@ -943,11 +1839,33 @@ public class ExcelImportService {
         return headers;
     }
 
+    private List<String> readHeaders(List<List<String>> matrix, int headerRowIndex) {
+        if (headerRowIndex < 0 || headerRowIndex >= matrix.size()) {
+            return List.of();
+        }
+        return matrix.get(headerRowIndex).stream()
+                .map(value -> value == null ? "" : value.trim())
+                .toList();
+    }
+
     private List<String> readRowValues(Row row, int sizeHint) {
         int width = Math.max(sizeHint, row.getLastCellNum());
         List<String> values = new ArrayList<>();
         for (int cellIndex = 0; cellIndex < width; cellIndex++) {
             values.add(dataFormatter.formatCellValue(row.getCell(cellIndex)).trim());
+        }
+        return values;
+    }
+
+    private List<String> readRowValues(List<List<String>> matrix, int rowIndex, int sizeHint) {
+        if (rowIndex < 0 || rowIndex >= matrix.size()) {
+            return List.of();
+        }
+        List<String> source = matrix.get(rowIndex);
+        int width = Math.max(sizeHint, source.size());
+        List<String> values = new ArrayList<>();
+        for (int cellIndex = 0; cellIndex < width; cellIndex++) {
+            values.add(cellIndex < source.size() && source.get(cellIndex) != null ? source.get(cellIndex).trim() : "");
         }
         return values;
     }
@@ -973,6 +1891,23 @@ public class ExcelImportService {
             }
         }
         return true;
+    }
+
+    private boolean rowIsEmpty(List<String> rowValues) {
+        return rowValues == null || rowValues.stream().allMatch(value -> value == null || value.isBlank());
+    }
+
+    private List<List<String>> readSheetMatrix(Sheet sheet) {
+        List<List<String>> matrix = new ArrayList<>();
+        for (int rowIndex = 0; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                matrix.add(List.of());
+                continue;
+            }
+            matrix.add(readRowValues(row, Math.max(row.getLastCellNum(), 0)));
+        }
+        return matrix;
     }
 
     private String extractName(Map<String, String> columns) {
@@ -1120,6 +2055,11 @@ public class ExcelImportService {
                 || context.contains("корректор") || context.contains("дефицит")) {
             return "Агропитание";
         }
+        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти")
+                || context.contains("протрав") || context.contains("десикант") || context.contains("роденти")
+                || context.contains("репелент") || context.contains("регулятор рост") || context.contains("красител")) {
+            return "Пестициды";
+        }
         return result.category() == null || result.category().isBlank() ? "Прочее" : result.category();
     }
 
@@ -1128,6 +2068,14 @@ public class ExcelImportService {
             return result.subcategory();
         }
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess());
+        if (context.contains("гербиц")) return "Гербициды";
+        if (context.contains("фунгиц")) return "Фунгициды";
+        if (context.contains("инсекти")) return "Инсектициды";
+        if (context.contains("десикант")) return "Десиканты";
+        if (context.contains("протрав")) return "Протравители";
+        if (context.contains("роденти")) return "Родентициды";
+        if (context.contains("репелент")) return "Репеленты";
+        if (context.contains("регулятор рост")) return "Регуляторы роста растений";
         if (context.contains("обработк") && context.contains("сем")) return "Биостимуляторы";
         if (context.contains("антистресс")) return "Антистрессанты";
         if (context.contains("npk")) return "NPK-комплексы";
@@ -1171,6 +2119,7 @@ public class ExcelImportService {
     private AppliedImportResult applyStagedProducts(List<StagedImportProduct> stagedProducts) {
         int created = 0;
         int updated = 0;
+        int unchanged = 0;
         int deactivated = 0;
         Map<String, Set<String>> importedExternalIdsBySource = new LinkedHashMap<>();
         for (StagedImportProduct item : stagedProducts) {
@@ -1203,15 +2152,19 @@ public class ExcelImportService {
             ProductService.UpsertResult saveResult = productService.upsertProduct(product, false);
             if (saveResult.created()) {
                 created++;
-            } else {
+            } else if (saveResult.changed()) {
                 updated++;
+            } else {
+                unchanged++;
             }
         }
         for (Map.Entry<String, Set<String>> entry : importedExternalIdsBySource.entrySet()) {
             deactivated += productService.deactivateMissingSourceProducts(entry.getKey(), entry.getValue(), false);
         }
-        productService.syncAllProductsToBitrix();
-        return new AppliedImportResult(created, updated, deactivated);
+        if (created > 0 || updated > 0 || deactivated > 0) {
+            productService.syncAllProductsToBitrix();
+        }
+        return new AppliedImportResult(created, updated, unchanged, deactivated);
     }
 
     private String buildExternalId(ImportRow row) {
@@ -1278,6 +2231,7 @@ public class ExcelImportService {
     private record AppliedImportResult(
             int created,
             int updated,
+            int unchanged,
             int deactivated
     ) {
     }

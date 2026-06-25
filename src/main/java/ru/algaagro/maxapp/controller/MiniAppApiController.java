@@ -1,16 +1,19 @@
 package ru.algaagro.maxapp.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.http.ContentDisposition;
 import org.springframework.core.io.Resource;
@@ -31,7 +34,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import java.nio.charset.StandardCharsets;
 import ru.algaagro.maxapp.config.AppProperties;
+import ru.algaagro.maxapp.model.AppUser;
 import ru.algaagro.maxapp.model.CatalogOrder;
+import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.service.BitrixSyncService;
 import ru.algaagro.maxapp.service.BroadcastService;
 import ru.algaagro.maxapp.service.FileStorageService;
@@ -40,6 +45,7 @@ import ru.algaagro.maxapp.service.MaxApiClient;
 import ru.algaagro.maxapp.service.OrderService;
 import ru.algaagro.maxapp.service.ProductService;
 import ru.algaagro.maxapp.service.UserService;
+import ru.algaagro.maxapp.util.JsonHelper;
 
 @Validated
 @RestController
@@ -55,6 +61,7 @@ public class MiniAppApiController {
     private final ManufacturerService manufacturerService;
     private final BroadcastService broadcastService;
     private final FileStorageService fileStorageService;
+    private final JsonHelper jsonHelper;
 
     public MiniAppApiController(
             ProductService productService,
@@ -65,7 +72,8 @@ public class MiniAppApiController {
             BitrixSyncService bitrixSyncService,
             ManufacturerService manufacturerService,
             BroadcastService broadcastService,
-            FileStorageService fileStorageService
+            FileStorageService fileStorageService,
+            JsonHelper jsonHelper
     ) {
         this.productService = productService;
         this.orderService = orderService;
@@ -76,6 +84,7 @@ public class MiniAppApiController {
         this.manufacturerService = manufacturerService;
         this.broadcastService = broadcastService;
         this.fileStorageService = fileStorageService;
+        this.jsonHelper = jsonHelper;
     }
 
     @GetMapping("/meta")
@@ -150,6 +159,7 @@ public class MiniAppApiController {
         String summary = orderService.buildAdminSummary(order);
         userService.findAdminUserIds().forEach(adminId -> maxApiClient.sendToUser(adminId, summary, null, "html"));
         if (order.getCustomerMaxUserId() != null) {
+            userService.clearClientState(order.getCustomerMaxUserId());
             maxApiClient.sendToUser(order.getCustomerMaxUserId(), orderService.buildCustomerSummary(order), null, "html");
         }
         try {
@@ -187,6 +197,24 @@ public class MiniAppApiController {
         return fileStorageService.store("media", file);
     }
 
+    @PostMapping("/profile/state")
+    public Map<String, Object> syncProfileState(@RequestBody ClientStateRequest request) {
+        if (request.maxUserId() == null) {
+            throw new IllegalArgumentException("Не удалось определить пользователя");
+        }
+        AppUser user = userService.syncClientState(new UserService.ClientStateCommand(
+                request.maxUserId(),
+                request.displayName(),
+                request.username(),
+                request.cartItems(),
+                request.checkoutDraft()
+        ));
+        return Map.of(
+                "saved", true,
+                "maxUserId", user.getMaxUserId()
+        );
+    }
+
     @GetMapping("/files/{scope}/{storedName}")
     public ResponseEntity<Resource> downloadFile(
             @PathVariable String scope,
@@ -211,6 +239,12 @@ public class MiniAppApiController {
     public Map<String, Object> profile(@RequestParam Long maxUserId) {
         var user = userService.findByMaxUserId(maxUserId).orElse(null);
         CatalogOrder latestOrder = orderService.listOrdersForUser(maxUserId).stream().findFirst().orElse(null);
+        Map<String, Object> draftCheckout = user == null
+                ? Map.of()
+                : jsonHelper.readMap(user.getCheckoutDraftJson());
+        List<Map<String, Object>> savedCart = user == null
+                ? List.of()
+                : jsonHelper.readValue(user.getCartJson(), new TypeReference<>() { }, List.of());
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("maxUserId", maxUserId);
         response.put("displayName", user == null || user.getDisplayName() == null || user.getDisplayName().isBlank() ? "Пользователь MAX" : user.getDisplayName());
@@ -225,6 +259,9 @@ public class MiniAppApiController {
         response.put("managerPhone", "+7 917 595-51-43");
         response.put("managerMaxLink", appProperties.getManagerDeepLink());
         response.put("managerExternalLink", appProperties.getManagerContactUrl());
+        response.put("draftCheckout", draftCheckout);
+        response.put("savedCart", savedCart);
+        response.put("lastSeenAt", user == null ? null : user.getLastSeenAt());
         return response;
     }
 
@@ -250,6 +287,18 @@ public class MiniAppApiController {
         ensureAdmin(maxUserId);
         return orderService.listOrders(0, 200).getContent().stream()
                 .map(orderService::toDto)
+                .toList();
+    }
+
+    @GetMapping("/admin/customers")
+    public List<Map<String, Object>> adminCustomers(@RequestParam Long maxUserId) {
+        ensureAdmin(maxUserId);
+        Map<Long, List<CatalogOrder>> ordersByUser = orderService.listOrders(0, 2000).getContent().stream()
+                .filter(order -> order.getCustomerMaxUserId() != null)
+                .collect(Collectors.groupingBy(CatalogOrder::getCustomerMaxUserId));
+        return userService.listCustomersByLastSeen().stream()
+                .filter(user -> !user.isAdmin())
+                .map(user -> toAdminCustomerDto(user, ordersByUser.getOrDefault(user.getMaxUserId(), List.of())))
                 .toList();
     }
 
@@ -332,6 +381,161 @@ public class MiniAppApiController {
         }
     }
 
+    private Map<String, Object> toAdminCustomerDto(AppUser user, List<CatalogOrder> orders) {
+        Map<String, Object> draft = jsonHelper.readMap(user.getCheckoutDraftJson());
+        List<Map<String, Object>> rawCartItems = jsonHelper.readValue(
+                user.getCartJson(),
+                new TypeReference<List<Map<String, Object>>>() { },
+                List.of()
+        );
+        List<Map<String, Object>> cartItems = rawCartItems.stream()
+                .map(this::toAdminCartItemDto)
+                .filter(Objects::nonNull)
+                .toList();
+        BigDecimal cartTotal = cartItems.stream()
+                .map(item -> toBigDecimal(item.get("totalPrice")))
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        boolean requestPricePresent = cartItems.stream().anyMatch(item -> Boolean.TRUE.equals(item.get("priceOnRequest")));
+        long cartUnits = cartItems.stream()
+                .map(item -> toBigDecimal(item.get("quantity")))
+                .filter(Objects::nonNull)
+                .map(BigDecimal::longValue)
+                .reduce(0L, Long::sum);
+        CatalogOrder latestOrder = orders.stream().findFirst().orElse(null);
+        long completedOrders = orders.stream().filter(order -> "COMPLETED".equals(order.getStatus().name())).count();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("maxUserId", user.getMaxUserId());
+        response.put("displayName", user.getDisplayName());
+        response.put("username", user.getUsername());
+        response.put("lastSeenAt", user.getLastSeenAt());
+        response.put("cartUpdatedAt", user.getCartUpdatedAt());
+        response.put("draftUpdatedAt", user.getCheckoutDraftUpdatedAt());
+        response.put("ordersCount", orders.size());
+        response.put("completedOrdersCount", completedOrders);
+        response.put("latestOrderCode", latestOrder == null ? "" : latestOrder.getPublicCode());
+        response.put("latestOrderAt", latestOrder == null ? null : latestOrder.getCreatedAt());
+        response.put("draftCheckout", draft);
+        response.put("draftFilled", hasDraftContent(draft));
+        response.put("cartItems", cartItems);
+        response.put("cartItemsCount", cartItems.size());
+        response.put("cartUnits", cartUnits);
+        response.put("cartTotal", cartTotal);
+        response.put("cartContainsRequestPrice", requestPricePresent);
+        response.put("orders", orders.stream().limit(5).map(orderService::toDto).toList());
+        response.put("contactPhone", firstNonBlank(
+                stringValue(draft.get("phone")),
+                latestOrder == null ? "" : latestOrder.getCustomerPhone()
+        ));
+        response.put("contactEmail", firstNonBlank(
+                stringValue(draft.get("email")),
+                latestOrder == null ? "" : latestOrder.getCustomerEmail()
+        ));
+        response.put("organization", firstNonBlank(
+                stringValue(draft.get("organization")),
+                latestOrder == null ? "" : latestOrder.getCustomerCompany()
+        ));
+        response.put("farmName", firstNonBlank(
+                stringValue(draft.get("farmName")),
+                latestOrder == null ? "" : latestOrder.getCustomerFarmName()
+        ));
+        response.put("inn", firstNonBlank(
+                stringValue(draft.get("inn")),
+                latestOrder == null ? "" : latestOrder.getCustomerInn()
+        ));
+        response.put("deliveryAddress", firstNonBlank(
+                stringValue(draft.get("address")),
+                latestOrder == null ? "" : latestOrder.getDeliveryAddress()
+        ));
+        response.put("abandonedDraft", hasDraftContent(draft) || !cartItems.isEmpty());
+        return response;
+    }
+
+    private Map<String, Object> toAdminCartItemDto(Map<String, Object> rawItem) {
+        Long productId = toLong(rawItem.get("productId"));
+        BigDecimal quantity = toBigDecimal(rawItem.get("quantity"));
+        if (productId == null || quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        CatalogProduct product = productService.findById(productId).orElse(null);
+        BigDecimal unitPrice = product == null ? null : product.getPrice();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("productId", productId);
+        response.put("quantity", quantity);
+        response.put("name", product == null ? ("Товар #" + productId) : product.getName());
+        response.put("brand", product == null ? "" : product.getBrand());
+        response.put("unitName", product == null ? "шт" : product.getUnitName());
+        response.put("packageDescription", product == null ? "" : product.getPackageDescription());
+        response.put("unitPrice", unitPrice);
+        response.put("priceOnRequest", unitPrice == null);
+        response.put("totalPrice", unitPrice == null ? null : unitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP));
+        return response;
+    }
+
+    private boolean hasDraftContent(Map<String, Object> draft) {
+        if (draft == null || draft.isEmpty()) {
+            return false;
+        }
+        for (Map.Entry<String, Object> entry : draft.entrySet()) {
+            if ("attachments".equals(entry.getKey()) && entry.getValue() instanceof List<?> attachments && !attachments.isEmpty()) {
+                return true;
+            }
+            if (entry.getValue() instanceof String value && !value.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        if (value == null) {
+            return null;
+        }
+        String normalized = String.valueOf(value).trim().replace(",", ".");
+        if (normalized.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(normalized);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
     public record CreateOrderRequest(
             Long maxUserId,
             @NotBlank String name,
@@ -362,6 +566,15 @@ public class MiniAppApiController {
     }
 
     public record BroadcastRequest(@NotBlank String text, String imageUrl) {
+    }
+
+    public record ClientStateRequest(
+            Long maxUserId,
+            String displayName,
+            String username,
+            List<Map<String, Object>> cartItems,
+            Map<String, Object> checkoutDraft
+    ) {
     }
 
     public record AdminProductRequest(

@@ -137,12 +137,12 @@ public class BotUpdateHandler {
         if (session.getState() == SessionState.IMPORT_WAITING_FILES && user.isAdmin()) {
             if (captureImportFile(update, session)) {
                 maxApiClient.sendToUser(user.getMaxUserId(),
-                        "📥 Файл добавлен. Можете отправить еще Excel/PDF или нажать «Готово».",
+                        "📥 Файл добавлен. Можете отправить еще Excel / Word / PDF или нажать «Готово».",
                         keyboardFactory.importKeyboard(),
                         "html");
             } else {
                 maxApiClient.sendToUser(user.getMaxUserId(),
-                        "Я жду файл номенклатуры. Отправьте документ `.xlsx`, `.xlsm` или `.pdf`, затем нажмите «Готово».",
+                        "Я жду файл номенклатуры. Отправьте документ `.xlsx`, `.xlsm`, `.xls`, `.docx`, `.doc` или `.pdf`, затем нажмите «Готово».",
                         keyboardFactory.importKeyboard(),
                         "html");
             }
@@ -357,12 +357,29 @@ public class BotUpdateHandler {
             if (url == null) {
                 url = firstNonBlank(media, "url", "download_url", "file_url", "downloadUrl", "fileUrl", "src");
             }
-            boolean excelByName = fileName != null && (fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xlsm"));
-            boolean excelByMime = mimeType != null && mimeType.toLowerCase().contains("spreadsheet");
+            boolean excelByName = fileName != null && (
+                    fileName.toLowerCase().endsWith(".xlsx")
+                            || fileName.toLowerCase().endsWith(".xlsm")
+                            || fileName.toLowerCase().endsWith(".xls")
+            );
+            boolean excelByMime = mimeType != null && (
+                    mimeType.toLowerCase().contains("spreadsheet")
+                            || mimeType.toLowerCase().contains("excel")
+                            || mimeType.toLowerCase().contains("sheet")
+            );
             boolean pdfByName = fileName != null && fileName.toLowerCase().endsWith(".pdf");
             boolean pdfByMime = mimeType != null && mimeType.toLowerCase().contains("pdf");
+            boolean wordByName = fileName != null && (
+                    fileName.toLowerCase().endsWith(".docx")
+                            || fileName.toLowerCase().endsWith(".doc")
+            );
+            boolean wordByMime = mimeType != null && (
+                    mimeType.toLowerCase().contains("msword")
+                            || mimeType.toLowerCase().contains("wordprocessingml")
+                            || mimeType.toLowerCase().contains("officedocument.wordprocessingml")
+            );
             boolean fileLikeType = type.equalsIgnoreCase("file") || type.equalsIgnoreCase("document") || type.isBlank();
-            if (fileLikeType && (excelByName || excelByMime || pdfByName || pdfByMime) && url != null) {
+            if (fileLikeType && (excelByName || excelByMime || pdfByName || pdfByMime || wordByName || wordByMime) && url != null) {
                 filePayload.add(Map.of("name", fileName == null ? "import.xlsx" : fileName, "url", url));
                 continue;
             }
@@ -487,7 +504,7 @@ public class BotUpdateHandler {
                 """
                 📦 <b>Загрузка номенклатуры</b>
 
-                Отправьте один или несколько файлов номенклатуры: <b>Excel</b> (`.xlsx`, `.xlsm`) или <b>PDF</b> (`.pdf`).
+                Отправьте один или несколько файлов номенклатуры: <b>Excel</b> (`.xlsx`, `.xlsm`, `.xls`), <b>Word</b> (`.docx`, `.doc`) или <b>PDF</b> (`.pdf`).
                 """,
                 keyboardFactory.importKeyboard(),
                 "html");
@@ -499,12 +516,12 @@ public class BotUpdateHandler {
         Map<String, Object> payload = botSessionService.getPayload(session);
         List<Map<String, Object>> files = castList(payload.get("files"));
         if (files.isEmpty()) {
-            maxApiClient.answerCallback(callbackId, "Сначала загрузите хотя бы один Excel или PDF файл");
+            maxApiClient.answerCallback(callbackId, "Сначала загрузите хотя бы один Excel, Word или PDF файл");
             return;
         }
         var job = excelImportService.createJob(user.getMaxUserId(), files);
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "🤖 Импорт запущен. Анализирую Excel/PDF, извлекаю поля и готовлю предварительное распределение по категориям.",
+                "🤖 Импорт запущен. Анализирую Excel / Word / PDF, извлекаю поля и готовлю предварительное распределение по категориям.",
                 null,
                 "html");
         excelImportService.analyzeAsync(job,

@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -38,12 +39,30 @@ public class AppUser {
     @Column(nullable = false)
     private Instant lastSeenAt;
 
+    @Lob
+    @Column(nullable = false)
+    private String cartJson = "[]";
+
+    @Lob
+    @Column(nullable = false)
+    private String checkoutDraftJson = "{}";
+
+    private Instant cartUpdatedAt;
+
+    private Instant checkoutDraftUpdatedAt;
+
     @PrePersist
     public void onCreate() {
         Instant now = Instant.now();
         createdAt = now;
         updatedAt = now;
         lastSeenAt = now;
+        if (cartJson == null || cartJson.isBlank()) {
+            cartJson = "[]";
+        }
+        if (checkoutDraftJson == null || checkoutDraftJson.isBlank()) {
+            checkoutDraftJson = "{}";
+        }
     }
 
     @PreUpdate
@@ -101,5 +120,37 @@ public class AppUser {
 
     public void setLastSeenAt(Instant lastSeenAt) {
         this.lastSeenAt = lastSeenAt;
+    }
+
+    public String getCartJson() {
+        return cartJson;
+    }
+
+    public void setCartJson(String cartJson) {
+        this.cartJson = cartJson;
+    }
+
+    public String getCheckoutDraftJson() {
+        return checkoutDraftJson;
+    }
+
+    public void setCheckoutDraftJson(String checkoutDraftJson) {
+        this.checkoutDraftJson = checkoutDraftJson;
+    }
+
+    public Instant getCartUpdatedAt() {
+        return cartUpdatedAt;
+    }
+
+    public void setCartUpdatedAt(Instant cartUpdatedAt) {
+        this.cartUpdatedAt = cartUpdatedAt;
+    }
+
+    public Instant getCheckoutDraftUpdatedAt() {
+        return checkoutDraftUpdatedAt;
+    }
+
+    public void setCheckoutDraftUpdatedAt(Instant checkoutDraftUpdatedAt) {
+        this.checkoutDraftUpdatedAt = checkoutDraftUpdatedAt;
     }
 }

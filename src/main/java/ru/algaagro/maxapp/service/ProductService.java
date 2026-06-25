@@ -133,6 +133,8 @@ public class ProductService {
         boolean created = product == null;
         if (product == null) {
             product = new CatalogProduct();
+        } else if (!created && !hasImportedChanges(product, importedProduct)) {
+            return new UpsertResult(product, false, false);
         }
         product.setExternalId(importedProduct.externalId());
         product.setSourceFile(importedProduct.sourceFile());
@@ -164,7 +166,7 @@ public class ProductService {
         if (syncToBitrix) {
             syncProductWithBitrix(saved.getId());
         }
-        return new UpsertResult(saved, created);
+        return new UpsertResult(saved, created, true);
     }
 
     public List<String> getStringList(String json) {
@@ -793,6 +795,44 @@ public class ProductService {
         }
     }
 
+    private boolean hasImportedChanges(CatalogProduct existing, ImportedProduct imported) {
+        return !Objects.equals(blankToNull(existing.getExternalId()), blankToNull(imported.externalId()))
+                || !Objects.equals(blankToNull(existing.getSourceFile()), blankToNull(imported.sourceFile()))
+                || !Objects.equals(blankToNull(existing.getSku()), blankToNull(imported.sku()))
+                || !Objects.equals(blankToNull(existing.getName()), blankToNull(imported.name()))
+                || !Objects.equals(blankToNull(existing.getDescription()), blankToNull(imported.description()))
+                || !Objects.equals(blankToNull(existing.getBrand()), blankToNull(imported.brand()))
+                || !Objects.equals(blankToNull(existing.getCategory()), blankToNull(imported.category()))
+                || !Objects.equals(blankToNull(existing.getSubcategory()), blankToNull(imported.subcategory()))
+                || !Objects.equals(blankToNull(existing.getItemType()), blankToNull(imported.itemType()))
+                || !Objects.equals(blankToNull(existing.getUnitName()), blankToNull(imported.unitName()))
+                || !Objects.equals(blankToNull(existing.getPackageType()), blankToNull(firstNonBlank(imported.packageType(), existing.getPackageType())))
+                || !Objects.equals(blankToNull(existing.getPackageDescription()), blankToNull(firstNonBlank(imported.packageDescription(), existing.getPackageDescription())))
+                || !sameDecimal(existing.getPrice(), imported.price())
+                || !sameDecimal(existing.getStockQuantity(), imported.stockQuantity())
+                || !sameDecimal(existing.getMinOrderQuantity(), firstPositive(imported.minOrderQuantity(), existing.getMinOrderQuantity()))
+                || !sameDecimal(existing.getOrderStep(), firstPositive(imported.orderStep(), existing.getOrderStep()))
+                || !Objects.equals(existing.getCulturesJson(), jsonHelper.writeValue(imported.cultures()))
+                || !Objects.equals(existing.getPurposesJson(), jsonHelper.writeValue(imported.purposes()))
+                || !Objects.equals(existing.getTagsJson(), jsonHelper.writeValue(imported.tags()))
+                || !Objects.equals(existing.getCulturesIndex(), TextUtils.toIndex(imported.cultures()))
+                || !Objects.equals(existing.getPurposesIndex(), TextUtils.toIndex(imported.purposes()))
+                || !Objects.equals(existing.getTagsIndex(), TextUtils.toIndex(imported.tags()))
+                || !Objects.equals(existing.getFilterMapJson(), jsonHelper.writeValue(imported.filterMap()))
+                || !Objects.equals(existing.getRawDataJson(), jsonHelper.writeValue(imported.rawData()))
+                || !existing.isActive();
+    }
+
+    private boolean sameDecimal(BigDecimal left, BigDecimal right) {
+        if (left == null && right == null) {
+            return true;
+        }
+        if (left == null || right == null) {
+            return false;
+        }
+        return left.compareTo(right) == 0;
+    }
+
     private void syncProductWithBitrix(Long productId) {
         BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
         if (bitrixSyncService != null && productId != null) {
@@ -841,7 +881,8 @@ public class ProductService {
 
     public record UpsertResult(
             CatalogProduct product,
-            boolean created
+            boolean created,
+            boolean changed
     ) {
     }
 

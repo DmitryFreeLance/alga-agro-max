@@ -52,6 +52,9 @@ app:
     kie-gemini-model: ${KIE_GEMINI_MODEL:gemini-3-flash}
     kie-gemini-endpoint: ${KIE_GEMINI_ENDPOINT:/gemini-3-flash/v1/chat/completions}
     gemini-timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:300}
+    kie-upload-base-url: ${KIE_UPLOAD_BASE_URL:https://api.kie.ai}
+    direct-file-fallback-enabled: ${AI_DIRECT_FILE_FALLBACK_ENABLED:true}
+    direct-file-fallback-min-rows: ${AI_DIRECT_FILE_FALLBACK_MIN_ROWS:8}
   bitrix:
     webhook-base-url: ${BITRIX_WEBHOOK_BASE_URL:}
     sync-enabled: ${BITRIX_SYNC_ENABLED:true}

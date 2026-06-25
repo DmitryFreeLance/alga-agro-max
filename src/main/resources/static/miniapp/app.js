@@ -3,6 +3,7 @@ const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const bridgeUserId = parseMaxUserIdFromBridgeInitData();
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
+let clientStateSyncTimer = null;
 
 const SECTION_VISUALS = [
     {
@@ -83,6 +84,7 @@ const state = {
     checkout: {
         open: false,
         submitting: false,
+        touched: false,
         uploaded: [],
         errors: {},
         form: {
@@ -103,12 +105,16 @@ const state = {
         products: [],
         manufacturers: [],
         orders: [],
+        customers: [],
         broadcasts: { stats: null, history: [] },
         catalogSearch: "",
         catalogStatus: "ALL",
         catalogSection: "",
+        catalogCategory: "",
+        customerSearch: "",
         productEditor: { open: false, productId: null },
         orderModal: { open: false, orderId: null },
+        customerModal: { open: false, maxUserId: null },
         manufacturerModal: { open: false, id: null, name: "" },
         broadcastForm: { text: "", imageUrl: "", imageName: "", sending: false },
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
@@ -151,11 +157,16 @@ async function bootstrap() {
     ]);
     state.meta = meta;
     state.profile = profile;
+    if (!state.cart.length && Array.isArray(profile.savedCart) && profile.savedCart.length) {
+        state.cart = profile.savedCart;
+        saveStorage("alga-cart", state.cart);
+    }
     state.products = products;
     state.sections = sections;
     state.profileOrders = profileOrders;
     hydrateCheckoutFromProfile();
     rememberMaxUserId(state.maxUserId);
+    scheduleClientStateSync(150);
     if (state.profile.admin && state.maxUserId) {
         await loadAdminData();
     }
@@ -163,11 +174,12 @@ async function bootstrap() {
 }
 
 async function loadAdminData() {
-    const [dashboard, products, manufacturers, orders, broadcasts] = await Promise.all([
+    const [dashboard, products, manufacturers, orders, customers, broadcasts] = await Promise.all([
         fetchJson(`/api/admin/dashboard?maxUserId=${state.maxUserId}`),
         fetchJson(`/api/admin/products?maxUserId=${state.maxUserId}`),
         fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`),
         fetchJson(`/api/admin/orders?maxUserId=${state.maxUserId}`),
+        fetchJson(`/api/admin/customers?maxUserId=${state.maxUserId}`),
         fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`),
     ]);
     state.admin.ready = true;
@@ -175,10 +187,36 @@ async function loadAdminData() {
     state.admin.products = products;
     state.admin.manufacturers = manufacturers;
     state.admin.orders = orders;
+    state.admin.customers = customers;
     state.admin.broadcasts = broadcasts;
+    const tree = getAdminSectionTree();
+    if (tree.length) {
+        if (!state.admin.catalogSection || !tree.some(item => item.name === state.admin.catalogSection)) {
+            state.admin.catalogSection = tree[0].name;
+        }
+        const section = tree.find(item => item.name === state.admin.catalogSection);
+        if (state.admin.catalogCategory && section && !section.children.some(item => item.name === state.admin.catalogCategory)) {
+            state.admin.catalogCategory = "";
+        }
+    } else {
+        state.admin.catalogSection = "";
+        state.admin.catalogCategory = "";
+    }
 }
 
 function render() {
+    if (isAdminWorkspaceActive()) {
+        root.innerHTML = `
+            <div class="admin-app">
+                ${renderAdminPage()}
+                ${renderAdminProductModal()}
+                ${renderAdminManufacturerModal()}
+                ${renderAdminOrderModal()}
+                ${renderAdminCustomerModal()}
+            </div>
+        `;
+        return;
+    }
     root.innerHTML = `
         <div class="mobile-app">
             ${renderTopbar()}
@@ -189,6 +227,7 @@ function render() {
             ${renderAdminProductModal()}
             ${renderAdminManufacturerModal()}
             ${renderAdminOrderModal()}
+            ${renderAdminCustomerModal()}
         </div>
     `;
 }
@@ -212,6 +251,9 @@ function renderPreservingFocus() {
 }
 
 function renderTopbar() {
+    if (isAdminWorkspaceActive()) {
+        return "";
+    }
     const activeTitle = getTopbarTitle();
     return `
         <header class="topbar">
@@ -234,7 +276,7 @@ function renderTopbar() {
 
 function getTopbarTitle() {
     if (state.nav === "catalog" && state.catalog.section) {
-        return { title: state.catalog.section, subtitle: `${getSectionProducts(state.catalog.section).length} товаров` };
+        return { title: getSectionDisplayName(state.catalog.section), subtitle: `${getSectionProducts(state.catalog.section).length} товаров` };
     }
     if (state.nav === "favorites") {
         return { title: "Избранное", subtitle: "" };
@@ -304,10 +346,10 @@ function renderSectionCard(section) {
     return `
         <button type="button" class="section-card" data-action="open-section" data-section="${escapeAttr(section.name)}">
             <div class="section-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
-                <img src="${visual.icon}" alt="${escapeAttr(section.name)}">
+                <img src="${visual.icon}" alt="${escapeAttr(getSectionDisplayName(section.name))}">
             </div>
             <div class="section-card-body">
-                <p class="section-card-title">${escapeHtml(section.name)}</p>
+                <p class="section-card-title">${escapeHtml(getSectionDisplayName(section.name))}</p>
                 <p class="section-card-desc">${escapeHtml(section.description || visual.description)}</p>
             </div>
             <div class="section-card-end">
@@ -325,7 +367,7 @@ function renderSectionPage() {
         <div class="stack">
             <button class="search-muted" data-action="back">‹ Назад</button>
             <div class="page-head">
-                <h2 class="page-title">${escapeHtml(state.catalog.section)}</h2>
+                <h2 class="page-title">${escapeHtml(getSectionDisplayName(state.catalog.section))}</h2>
                 <p>${filtered.length} товаров</p>
             </div>
             <div class="toolbar-row">
@@ -573,33 +615,93 @@ function renderOrderCard(order) {
 }
 
 function renderAdminPage() {
+    const meta = getAdminPageMeta();
     return `
-        <section class="page stack">
-            <div class="admin-layout">
-                <aside class="admin-menu-wrap">
-                    <div class="admin-menu">
-                        ${renderAdminMenuButton("dashboard", "Дашборд", null)}
-                        ${renderAdminMenuButton("catalog", "Каталог", null)}
-                        ${renderAdminMenuButton("manufacturers", "Производители", null)}
-                        ${renderAdminMenuButton("orders", "Заявки", getPendingOrdersCount())}
-                        ${renderAdminMenuButton("broadcasts", "Рассылка", null)}
+        <section class="admin-page">
+            <div class="admin-shell">
+                <aside class="admin-sidebar">
+                    <div class="admin-brand">
+                        <img src="./assets/logo-green-bg.png" alt="Алга Агро">
+                        <div class="admin-brand-text">
+                            <strong>${escapeHtml(state.meta?.company || "АЛГА АГРО ГРУПП")}</strong>
+                            <span>Панель управления</span>
+                        </div>
                     </div>
+                    <div class="admin-sidebar-group">
+                        <div class="admin-sidebar-label">Главное</div>
+                        ${renderAdminMenuButton("dashboard", "▦", "Дашборд", null)}
+                    </div>
+                    <div class="admin-sidebar-group">
+                        <div class="admin-sidebar-label">Каталог</div>
+                        ${renderAdminMenuButton("catalog", "◫", "Каталог", null)}
+                        ${renderAdminMenuButton("manufacturers", "◪", "Производители", null)}
+                    </div>
+                    <div class="admin-sidebar-group">
+                        <div class="admin-sidebar-label">Продажи</div>
+                        ${renderAdminMenuButton("orders", "◩", "Заявки", getPendingOrdersCount())}
+                        ${renderAdminMenuButton("customers", "◎", "Клиенты", null)}
+                    </div>
+                    <div class="admin-sidebar-group">
+                        <div class="admin-sidebar-label">Коммуникации</div>
+                        ${renderAdminMenuButton("broadcasts", "✦", "Рассылка", null)}
+                    </div>
+                    <button class="admin-exit-btn" data-action="admin-exit">← Клиентский каталог</button>
+                    <div class="admin-sidebar-footer">АЛГА-АГРО · 2026</div>
                 </aside>
-                <div class="admin-content">
+                <div class="admin-main">
+                    <header class="admin-header">
+                        <div class="admin-header-copy">
+                            <h2>${escapeHtml(meta.title)}</h2>
+                            <p>${escapeHtml(meta.subtitle)}</p>
+                        </div>
+                        <div class="admin-user">
+                            <span>${escapeHtml(getAdminDisplayName())}</span>
+                            <div class="admin-user-avatar">${escapeHtml(getAdminDisplayInitial())}</div>
+                        </div>
+                    </header>
+                    <div class="admin-content">
                     ${renderAdminContent()}
+                    </div>
                 </div>
             </div>
         </section>
     `;
 }
 
-function renderAdminMenuButton(key, label, badge) {
+function renderAdminMenuButton(key, icon, label, badge) {
     return `
         <button class="admin-menu-btn ${state.admin.menu === key ? "active" : ""}" data-action="admin-menu" data-menu="${key}">
-            ${escapeHtml(label)}
+            <span class="admin-menu-icon">${icon}</span>
+            <span class="admin-menu-text">${escapeHtml(label)}</span>
             ${badge ? `<span class="pending-badge">${badge}</span>` : ""}
         </button>
     `;
+}
+
+function getAdminPageMeta() {
+    switch (state.admin.menu) {
+        case "catalog":
+            return { title: "Каталог", subtitle: "Структура разделов, товары и быстрые действия" };
+        case "manufacturers":
+            return { title: "Производители", subtitle: `Всего: ${state.admin.manufacturers.length} производителей` };
+        case "orders":
+            return { title: "Заявки", subtitle: "Фильтрация, просмотр состава и смена статусов" };
+        case "customers":
+            return { title: "Клиенты", subtitle: "Посетители бота, корзины, черновики и история заказов" };
+        case "broadcasts":
+            return { title: "Рассылка", subtitle: "Сообщения всем пользователям и история кампаний" };
+        case "dashboard":
+        default:
+            return { title: "Дашборд", subtitle: "Ключевые показатели и последние заявки" };
+    }
+}
+
+function getAdminDisplayName() {
+    return state.profile?.displayName || state.meta?.managerName || "Администратор";
+}
+
+function getAdminDisplayInitial() {
+    return String(getAdminDisplayName()).trim().charAt(0).toUpperCase() || "A";
 }
 
 function renderAdminContent() {
@@ -610,6 +712,8 @@ function renderAdminContent() {
             return renderAdminManufacturers();
         case "orders":
             return renderAdminOrders();
+        case "customers":
+            return renderAdminCustomers();
         case "broadcasts":
             return renderAdminBroadcasts();
         case "dashboard":
@@ -621,19 +725,19 @@ function renderAdminContent() {
 function renderAdminDashboard() {
     const dashboard = state.admin.dashboard || { latestOrders: [] };
     return `
-        <div class="admin-card">
-            <h2>Дашборд</h2>
-            <div class="stats-grid" style="margin-top:12px;">
-                <div class="stat-tile"><span>Заявок всего</span><strong>${dashboard.ordersTotal || 0}</strong></div>
-                <div class="stat-tile"><span>В ожидании</span><strong>${dashboard.ordersPending || 0}</strong></div>
-                <div class="stat-tile"><span>Товаров в каталоге</span><strong>${dashboard.productsTotal || 0}</strong></div>
-                <div class="stat-tile"><span>Пользователей</span><strong>${dashboard.usersTotal || 0}</strong><span>+${dashboard.usersAddedThisMonth || 0} за месяц</span></div>
-            </div>
+        <div class="admin-kpi-grid">
+            ${renderAdminKpiCard("◫", dashboard.ordersTotal || 0, "Заявок всего", `+${dashboard.ordersAddedThisWeek || 0} за неделю`)}
+            ${renderAdminKpiCard("⧖", dashboard.ordersPending || 0, "В ожидании", "Требуют ответа", "warning")}
+            ${renderAdminKpiCard("◪", dashboard.productsTotal || 0, "Товаров", "В каталоге", "neutral")}
+            ${renderAdminKpiCard("◉", dashboard.usersTotal || 0, "Пользователей", `+${dashboard.usersAddedThisMonth || 0} за месяц`, "accent")}
         </div>
-        <div class="admin-card">
-            <div class="summary-row">
-                <h3>Последние заявки</h3>
-                <button class="table-action" data-action="admin-menu" data-menu="orders">Все заявки</button>
+        <div class="admin-card admin-card-spacious">
+            <div class="admin-section-head">
+                <div>
+                    <h3>Новые заявки</h3>
+                    <p>Последние обращения клиентов по каталогу</p>
+                </div>
+                <button class="admin-outline-btn" data-action="admin-menu" data-menu="orders">Все заявки</button>
             </div>
             <div class="admin-table-wrap">
                 <table class="admin-table">
@@ -644,10 +748,10 @@ function renderAdminDashboard() {
                                 <td data-label="Номер">${escapeHtml(order.publicCode)}</td>
                                 <td data-label="Клиент">${escapeHtml(order.customerName || "")}</td>
                                 <td data-label="Телефон">${escapeHtml(order.customerPhone || "")}</td>
-                                <td data-label="Товары">${escapeHtml(order.items.map(item => item.productName).join(", "))}</td>
+                                <td data-label="Товары">${escapeHtml(summarizeOrderItems(order.items || []))}</td>
                                 <td data-label="Дата">${formatDate(order.createdAt)}</td>
-                                <td data-label="Статус">${escapeHtml(order.statusLabel)}</td>
-                                <td data-label="Действие"><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                                <td data-label="Статус">${renderAdminStatusBadge(order.status, order.statusLabel)}</td>
+                                <td data-label="Действие"><button class="admin-table-btn" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -658,64 +762,147 @@ function renderAdminDashboard() {
 }
 
 function renderAdminCatalog() {
+    const tree = getAdminSectionTree();
+    const activeSectionName = state.admin.catalogSection || tree[0]?.name || "";
+    const activeSection = tree.find(item => item.name === activeSectionName) || null;
     const products = getAdminFilteredProducts();
+    const sectionProducts = activeSectionName
+        ? state.admin.products.filter(item => (item.category || "Прочее") === activeSectionName)
+        : state.admin.products;
+    const visibleCount = sectionProducts.filter(item => item.active).length;
+    const sectionVisual = activeSection?.visual || getSectionVisual(activeSectionName || "Прочее");
     return `
-        <div class="admin-split">
-            <div class="admin-card">
-                <div class="summary-row">
-                    <h3>Структура</h3>
-                    <button class="table-action" data-action="open-admin-product">+ Добавить товар</button>
+        <div class="admin-catalog-layout">
+            <div class="admin-card admin-card-spacious">
+                <div class="admin-section-head">
+                    <div>
+                        <h3>Структура</h3>
+                        <p>Разделы и подкатегории каталога</p>
+                    </div>
+                    <button class="admin-outline-btn" disabled>+ Раздел</button>
                 </div>
                 <div class="admin-tree">
-                    ${getAdminSectionTree().map(section => `
-                        <div class="admin-tree-group">
+                    ${tree.map(section => `
+                        <div class="admin-tree-group ${activeSectionName === section.name ? "active" : ""}">
                             <div class="admin-tree-title">
-                                <button data-action="admin-section" data-section="${escapeAttr(section.name)}">${escapeHtml(section.name)}</button>
+                                <button class="admin-tree-parent" data-action="admin-section" data-section="${escapeAttr(section.name)}">
+                                    <span class="admin-tree-icon" style="background:linear-gradient(135deg, ${section.visual.palette[0]}, ${section.visual.palette[1]});">
+                                        <img src="${section.visual.icon}" alt="${escapeAttr(section.name)}">
+                                    </span>
+                                    <span>${escapeHtml(getSectionDisplayName(section.name))}</span>
+                                </button>
                                 <span class="pill-count">${section.count}</span>
                             </div>
-                            <div class="admin-tree-list">
-                                ${section.children.map(child => `<button class="admin-tree-item" data-action="admin-section" data-section="${escapeAttr(section.name)}" data-category="${escapeAttr(child)}">${escapeHtml(child)}</button>`).join("")}
-                            </div>
+                            ${activeSectionName === section.name ? `
+                                <div class="admin-tree-list">
+                                    ${section.children.map(child => `
+                                        <button class="admin-tree-item ${state.admin.catalogCategory === child.name ? "active" : ""}" data-action="admin-section" data-section="${escapeAttr(section.name)}" data-category="${escapeAttr(child.name)}">
+                                            <span>${escapeHtml(child.name)}</span>
+                                            <span class="search-muted">${child.count}</span>
+                                        </button>
+                                    `).join("")}
+                                </div>
+                            ` : ""}
                         </div>
                     `).join("")}
                 </div>
             </div>
-            <div class="admin-card">
-                <div class="summary-row">
-                    <h3>Товары</h3>
-                    <button class="table-action" data-action="open-admin-product">+ Добавить товар</button>
-                </div>
-                <div class="admin-toolbar">
-                    <label class="search-field">
-                        <span>🔎</span>
-                        <input type="search" data-field="admin-product-search" placeholder="Поиск по товарам" value="${escapeAttr(state.admin.catalogSearch)}">
-                        <span></span>
-                    </label>
-                    <select class="toolbar-select" data-field="admin-product-status">
-                        ${renderOptions([
-                            ["ALL", "Все"],
-                            ["ACTIVE", "Активен"],
-                            ["HIDDEN", "Скрыт"],
-                        ], state.admin.catalogStatus)}
-                    </select>
-                </div>
-                <div class="admin-table-wrap">
-                    <table class="admin-table">
-                        <thead><tr><th>Товар</th><th>Раздел</th><th>Производитель</th><th>Цена</th><th>Остаток</th><th>Статус</th><th></th></tr></thead>
-                        <tbody>
-                            ${products.map(product => `
-                                <tr>
-                                    <td data-label="Товар">${escapeHtml(product.name)}</td>
-                                    <td data-label="Раздел">${escapeHtml(product.category || "Прочее")}${product.subcategory ? `<div class="search-muted">${escapeHtml(product.subcategory)}</div>` : ""}</td>
-                                    <td data-label="Производитель">${escapeHtml(product.brand || "—")}</td>
-                                    <td data-label="Цена">${product.price == null ? "По запросу" : formatPrice(product.price)}</td>
-                                    <td data-label="Остаток">${product.stockQuantity ?? "—"}</td>
-                                    <td data-label="Статус">${product.active ? "Активен" : "Скрыт"}</td>
-                                    <td data-label="Действие"><button class="table-action" data-action="open-admin-product" data-product-id="${product.id}">Открыть</button></td>
-                                </tr>
+            <div class="admin-stack">
+                ${activeSection ? `
+                    <div class="admin-card admin-card-spacious">
+                        <div class="admin-section-summary">
+                            <div class="admin-section-summary-visual" style="background:linear-gradient(135deg, ${sectionVisual.palette[0]}, ${sectionVisual.palette[1]});">
+                                <img src="${sectionVisual.icon}" alt="${escapeAttr(activeSection.name)}">
+                            </div>
+                            <div class="admin-section-summary-copy">
+                                <div class="search-muted">Каталог / ${escapeHtml(getSectionDisplayName(activeSection.name))}</div>
+                                <h3>${escapeHtml(getSectionDisplayName(activeSection.name))}</h3>
+                                <p>${sectionProducts.length} товаров в разделе · ${visibleCount} видимых</p>
+                            </div>
+                            <div class="admin-section-summary-actions">
+                                <span class="admin-visibility-pill">${visibleCount}/${sectionProducts.length} видны</span>
+                                <button class="admin-outline-btn" disabled>+ Добавить подкатегорию</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="admin-card admin-card-spacious">
+                        <div class="admin-section-head">
+                            <div>
+                                <h3>Подкатегории</h3>
+                                <p>${activeSection.children.length} подкатегорий</p>
+                            </div>
+                        </div>
+                        <div class="admin-subcategory-list">
+                            ${activeSection.children.map(child => `
+                                <div class="admin-subcategory-row">
+                                    <div>
+                                        <strong>${escapeHtml(child.name)}</strong>
+                                        <p>${child.count} тов.</p>
+                                    </div>
+                                    <button class="admin-table-btn" data-action="admin-section" data-section="${escapeAttr(activeSection.name)}" data-category="${escapeAttr(child.name)}">Открыть</button>
+                                </div>
                             `).join("")}
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
+                ` : ""}
+                <div class="admin-card admin-card-spacious">
+                    <div class="admin-section-head">
+                        <div>
+                            <h3>Товары${activeSection ? ` — ${escapeHtml(getSectionDisplayName(activeSection.name))}` : ""}</h3>
+                            <p>${products.length} позиций по текущим фильтрам</p>
+                        </div>
+                        <button class="admin-primary-btn" data-action="open-admin-product">+ Добавить товар</button>
+                    </div>
+                    <div class="admin-toolbar">
+                        <label class="search-field">
+                            <span>🔎</span>
+                            <input type="search" data-field="admin-product-search" placeholder="Поиск по товарам" value="${escapeAttr(state.admin.catalogSearch)}">
+                            <span></span>
+                        </label>
+                        <select class="toolbar-select" data-field="admin-product-status">
+                            ${renderOptions([
+                                ["ALL", "Все"],
+                                ["ACTIVE", "Активен"],
+                                ["HIDDEN", "Скрыт"],
+                            ], state.admin.catalogStatus)}
+                        </select>
+                    </div>
+                    <div class="admin-table-wrap">
+                        <table class="admin-table">
+                            <thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th>Статус</th><th>Действия</th></tr></thead>
+                            <tbody>
+                                ${products.map(product => `
+                                    <tr>
+                                        <td data-label="Название">
+                                            <div class="admin-product-cell">
+                                                <span class="admin-product-thumb" style="background:${getProductVisual(product).palette[0]};">
+                                                    <img src="${getProductVisual(product).icon}" alt="${escapeAttr(product.name)}">
+                                                </span>
+                                                <div>
+                                                    <strong>${escapeHtml(product.name)}</strong>
+                                                    <div class="search-muted">${escapeHtml(product.brand || "Без производителя")}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td data-label="Категория">${escapeHtml(product.subcategory || product.itemType || product.category || "—")}</td>
+                                        <td data-label="Цена">
+                                            <strong>${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
+                                            ${product.oldPrice ? `<div class="search-muted"><s>${formatPrice(product.oldPrice)}</s></div>` : ""}
+                                        </td>
+                                        <td data-label="Статус">${renderAdminStatusBadge(product.active ? "ACTIVE" : "HIDDEN", product.active ? "Активен" : "Скрыт")}</td>
+                                        <td data-label="Действия">
+                                            <div class="admin-row-actions">
+                                                <button class="admin-table-btn" data-action="open-admin-product" data-product-id="${product.id}">Ред.</button>
+                                                <button class="admin-table-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">
+                                                    ${product.active ? "Скрыть" : "Показать"}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join("")}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -724,23 +911,26 @@ function renderAdminCatalog() {
 
 function renderAdminManufacturers() {
     return `
-        <div class="admin-card">
-            <div class="summary-row">
-                <h3>Производители</h3>
-                <button class="table-action" data-action="open-manufacturer-modal">+ Добавить производителя</button>
+        <div class="admin-card admin-card-spacious">
+            <div class="admin-section-head">
+                <div>
+                    <h3>Производители</h3>
+                    <p>Всего: ${state.admin.manufacturers.length} производителей</p>
+                </div>
+                <button class="admin-primary-btn" data-action="open-manufacturer-modal">+ Добавить производителя</button>
             </div>
             <div class="admin-table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Название</th><th>Товаров</th><th></th></tr></thead>
+                    <thead><tr><th>Название</th><th>Товаров</th><th>Действия</th></tr></thead>
                     <tbody>
                         ${state.admin.manufacturers.map(item => `
                             <tr>
                                 <td data-label="Название">${escapeHtml(item.name)}</td>
-                                <td data-label="Товаров">${item.productsCount}</td>
-                                <td data-label="Действие">
-                                    <div style="display:flex;gap:8px;">
-                                        <button class="table-action" data-action="edit-manufacturer" data-id="${item.id || ""}" data-name="${escapeAttr(item.name)}">Редактировать</button>
-                                        ${item.id ? `<button class="table-action" data-action="delete-manufacturer" data-id="${item.id}">Удалить</button>` : ""}
+                                <td data-label="Товаров">${item.productsCount} тов.</td>
+                                <td data-label="Действия">
+                                    <div class="admin-row-actions">
+                                        <button class="admin-table-btn" data-action="edit-manufacturer" data-id="${item.id || ""}" data-name="${escapeAttr(item.name)}">Ред.</button>
+                                        ${item.id ? `<button class="admin-table-btn danger" data-action="delete-manufacturer" data-id="${item.id}">Удалить</button>` : ""}
                                     </div>
                                 </td>
                             </tr>
@@ -748,6 +938,7 @@ function renderAdminManufacturers() {
                     </tbody>
                 </table>
             </div>
+            <div class="admin-footnote">${state.admin.manufacturers.length ? `1–${state.admin.manufacturers.length} из ${state.admin.manufacturers.length}` : "Список пуст"}</div>
         </div>
     `;
 }
@@ -755,9 +946,14 @@ function renderAdminManufacturers() {
 function renderAdminOrders() {
     const orders = getFilteredAdminOrders();
     return `
-        <div class="admin-card">
-            <h3>Заявки</h3>
-            <div class="admin-toolbar" style="margin-top:12px;">
+        <div class="admin-card admin-card-spacious">
+            <div class="admin-section-head">
+                <div>
+                    <h3>Заявки</h3>
+                    <p>${orders.length} записей по текущим фильтрам</p>
+                </div>
+            </div>
+            <div class="admin-toolbar admin-toolbar-orders">
                 <label class="search-field">
                     <span>🔎</span>
                     <input type="search" data-field="admin-order-search" placeholder="Поиск по имени или телефону" value="${escapeAttr(state.admin.orderFilters.search)}">
@@ -772,10 +968,11 @@ function renderAdminOrders() {
                         ["CANCELLED", "Отменён"],
                     ], state.admin.orderFilters.status)}
                 </select>
-                <div class="admin-form-row">
+                <div class="admin-form-row admin-order-dates">
                     <input type="date" data-field="admin-order-from" value="${escapeAttr(state.admin.orderFilters.from)}">
                     <input type="date" data-field="admin-order-to" value="${escapeAttr(state.admin.orderFilters.to)}">
                 </div>
+                <button class="admin-outline-btn" data-action="reset-admin-order-filters">Сбросить</button>
             </div>
             <div class="admin-table-wrap">
                 <table class="admin-table">
@@ -788,8 +985,82 @@ function renderAdminOrders() {
                                 <td data-label="Телефон">${escapeHtml(order.customerPhone || "")}</td>
                                 <td data-label="Сумма">${formatPrice(order.totalPrice || 0)}</td>
                                 <td data-label="Дата">${formatDate(order.createdAt)}</td>
-                                <td data-label="Статус">${escapeHtml(order.statusLabel)}</td>
-                                <td data-label="Действие"><button class="table-action" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                                <td data-label="Статус">${renderAdminStatusBadge(order.status, order.statusLabel)}</td>
+                                <td data-label="Действие"><button class="admin-table-btn" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminCustomers() {
+    const customers = getFilteredAdminCustomers();
+    const withCart = customers.filter(item => item.cartItemsCount > 0).length;
+    const withDraft = customers.filter(item => item.draftFilled).length;
+    const withOrders = customers.filter(item => item.ordersCount > 0).length;
+    return `
+        <div class="admin-kpi-grid">
+            ${renderAdminKpiCard("◎", state.admin.customers.length || 0, "Клиентов", "Запускали бота или мини апп")}
+            ${renderAdminKpiCard("◔", withCart, "С корзиной", "Есть товары перед оформлением", "warning")}
+            ${renderAdminKpiCard("✎", withDraft, "С черновиком", "Заполняли заявку, но не отправили", "accent")}
+            ${renderAdminKpiCard("◩", withOrders, "С заказами", "Уже оформляли заявки", "neutral")}
+        </div>
+        <div class="admin-card admin-card-spacious">
+            <div class="admin-section-head">
+                <div>
+                    <h3>Клиентская база</h3>
+                    <p>${customers.length} записей по текущему поиску</p>
+                </div>
+            </div>
+            <div class="admin-toolbar">
+                <label class="search-field">
+                    <span>🔎</span>
+                    <input type="search" data-field="admin-customer-search" placeholder="Поиск по имени, username, телефону, ИНН" value="${escapeAttr(state.admin.customerSearch)}">
+                    <span></span>
+                </label>
+            </div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Клиент</th><th>Контакты</th><th>Корзина</th><th>Заказы</th><th>Статус</th><th>Последняя активность</th><th></th></tr></thead>
+                    <tbody>
+                        ${customers.map(customer => `
+                            <tr>
+                                <td data-label="Клиент">
+                                    <div class="admin-customer-meta">
+                                        <strong>${escapeHtml(customer.displayName || "Пользователь MAX")}</strong>
+                                        <div class="search-muted">${customer.username ? `@${escapeHtml(customer.username)}` : `ID ${customer.maxUserId}`}</div>
+                                    </div>
+                                </td>
+                                <td data-label="Контакты">
+                                    <div class="admin-list-stack compact">
+                                        <span>${escapeHtml(customer.contactPhone || "Телефон не указан")}</span>
+                                        <span class="search-muted">${escapeHtml(customer.contactEmail || customer.organization || "Без доп. данных")}</span>
+                                    </div>
+                                </td>
+                                <td data-label="Корзина">
+                                    <div class="admin-list-stack compact">
+                                        <strong>${customer.cartItemsCount || 0} поз.</strong>
+                                        <span class="search-muted">${customer.cartUnits || 0} ед.</span>
+                                    </div>
+                                </td>
+                                <td data-label="Заказы">
+                                    <div class="admin-list-stack compact">
+                                        <strong>${customer.ordersCount || 0}</strong>
+                                        <span class="search-muted">Оплачено: ${customer.completedOrdersCount || 0}</span>
+                                    </div>
+                                </td>
+                                <td data-label="Статус">
+                                    <div class="admin-inline-badges">
+                                        ${customer.draftFilled ? renderAdminStatusBadge("NEW", "Черновик") : ""}
+                                        ${customer.cartItemsCount ? renderAdminStatusBadge("IN_PROGRESS", "Корзина") : ""}
+                                        ${!customer.draftFilled && !customer.cartItemsCount ? renderAdminStatusBadge("HIDDEN", "Только просмотр") : ""}
+                                    </div>
+                                </td>
+                                <td data-label="Последняя активность">${formatDate(customer.lastSeenAt)}</td>
+                                <td data-label="Действие"><button class="admin-table-btn" data-action="open-admin-customer" data-max-user-id="${customer.maxUserId}">Открыть</button></td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -803,43 +1074,44 @@ function renderAdminBroadcasts() {
     const stats = state.admin.broadcasts?.stats || {};
     const history = state.admin.broadcasts?.history || [];
     return `
-        <div class="admin-split">
-            <div class="admin-card">
+        <div class="admin-broadcast-layout">
+            <div class="admin-card admin-card-spacious">
                 <h3>Рассылка</h3>
-                <div class="form-grid" style="margin-top:12px;">
+                <div class="admin-broadcast-form">
                     <div class="field">
-                        <label>Фото</label>
+                        <label>Фото (необязательно)</label>
                         <label class="upload-box">
                             <input type="file" accept="image/*" data-field="broadcast-image">
-                            <div style="font-size:2rem;">🖼️</div>
-                            <div>${state.admin.broadcastForm.imageName ? escapeHtml(state.admin.broadcastForm.imageName) : "Загрузить изображение"}</div>
+                            <div class="admin-upload-icon">▣</div>
+                            <div>${state.admin.broadcastForm.imageName ? escapeHtml(state.admin.broadcastForm.imageName) : "Нажмите для загрузки фото"}</div>
+                            <small>JPG, PNG, WebP — необязательно</small>
                         </label>
                     </div>
                     <div class="field">
                         <label>Текст сообщения</label>
                         <textarea data-field="broadcast-text" placeholder="Текст сообщения для всех пользователей">${escapeHtml(state.admin.broadcastForm.text)}</textarea>
                     </div>
-                    <div class="summary-card">
-                        <strong>Предпросмотр</strong>
-                        ${state.admin.broadcastForm.imageUrl ? `<img src="${escapeAttr(state.admin.broadcastForm.imageUrl)}" alt="" style="border-radius:14px;max-height:180px;object-fit:cover;">` : ""}
+                    <div class="admin-preview-card">
+                        <div class="admin-preview-title">Предпросмотр сообщения</div>
+                        ${state.admin.broadcastForm.imageUrl ? `<img src="${escapeAttr(state.admin.broadcastForm.imageUrl)}" alt="" class="admin-preview-image">` : ""}
                         <div>${escapeHtml(state.admin.broadcastForm.text || "Сообщение появится здесь")}</div>
                     </div>
-                    <button class="primary-btn" data-action="send-broadcast" ${state.admin.broadcastForm.sending ? "disabled" : ""}>Отправить всем (${stats.subscribersCount || 0} чел.)</button>
+                    <button class="admin-primary-btn" data-action="send-broadcast" ${state.admin.broadcastForm.sending ? "disabled" : ""}>📢 Отправить всем (${stats.subscribersCount || 0} чел.)</button>
                 </div>
             </div>
             <div class="admin-stack">
-                <div class="admin-card">
+                <div class="admin-card admin-card-spacious">
                     <h3>Статистика</h3>
-                    <div class="stats-grid" style="margin-top:12px;">
-                        <div class="stat-tile"><span>Подписчики</span><strong>${stats.subscribersCount || 0}</strong></div>
-                        <div class="stat-tile"><span>Рассылок</span><strong>${stats.broadcastsCount || 0}</strong></div>
-                        <div class="stat-tile"><span>Новых за месяц</span><strong>${stats.newUsersThisMonth || 0}</strong></div>
-                        <div class="stat-tile"><span>Последняя</span><strong>${stats.lastBroadcastAt ? formatDate(stats.lastBroadcastAt) : "—"}</strong></div>
+                    <div class="admin-mini-stats">
+                        ${renderAdminMiniStat(stats.subscribersCount || 0, "Подписчиков")}
+                        ${renderAdminMiniStat(stats.broadcastsCount || 0, "Рассылок всего", "warning")}
+                        ${renderAdminMiniStat(`+${stats.newUsersThisMonth || 0}`, "Новых за месяц")}
+                        ${renderAdminMiniStat(stats.lastBroadcastAt ? formatDate(stats.lastBroadcastAt) : "—", "Последняя рассылка")}
                     </div>
                 </div>
-                <div class="admin-card">
+                <div class="admin-card admin-card-spacious">
                     <h3>История рассылок</h3>
-                    <div class="history-list" style="margin-top:12px;">
+                    <div class="history-list admin-history-list">
                         ${history.length ? history.map(item => `
                             <div class="history-card">
                                 <strong>${formatDate(item.createdAt)}</strong>
@@ -855,6 +1127,9 @@ function renderAdminBroadcasts() {
 }
 
 function renderBottomNav() {
+    if (isAdminWorkspaceActive()) {
+        return "";
+    }
     const profileLabel = state.profile?.admin ? "Админка" : "Профиль";
     return `
         <nav class="bottom-nav">
@@ -942,7 +1217,9 @@ function renderFiltersDrawer() {
     const draft = state.catalog.draft || cloneFilters(state.catalog.applied);
     const sectionProducts = getSectionProducts(state.catalog.section);
     const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
-    const categoriesTree = buildCategoriesTree(sectionProducts);
+    const cultures = uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean));
+    const subcategories = uniqueValues(sectionProducts.map(item => item.subcategory || item.itemType).filter(Boolean));
+    const subcategoryTitle = normalize(state.catalog.section).includes("пестиц") ? "Тип СЗР" : "Подкатегория";
     return `
         <div class="drawer">
             <div class="drawer-backdrop" data-action="close-filters"></div>
@@ -955,7 +1232,18 @@ function renderFiltersDrawer() {
                     <h4>Раздел</h4>
                     <div class="filter-chips-row">
                         ${getCatalogSections().map(section => `
-                            <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(section.name)}</button>
+                            <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
+                        `).join("")}
+                    </div>
+                </div>
+                <div class="drawer-section">
+                    <h4>Культура</h4>
+                    <div class="checkbox-list">
+                        ${cultures.map(name => `
+                            <label class="checkbox-row">
+                                <input type="checkbox" data-field="filter-culture" value="${escapeAttr(name)}" ${draft.cultures.includes(name) ? "checked" : ""}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
                         `).join("")}
                     </div>
                 </div>
@@ -971,20 +1259,13 @@ function renderFiltersDrawer() {
                     </div>
                 </div>
                 <div class="drawer-section">
-                    <h4>Категория</h4>
-                    <div class="tree-list">
-                        ${Object.entries(categoriesTree).map(([parent, children]) => `
-                            <div>
-                                <label class="tree-row">
-                                    <input type="checkbox" data-field="filter-category" value="${escapeAttr(parent)}" ${draft.categories.includes(parent) ? "checked" : ""}>
-                                    <span>${escapeHtml(parent)}</span>
-                                </label>
-                                ${children.length ? `<div class="tree-children">${children.map(child => `
-                                    <label class="tree-row">
-                                        <input type="checkbox" data-field="filter-category" value="${escapeAttr(`${parent}::${child}`)}" ${draft.categories.includes(`${parent}::${child}`) ? "checked" : ""}>
-                                        <span>${escapeHtml(child)}</span>
-                                    </label>`).join("")}</div>` : ""}
-                            </div>
+                    <h4>${escapeHtml(subcategoryTitle)}</h4>
+                    <div class="checkbox-list">
+                        ${subcategories.map(name => `
+                            <label class="checkbox-row">
+                                <input type="checkbox" data-field="filter-subcategory" value="${escapeAttr(name)}" ${draft.subcategories.includes(name) ? "checked" : ""}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
                         `).join("")}
                     </div>
                 </div>
@@ -1009,45 +1290,79 @@ function renderAdminProductModal() {
     if (!state.admin.productEditor.open) return "";
     const product = state.admin.productEditor.productId ? state.admin.products.find(item => item.id === state.admin.productEditor.productId) : null;
     const categories = getCatalogSections().map(item => item.name);
+    const visual = getProductVisual(product || { category: state.admin.catalogSection || "Прочее" });
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
-            <div class="modal-sheet">
+            <div class="modal-sheet modal-sheet-wide">
                 <div class="modal-head">
-                    <div class="modal-title-wrap"><div class="modal-title">${product ? "Редактирование товара" : "Добавить товар"}</div></div>
+                    <div class="modal-title-wrap">
+                        <div class="modal-title">${product ? "Редактирование товара" : "Добавить товар"}</div>
+                        <div class="modal-subtitle">${product ? escapeHtml(product.name) : "Новая позиция каталога"}</div>
+                    </div>
                     <button class="modal-close" data-action="close-admin-product">×</button>
                 </div>
-                <form class="admin-form-grid" data-form="admin-product">
+                <form class="admin-form-grid admin-product-form" data-form="admin-product">
                     <input type="hidden" name="productId" value="${product?.id || ""}">
-                    <div class="admin-form-row">
-                        <div class="admin-field"><label>Раздел</label><select name="category">${renderOptions(categories.map(item => [item, item]), product?.category || "")}</select></div>
-                        <div class="admin-field"><label>Категория</label><input name="subcategory" value="${escapeAttr(product?.subcategory || "")}"></div>
+                    <div class="admin-form-section">
+                        <div class="admin-form-section-title">Основное</div>
+                        <div class="admin-form-row">
+                            <div class="admin-field"><label>Раздел</label><select name="category">${renderOptions(categories.map(item => [item, item]), product?.category || state.admin.catalogSection || "")}</select></div>
+                            <div class="admin-field"><label>Подкатегория</label><input name="subcategory" value="${escapeAttr(product?.subcategory || "")}"></div>
+                        </div>
+                        <div class="admin-field"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
+                        <div class="admin-form-row">
+                            <div class="admin-field"><label>Производитель</label><input name="brand" required value="${escapeAttr(product?.brand || "")}"></div>
+                            <div class="admin-field"><label>Ед. измерения</label><input name="unitName" value="${escapeAttr(product?.unitName || "шт")}"></div>
+                        </div>
                     </div>
-                    <div class="admin-field"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
-                    <div class="admin-form-row">
-                        <div class="admin-field"><label>Производитель</label><input name="brand" required value="${escapeAttr(product?.brand || "")}"></div>
-                        <div class="admin-field"><label>Ед. измерения</label><input name="unitName" value="${escapeAttr(product?.unitName || "шт")}"></div>
+                    <div class="admin-form-section">
+                        <div class="admin-form-section-title">Описание</div>
+                        <div class="admin-field"><label>Описание</label><textarea name="description">${escapeHtml(product?.description || "")}</textarea></div>
+                        <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
                     </div>
-                    <div class="admin-form-row">
-                        <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}"></div>
-                        <div class="admin-field"><label>Старая цена</label><input name="oldPrice" type="number" min="0" step="0.01" value="${escapeAttr(product?.oldPrice ?? "")}"></div>
+                    <div class="admin-form-section">
+                        <div class="admin-form-section-title">Визуал карточки</div>
+                        <div class="admin-visual-note">
+                            <div class="admin-visual-drop">
+                                <div class="admin-upload-icon">▣</div>
+                                <div>Иконка раздела применяется автоматически</div>
+                                <small>Визуал формируется по категории товара</small>
+                            </div>
+                            <div class="admin-visual-thumbs">
+                                <span class="admin-visual-thumb" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});"><img src="${visual.icon}" alt=""></span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="admin-form-row">
-                        <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="1" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
-                        <div class="admin-field"><label>Показывать</label><select name="active">${renderOptions([["true", "Да"], ["false", "Нет"]], String(product?.active ?? true))}</select></div>
+                    <div class="admin-form-section">
+                        <div class="admin-form-section-title">Упаковка и цены</div>
+                        <div class="admin-price-grid admin-price-grid-head">
+                            <span>Объём / упаковка</span>
+                            <span>Ед.</span>
+                            <span>Цена</span>
+                            <span>Старая цена</span>
+                            <span>Мин. шаг</span>
+                        </div>
+                        <div class="admin-price-grid">
+                            <input name="packageDescription" value="${escapeAttr(product?.packageDescription || "")}" placeholder="4×5 л">
+                            <select name="packageType">${renderOptions([["", "—"], ["канистра", "Канистра"], ["коробка", "Коробка"], ["мешок", "Мешок"], ["п.е.", "П.е."], ["тонна", "Тонна"]], product?.packageType || "")}</select>
+                            <input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239">
+                            <input name="oldPrice" type="number" min="0" step="0.01" value="${escapeAttr(product?.oldPrice ?? "")}" placeholder="2890">
+                            <input name="orderStep" type="number" min="1" step="1" value="${escapeAttr(product?.orderStep ?? 1)}" placeholder="1">
+                        </div>
+                        <div class="admin-form-row">
+                            <div class="admin-field"><label>Минимум</label><input name="minOrderQuantity" type="number" min="1" step="1" value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
+                            <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="1" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
+                        </div>
                     </div>
-                    <div class="admin-form-row">
-                        <div class="admin-field"><label>Тип упаковки</label><select name="packageType">${renderOptions([["", "Не выбрано"], ["канистра", "Канистра"], ["коробка", "Коробка"], ["мешок", "Мешок"], ["п.е.", "П.е."], ["тонна", "Тонна"]], product?.packageType || "")}</select></div>
-                        <div class="admin-field"><label>Упаковка / объём</label><input name="packageDescription" value="${escapeAttr(product?.packageDescription || "")}"></div>
+                    <div class="admin-form-section">
+                        <div class="admin-form-section-title">Дополнительно</div>
+                        <div class="admin-form-row">
+                            <div class="admin-field"><label>Культуры</label><input name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"></div>
+                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" value="${escapeAttr((product?.tags || []).join(", "))}"></div>
+                        </div>
+                        <div class="admin-field"><label>Показывать в каталоге</label><select name="active">${renderOptions([["true", "Да"], ["false", "Нет"]], String(product?.active ?? true))}</select></div>
                     </div>
-                    <div class="admin-form-row">
-                        <div class="admin-field"><label>Минимальный шаг</label><input name="orderStep" type="number" min="1" step="1" value="${escapeAttr(product?.orderStep ?? 1)}"></div>
-                        <div class="admin-field"><label>Минимум</label><input name="minOrderQuantity" type="number" min="1" step="1" value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
-                    </div>
-                    <div class="admin-field"><label>Описание</label><textarea name="description">${escapeHtml(product?.description || "")}</textarea></div>
-                    <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
-                    <div class="admin-field"><label>Культуры</label><input name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"></div>
-                    <div class="admin-field"><label>Назначение</label><input name="tags" value="${escapeAttr((product?.tags || []).join(", "))}"></div>
                     <div class="admin-actions">
                         ${product ? `<button type="button" class="ghost-btn" data-action="delete-admin-product" data-product-id="${product.id}">Удалить</button>` : ""}
                         <button type="button" class="ghost-btn" data-action="close-admin-product">Отмена</button>
@@ -1064,7 +1379,7 @@ function renderAdminManufacturerModal() {
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-manufacturer-modal"></div>
-            <div class="modal-sheet">
+            <div class="modal-sheet modal-sheet-compact">
                 <div class="modal-head">
                     <div class="modal-title-wrap"><div class="modal-title">${state.admin.manufacturerModal.id ? "Редактировать производителя" : "Добавить производителя"}</div></div>
                     <button class="modal-close" data-action="close-manufacturer-modal">×</button>
@@ -1092,35 +1407,49 @@ function renderAdminOrderModal() {
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-order"></div>
-            <div class="modal-sheet">
+            <div class="modal-sheet modal-sheet-wide">
                 <div class="modal-head">
                     <div class="modal-title-wrap">
-                        <div class="modal-title">${escapeHtml(order.publicCode)}</div>
+                        <div class="modal-title">Заявка ${escapeHtml(order.publicCode)}</div>
                         <div class="modal-subtitle">${escapeHtml(order.statusLabel)}</div>
                     </div>
                     <button class="modal-close" data-action="close-admin-order">×</button>
                 </div>
-                <div class="product-detail-body">
-                    <div class="summary-card">
-                        <div class="summary-row"><span>Клиент</span><strong>${escapeHtml(order.customerName || "")}</strong></div>
-                        <div class="summary-row"><span>Хозяйство</span><span>${escapeHtml(order.customerFarmName || "—")}</span></div>
-                        <div class="summary-row"><span>ИНН</span><span>${escapeHtml(order.customerInn || "—")}</span></div>
-                        <div class="summary-row"><span>Телефон</span><span>${escapeHtml(order.customerPhone || "")}</span></div>
-                        <div class="summary-row"><span>Email</span><span>${escapeHtml(order.customerEmail || "—")}</span></div>
-                        <div class="summary-row"><span>Адрес</span><span>${escapeHtml(order.deliveryAddress || "—")}</span></div>
-                        <div class="summary-row"><span>Комментарий</span><span>${escapeHtml(order.comment || "—")}</span></div>
-                    </div>
-                    <div class="summary-card">
-                        ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity)}</strong></div>`).join("")}
-                        <div class="summary-row"><strong>Итого</strong><strong>${formatPrice(order.totalPrice || 0)}</strong></div>
+                <div class="admin-order-modal-body">
+                    <div class="admin-order-grid">
+                        <div class="summary-card">
+                            <div class="admin-block-title">Клиент</div>
+                            <div class="summary-row"><span>Организация / ФИО</span><strong>${escapeHtml(order.customerName || "")}</strong></div>
+                            <div class="summary-row"><span>Хозяйство</span><span>${escapeHtml(order.customerFarmName || "—")}</span></div>
+                            <div class="summary-row"><span>ИНН</span><span>${escapeHtml(order.customerInn || "—")}</span></div>
+                            <div class="summary-row"><span>Телефон</span><span>${escapeHtml(order.customerPhone || "")}</span></div>
+                            <div class="summary-row"><span>Email</span><span>${escapeHtml(order.customerEmail || "—")}</span></div>
+                            <div class="summary-row"><span>Адрес</span><span>${escapeHtml(order.deliveryAddress || "—")}</span></div>
+                            <div class="summary-row"><span>Комментарий</span><span>${escapeHtml(order.comment || "—")}</span></div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="admin-block-title">Состав и сумма</div>
+                            ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity)}</strong></div>`).join("")}
+                            <div class="summary-row"><span>Дата</span><strong>${formatDate(order.createdAt)}</strong></div>
+                            <div class="summary-row"><span>Статус</span>${renderAdminStatusBadge(order.status, order.statusLabel)}</div>
+                            <div class="summary-row"><strong>Итого</strong><strong>${formatPrice(order.totalPrice || 0)}</strong></div>
+                        </div>
                     </div>
                     ${(order.attachments || []).length ? `
-                        <div class="summary-card">
+                        <div class="summary-card admin-attachments-card">
                             <strong>Прикреплённые реквизиты</strong>
-                            ${(order.attachments || []).map(file => `<a class="link-tile" href="${escapeAttr(file.downloadUrl)}" target="_blank"><div class="link-tile-text"><strong>${escapeHtml(file.originalName || file.storedName)}</strong></div><span class="cell-arrow">›</span></a>`).join("")}
+                            ${(order.attachments || []).map(file => `
+                                <a class="link-tile" href="${escapeAttr(file.downloadUrl)}" target="_blank">
+                                    <div class="link-tile-text">
+                                        <strong>${escapeHtml(file.originalName || file.storedName)}</strong>
+                                        <p>Реквизиты клиента</p>
+                                    </div>
+                                    <span class="admin-table-btn">Скачать</span>
+                                </a>
+                            `).join("")}
                         </div>
                     ` : ""}
-                    <div class="admin-actions">
+                    <div class="admin-actions admin-actions-panel">
                         ${renderOrderStatusActions(order)}
                     </div>
                 </div>
@@ -1132,17 +1461,186 @@ function renderAdminOrderModal() {
 function renderOrderStatusActions(order) {
     if (order.status === "NEW") {
         return `
-            <button class="ghost-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="CANCELLED">Отменить заявку</button>
+            <button class="ghost-btn danger" data-action="set-order-status" data-order-id="${order.id}" data-status="CANCELLED">Отменить заявку</button>
             <button class="primary-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="IN_PROGRESS">Принять → В работе</button>
         `;
     }
     if (order.status === "IN_PROGRESS") {
         return `
-            <button class="ghost-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="CANCELLED">Отменить заявку</button>
+            <button class="ghost-btn danger" data-action="set-order-status" data-order-id="${order.id}" data-status="CANCELLED">Отменить заявку</button>
             <button class="primary-btn" data-action="set-order-status" data-order-id="${order.id}" data-status="COMPLETED">Отметить как оплачен</button>
         `;
     }
     return `<button class="secondary-btn" disabled>Заявка завершена</button>`;
+}
+
+function renderAdminCustomerModal() {
+    if (!state.admin.customerModal.open) return "";
+    const customer = state.admin.customers.find(item => String(item.maxUserId) === String(state.admin.customerModal.maxUserId));
+    if (!customer) return "";
+    const draft = customer.draftCheckout || {};
+    const attachments = Array.isArray(draft.attachments) ? draft.attachments : [];
+    const recentOrders = Array.isArray(customer.orders) ? customer.orders : [];
+    return `
+        <div class="modal">
+            <div class="modal-backdrop" data-action="close-admin-customer"></div>
+            <div class="modal-sheet modal-sheet-wide">
+                <div class="modal-head">
+                    <div class="modal-title-wrap">
+                        <div class="modal-title">${escapeHtml(customer.displayName || "Пользователь MAX")}</div>
+                        <div class="modal-subtitle">${customer.username ? `@${escapeHtml(customer.username)}` : `MAX ID ${customer.maxUserId}`}</div>
+                    </div>
+                    <button class="modal-close" data-action="close-admin-customer">×</button>
+                </div>
+                <div class="admin-order-modal-body">
+                    <div class="admin-inline-badges">
+                        ${renderAdminStatusBadge("INFO", `Последняя активность: ${formatDate(customer.lastSeenAt)}`)}
+                        ${customer.draftFilled ? renderAdminStatusBadge("NEW", "Есть черновик заявки") : renderAdminStatusBadge("HIDDEN", "Черновика нет")}
+                        ${customer.cartItemsCount ? renderAdminStatusBadge("IN_PROGRESS", `Корзина: ${customer.cartItemsCount} поз.`) : renderAdminStatusBadge("HIDDEN", "Корзина пуста")}
+                    </div>
+                    <div class="admin-customer-grid">
+                        <div class="summary-card">
+                            <div class="admin-block-title">Профиль клиента</div>
+                            <div class="summary-row"><span>Имя в MAX</span><strong>${escapeHtml(customer.displayName || "Пользователь MAX")}</strong></div>
+                            <div class="summary-row"><span>Username</span><span>${escapeHtml(customer.username || "—")}</span></div>
+                            <div class="summary-row"><span>Телефон</span><span>${escapeHtml(customer.contactPhone || "—")}</span></div>
+                            <div class="summary-row"><span>Email</span><span>${escapeHtml(customer.contactEmail || "—")}</span></div>
+                            <div class="summary-row"><span>Организация / ФИО</span><span>${escapeHtml(customer.organization || "—")}</span></div>
+                            <div class="summary-row"><span>Хозяйство</span><span>${escapeHtml(customer.farmName || "—")}</span></div>
+                            <div class="summary-row"><span>ИНН</span><span>${escapeHtml(customer.inn || "—")}</span></div>
+                            <div class="summary-row"><span>Адрес</span><span>${escapeHtml(customer.deliveryAddress || "—")}</span></div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="admin-block-title">Корзина и заказы</div>
+                            <div class="summary-row"><span>Позиции в корзине</span><strong>${customer.cartItemsCount || 0}</strong></div>
+                            <div class="summary-row"><span>Единиц в корзине</span><strong>${customer.cartUnits || 0}</strong></div>
+                            <div class="summary-row"><span>Примерная сумма</span><strong>${formatCustomerCartTotal(customer)}</strong></div>
+                            <div class="summary-row"><span>Всего заказов</span><strong>${customer.ordersCount || 0}</strong></div>
+                            <div class="summary-row"><span>Оплаченных</span><strong>${customer.completedOrdersCount || 0}</strong></div>
+                            <div class="summary-row"><span>Последний заказ</span><span>${escapeHtml(customer.latestOrderCode || "—")}</span></div>
+                        </div>
+                    </div>
+                    <div class="admin-customer-grid">
+                        <div class="summary-card">
+                            <div class="admin-block-title">Черновик заявки</div>
+                            <div class="admin-list-stack compact">
+                                <span><strong>Организация:</strong> ${escapeHtml(draft.organization || "—")}</span>
+                                <span><strong>Хозяйство:</strong> ${escapeHtml(draft.farmName || "—")}</span>
+                                <span><strong>ИНН:</strong> ${escapeHtml(draft.inn || "—")}</span>
+                                <span><strong>Телефон:</strong> ${escapeHtml(draft.phone || "—")}</span>
+                                <span><strong>Email:</strong> ${escapeHtml(draft.email || "—")}</span>
+                                <span><strong>Адрес:</strong> ${escapeHtml(draft.address || "—")}</span>
+                                <span><strong>Комментарий:</strong> ${escapeHtml(draft.comment || "—")}</span>
+                            </div>
+                            ${attachments.length ? `
+                                <div class="admin-customer-files">
+                                    ${attachments.map(file => `
+                                        <a class="link-tile" href="${escapeAttr(file.downloadUrl)}" target="_blank">
+                                            <div class="link-tile-text">
+                                                <strong>${escapeHtml(file.originalName || file.storedName || "Файл")}</strong>
+                                                <p>Черновик клиента</p>
+                                            </div>
+                                            <span class="admin-table-btn">Скачать</span>
+                                        </a>
+                                    `).join("")}
+                                </div>
+                            ` : `<div class="search-muted">Реквизиты в черновик не прикреплялись.</div>`}
+                        </div>
+                        <div class="summary-card">
+                            <div class="admin-block-title">Корзина клиента</div>
+                            ${customer.cartItems?.length ? `
+                                <div class="admin-customer-cart-list">
+                                    ${customer.cartItems.map(item => `
+                                        <div class="summary-row">
+                                            <span>${escapeHtml(item.name)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "")}</span>
+                                            <strong>${item.priceOnRequest ? "По запросу" : formatPrice(item.totalPrice || 0)}</strong>
+                                        </div>
+                                    `).join("")}
+                                </div>
+                            ` : `<div class="search-muted">Корзина пуста.</div>`}
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="admin-block-title">Последние заявки</div>
+                        ${recentOrders.length ? `
+                            <div class="admin-customer-order-list">
+                                ${recentOrders.map(order => `
+                                    <div class="admin-customer-order-row">
+                                        <div>
+                                            <strong>${escapeHtml(order.publicCode)}</strong>
+                                            <div class="search-muted">${escapeHtml(summarizeOrderItems(order.items || []))}</div>
+                                        </div>
+                                        <div class="admin-list-stack compact end">
+                                            ${renderAdminStatusBadge(order.status, order.statusLabel)}
+                                            <span class="search-muted">${formatDate(order.createdAt)}</span>
+                                        </div>
+                                    </div>
+                                `).join("")}
+                            </div>
+                        ` : `<div class="search-muted">Пока нет оформленных заказов.</div>`}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminKpiCard(icon, value, label, hint, tone = "") {
+    return `
+        <article class="admin-kpi-card ${tone ? `tone-${tone}` : ""}">
+            <span class="admin-kpi-icon">${icon}</span>
+            <strong>${escapeHtml(value)}</strong>
+            <span>${escapeHtml(label)}</span>
+            <small>${escapeHtml(hint || "")}</small>
+        </article>
+    `;
+}
+
+function renderAdminMiniStat(value, label, tone = "") {
+    return `
+        <div class="admin-mini-stat ${tone ? `tone-${tone}` : ""}">
+            <strong>${escapeHtml(value)}</strong>
+            <span>${escapeHtml(label)}</span>
+        </div>
+    `;
+}
+
+function renderAdminStatusBadge(status, label) {
+    const normalized = String(status || "").toUpperCase();
+    const tone = {
+        NEW: "warning",
+        INFO: "info",
+        IN_PROGRESS: "info",
+        COMPLETED: "success",
+        CANCELLED: "danger",
+        ACTIVE: "success",
+        HIDDEN: "muted",
+    }[normalized] || "muted";
+    return `<span class="admin-status admin-status-${tone}">${escapeHtml(label || profileStatusLabel(normalized))}</span>`;
+}
+
+function summarizeOrderItems(items) {
+    const safeItems = Array.isArray(items) ? items : [];
+    if (!safeItems.length) {
+        return "—";
+    }
+    const preview = safeItems.slice(0, 2).map(item => `${item.productName} × ${formatQuantity(item.quantity)}`);
+    return safeItems.length > 2 ? `${preview.join(", ")} + ещё ${safeItems.length - 2}` : preview.join(", ");
+}
+
+function formatCustomerCartTotal(customer) {
+    const total = Number(customer?.cartTotal || 0);
+    if (!customer?.cartItemsCount) {
+        return "—";
+    }
+    if (customer?.cartContainsRequestPrice && total <= 0) {
+        return "По запросу";
+    }
+    return `${customer?.cartContainsRequestPrice ? "~" : ""}${formatPrice(total)}`;
+}
+
+function isAdminWorkspaceActive() {
+    return state.nav === "profile" && Boolean(state.profile?.admin);
 }
 
 function handleClick(event) {
@@ -1252,6 +1750,8 @@ function handleClick(event) {
     }
     if (action === "remove-attachment") {
         state.checkout.uploaded.splice(Number(button.dataset.index), 1);
+        state.checkout.touched = true;
+        scheduleClientStateSync();
         render();
         return;
     }
@@ -1304,8 +1804,18 @@ function handleClick(event) {
         render();
         return;
     }
+    if (action === "admin-exit") {
+        state.nav = "catalog";
+        state.catalog.section = "";
+        state.catalog.query = "";
+        render();
+        return;
+    }
     if (action === "admin-menu") {
         state.admin.menu = button.dataset.menu;
+        if (state.admin.menu === "catalog" && !state.admin.catalogSection) {
+            state.admin.catalogSection = getAdminSectionTree()[0]?.name || "";
+        }
         render();
         return;
     }
@@ -1328,6 +1838,10 @@ function handleClick(event) {
     }
     if (action === "delete-admin-product") {
         deleteAdminProduct(Number(button.dataset.productId)).catch(handleActionError);
+        return;
+    }
+    if (action === "toggle-admin-product-active") {
+        toggleAdminProductVisibility(Number(button.dataset.productId)).catch(handleActionError);
         return;
     }
     if (action === "open-manufacturer-modal") {
@@ -1354,13 +1868,28 @@ function handleClick(event) {
         render();
         return;
     }
+    if (action === "open-admin-customer") {
+        state.admin.customerModal = { open: true, maxUserId: button.dataset.maxUserId };
+        render();
+        return;
+    }
     if (action === "close-admin-order") {
         state.admin.orderModal = { open: false, orderId: null };
         render();
         return;
     }
+    if (action === "close-admin-customer") {
+        state.admin.customerModal = { open: false, maxUserId: null };
+        render();
+        return;
+    }
     if (action === "set-order-status") {
         updateOrderStatus(Number(button.dataset.orderId), button.dataset.status).catch(handleActionError);
+        return;
+    }
+    if (action === "reset-admin-order-filters") {
+        state.admin.orderFilters = { search: "", status: "ALL", from: "", to: "" };
+        render();
         return;
     }
     if (action === "send-broadcast") {
@@ -1379,9 +1908,11 @@ function handleInput(event) {
     if (field.startsWith("checkout-")) {
         const key = field.replace("checkout-", "");
         state.checkout.form[key] = event.target.value;
+        state.checkout.touched = true;
         if (state.checkout.errors[key]) {
             delete state.checkout.errors[key];
         }
+        scheduleClientStateSync();
         return;
     }
     if (field === "admin-product-search") {
@@ -1391,6 +1922,11 @@ function handleInput(event) {
     }
     if (field === "admin-order-search") {
         state.admin.orderFilters.search = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-customer-search") {
+        state.admin.customerSearch = event.target.value;
         renderPreservingFocus();
         return;
     }
@@ -1429,8 +1965,12 @@ function handleChange(event) {
         toggleDraftFilterArray("manufacturers", event.target.value, event.target.checked);
         return;
     }
-    if (field === "filter-category") {
-        toggleDraftFilterArray("categories", event.target.value, event.target.checked);
+    if (field === "filter-culture") {
+        toggleDraftFilterArray("cultures", event.target.value, event.target.checked);
+        return;
+    }
+    if (field === "filter-subcategory") {
+        toggleDraftFilterArray("subcategories", event.target.value, event.target.checked);
         return;
     }
     if (field === "admin-product-status") {
@@ -1501,6 +2041,7 @@ async function submitOrder() {
     state.cart = [];
     saveCart();
     state.checkout.submitting = false;
+    state.checkout.touched = false;
     state.checkout.open = true;
     state.checkout.uploaded = [];
     state.successOrderCode = response.orderCode || "";
@@ -1527,6 +2068,8 @@ async function uploadCheckoutAttachments(fileList) {
         });
         state.checkout.uploaded.push(uploaded);
     }
+    state.checkout.touched = true;
+    scheduleClientStateSync();
     render();
 }
 
@@ -1581,10 +2124,56 @@ async function saveAdminProduct(formData) {
     render();
 }
 
+function buildAdminProductPayload(product, overrides = {}) {
+    return {
+        externalId: product.externalId || "",
+        sourceFile: product.sourceFile || "",
+        sku: product.sku || "",
+        name: product.name || "",
+        description: product.description || "",
+        brand: product.brand || "",
+        category: product.category || "",
+        subcategory: product.subcategory || "",
+        itemType: product.itemType || "",
+        unitName: product.unitName || "шт",
+        price: product.price ?? null,
+        stockQuantity: product.stockQuantity ?? null,
+        packageType: product.packageType || "",
+        packageDescription: product.packageDescription || "",
+        minOrderQuantity: product.minOrderQuantity ?? 1,
+        orderStep: product.orderStep ?? 1,
+        cultures: (product.cultures || []).join(", "),
+        purposes: (product.purposes || []).join(", "),
+        tags: (product.tags || []).join(", "),
+        filterMap: {
+            ...(product.filterMap || {}),
+            activeIngredient: product.activeIngredient || product.filterMap?.activeIngredient || "",
+            oldPrice: product.oldPrice ?? product.filterMap?.oldPrice ?? "",
+        },
+        rawData: product.rawData || {},
+        active: Boolean(product.active),
+        ...overrides,
+    };
+}
+
 async function deleteAdminProduct(productId) {
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
     await refreshCatalogData();
     state.admin.productEditor = { open: false, productId: null };
+    render();
+}
+
+async function toggleAdminProductVisibility(productId) {
+    const product = state.admin.products.find(item => item.id === productId);
+    if (!product) {
+        return;
+    }
+    await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildAdminProductPayload(product, { active: !product.active })),
+    });
+    await refreshCatalogData();
     render();
 }
 
@@ -1724,15 +2313,14 @@ function applyCatalogFilters(products) {
     if (applied.sections.length) {
         filtered = filtered.filter(product => applied.sections.includes(product.category || "Прочее"));
     }
+    if (applied.cultures.length) {
+        filtered = filtered.filter(product => (product.cultures || []).some(item => applied.cultures.includes(item)));
+    }
     if (applied.manufacturers.length) {
         filtered = filtered.filter(product => applied.manufacturers.includes(product.brand));
     }
-    if (applied.categories.length) {
-        filtered = filtered.filter(product => {
-            const direct = product.subcategory || product.itemType || "Без категории";
-            const parent = product.category || "Прочее";
-            return applied.categories.includes(parent) || applied.categories.includes(`${parent}::${direct}`);
-        });
+    if (applied.subcategories.length) {
+        filtered = filtered.filter(product => applied.subcategories.includes(product.subcategory || product.itemType || "Без категории"));
     }
     if (applied.priceMin) {
         filtered = filtered.filter(product => product.price != null && Number(product.price) >= Number(applied.priceMin));
@@ -1785,6 +2373,14 @@ function getSectionVisual(name) {
     };
 }
 
+function getSectionDisplayName(name) {
+    const normalized = normalize(name);
+    if (normalized.includes("пестиц")) {
+        return "СЗР";
+    }
+    return name || "Прочее";
+}
+
 function buildCategoriesTree(products) {
     const tree = {};
     products.forEach(product => {
@@ -1802,19 +2398,36 @@ function getAdminSectionTree() {
     state.admin.products.forEach(product => {
         const section = product.category || "Прочее";
         const child = product.subcategory || product.itemType || "Без категории";
-        if (!grouped[section]) grouped[section] = { name: section, count: 0, children: [] };
+        if (!grouped[section]) {
+            grouped[section] = {
+                name: section,
+                count: 0,
+                visual: getSectionVisual(section),
+                childrenMap: {},
+            };
+        }
         grouped[section].count += 1;
-        if (!grouped[section].children.includes(child)) grouped[section].children.push(child);
+        grouped[section].childrenMap[child] = (grouped[section].childrenMap[child] || 0) + 1;
     });
-    return Object.values(grouped).sort((a, b) => a.name.localeCompare(b.name, "ru", { sensitivity: "base" }));
+    return Object.values(grouped)
+        .map(section => ({
+            name: section.name,
+            count: section.count,
+            visual: section.visual,
+            children: Object.entries(section.childrenMap)
+                .map(([name, count]) => ({ name, count }))
+                .sort((left, right) => left.name.localeCompare(right.name, "ru", { sensitivity: "base" })),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ru", { sensitivity: "base" }));
 }
 
 function getAdminFilteredProducts() {
     const search = normalize(state.admin.catalogSearch);
+    const effectiveSection = state.admin.catalogSection || getAdminSectionTree()[0]?.name || "";
     return state.admin.products.filter(product => {
         if (state.admin.catalogStatus === "ACTIVE" && !product.active) return false;
         if (state.admin.catalogStatus === "HIDDEN" && product.active) return false;
-        if (state.admin.catalogSection && (product.category || "Прочее") !== state.admin.catalogSection) return false;
+        if (effectiveSection && (product.category || "Прочее") !== effectiveSection) return false;
         if (state.admin.catalogCategory && (product.subcategory || product.itemType || "Без категории") !== state.admin.catalogCategory) return false;
         if (search && !normalize([product.name, product.brand, product.category, product.subcategory].join(" ")).includes(search)) return false;
         return true;
@@ -1830,6 +2443,24 @@ function getFilteredAdminOrders() {
         if (to && String(order.createdAt).slice(0, 10) > to) return false;
         if (normalizedSearch && !normalize([order.customerName, order.customerPhone].join(" ")).includes(normalizedSearch)) return false;
         return true;
+    });
+}
+
+function getFilteredAdminCustomers() {
+    const search = normalize(state.admin.customerSearch);
+    return state.admin.customers.filter(customer => {
+        if (!search) {
+            return true;
+        }
+        return normalize([
+            customer.displayName,
+            customer.username,
+            customer.contactPhone,
+            customer.contactEmail,
+            customer.organization,
+            customer.inn,
+            customer.maxUserId,
+        ].join(" ")).includes(search);
     });
 }
 
@@ -1961,22 +2592,28 @@ function closeProductModal() {
 
 function hydrateCheckoutFromProfile() {
     if (!state.profile) return;
-    state.checkout.form.phone = state.profile.phone || "";
-    state.checkout.form.email = state.profile.email || "";
-    state.checkout.form.organization = state.profile.displayName || "";
-    state.checkout.form.farmName = state.profile.farmName || "";
-    state.checkout.form.inn = state.profile.inn || "";
+    const draft = state.profile.draftCheckout || {};
+    state.checkout.form.phone = draft.phone || state.profile.phone || "";
+    state.checkout.form.email = draft.email || state.profile.email || "";
+    state.checkout.form.organization = draft.organization || "";
+    state.checkout.form.farmName = draft.farmName || state.profile.farmName || "";
+    state.checkout.form.inn = draft.inn || state.profile.inn || "";
+    state.checkout.form.address = draft.address || "";
+    state.checkout.form.comment = draft.comment || "";
+    state.checkout.uploaded = Array.isArray(draft.attachments) ? draft.attachments : [];
+    state.checkout.touched = hasCheckoutDraftContent(draft);
 }
 
 function emptyFilters() {
-    return { sections: [], manufacturers: [], categories: [], priceMin: "", priceMax: "" };
+    return { sections: [], cultures: [], manufacturers: [], subcategories: [], priceMin: "", priceMax: "" };
 }
 
 function cloneFilters(filters) {
     return {
         sections: [...(filters.sections || [])],
+        cultures: [...(filters.cultures || [])],
         manufacturers: [...(filters.manufacturers || [])],
-        categories: [...(filters.categories || [])],
+        subcategories: [...(filters.subcategories || [])],
         priceMin: filters.priceMin || "",
         priceMax: filters.priceMax || "",
     };
@@ -2080,6 +2717,89 @@ function saveStorage(key, value) {
 
 function saveCart() {
     saveStorage("alga-cart", state.cart);
+    scheduleClientStateSync();
+}
+
+function scheduleClientStateSync(delay = 700) {
+    if (!state.maxUserId) {
+        return;
+    }
+    window.clearTimeout(clientStateSyncTimer);
+    clientStateSyncTimer = window.setTimeout(() => {
+        syncClientState().catch(error => console.warn("Client state sync failed", error));
+    }, delay);
+}
+
+async function syncClientState() {
+    if (!state.maxUserId) {
+        return;
+    }
+    await fetchJson("/api/profile/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildClientStatePayload()),
+    });
+    if (state.profile?.admin) {
+        state.admin.customers = await fetchJson(`/api/admin/customers?maxUserId=${state.maxUserId}`);
+        if (state.admin.menu === "customers" || state.admin.customerModal.open) {
+            render();
+        }
+    }
+}
+
+function buildClientStatePayload() {
+    return {
+        maxUserId: state.maxUserId,
+        displayName: resolveClientDisplayName(),
+        username: resolveClientUsername(),
+        cartItems: state.cart.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+        })),
+        checkoutDraft: state.checkout.touched
+            ? {
+                organization: state.checkout.form.organization.trim(),
+                farmName: state.checkout.form.farmName.trim(),
+                inn: state.checkout.form.inn.trim(),
+                phone: state.checkout.form.phone.trim(),
+                email: state.checkout.form.email.trim(),
+                address: state.checkout.form.address.trim(),
+                comment: state.checkout.form.comment.trim(),
+                attachments: state.checkout.uploaded || [],
+            }
+            : {},
+    };
+}
+
+function resolveClientDisplayName() {
+    return [
+        initDataUnsafe?.user?.name,
+        [initDataUnsafe?.user?.first_name, initDataUnsafe?.user?.last_name].filter(Boolean).join(" ").trim(),
+        state.profile?.displayName,
+    ].find(value => String(value || "").trim()) || "Пользователь MAX";
+}
+
+function resolveClientUsername() {
+    return [
+        initDataUnsafe?.user?.username,
+        state.profile?.username,
+    ].find(value => String(value || "").trim()) || "";
+}
+
+function hasCheckoutDraftContent(draft) {
+    if (!draft) {
+        return false;
+    }
+    return Boolean(
+        draft.organization ||
+        draft.farmName ||
+        draft.inn ||
+        draft.phone ||
+        draft.email ||
+        draft.address ||
+        draft.comment ||
+        (Array.isArray(draft.attachments) && draft.attachments.length)
+    );
 }
 
 function resolveMaxUserId() {

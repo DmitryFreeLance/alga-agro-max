@@ -1,17 +1,20 @@
 package ru.algaagro.maxapp.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -62,6 +65,26 @@ public class AiClassificationService {
             }
         }
         return results;
+    }
+
+    public List<ExcelImportService.ImportRow> extractRowsFromOriginalFile(String fileName, byte[] bytes) {
+        if (!appProperties.getAi().isDirectFileFallbackEnabled() || bytes == null || bytes.length == 0) {
+            return List.of();
+        }
+        try {
+            UploadedFile uploadedFile = uploadFileToKie(fileName, bytes);
+            if (uploadedFile == null || uploadedFile.downloadUrl().isBlank()) {
+                return List.of();
+            }
+            String rawResponse = callGeminiFileExtraction(fileName, uploadedFile);
+            if (rawResponse == null || rawResponse.isBlank()) {
+                return List.of();
+            }
+            return parseImportedRows(rawResponse, fileName);
+        } catch (Exception e) {
+            log.warn("Direct file extraction failed for {}: {}", fileName, e.getMessage());
+            return List.of();
+        }
     }
 
     private String callKie(String prompt) {
@@ -168,6 +191,357 @@ public class AiClassificationService {
             log.warn("Gemini request parsing failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private UploadedFile uploadFileToKie(String fileName, byte[] bytes) {
+        String apiKey = appProperties.getAi().getKieGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            apiKey = appProperties.getAi().getKieApiKey();
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            return null;
+        }
+        String boundary = "----AlgaAgroBoundary" + UUID.randomUUID().toString().replace("-", "");
+        String mimeType = detectMimeType(fileName);
+        byte[] body = buildMultipartBody(boundary, fileName, mimeType, bytes);
+        String baseUrl = appProperties.getAi().getKieUploadBaseUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            baseUrl = appProperties.getAi().getKieBaseUrl();
+        }
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/api/v1/file-stream-upload"))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .timeout(Duration.ofSeconds(appProperties.getAi().getGeminiTimeoutSeconds()))
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() / 100 != 2) {
+                log.warn("KIE file upload failed. status={}, body={}",
+                        response.statusCode(),
+                        TextUtils.trimTo(response.body(), 1200));
+                return null;
+            }
+            JsonNode json = jsonHelper.readTree(response.body());
+            String downloadUrl = firstText(json,
+                    "data.downloadUrl",
+                    "data.url",
+                    "downloadUrl",
+                    "url");
+            if (downloadUrl.isBlank()) {
+                log.warn("KIE file upload returned no downloadUrl. body={}", TextUtils.trimTo(response.body(), 1200));
+                return null;
+            }
+            String fileId = firstText(json, "data.fileId", "data.id", "fileId", "id");
+            return new UploadedFile(fileId, downloadUrl, mimeType);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("KIE file upload interrupted: {}", e.getMessage());
+            return null;
+        } catch (IOException e) {
+            log.warn("KIE file upload failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String callGeminiFileExtraction(String fileName, UploadedFile uploadedFile) {
+        String apiKey = appProperties.getAi().getKieGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            return null;
+        }
+        Map<String, Object> body = Map.of(
+                "model", appProperties.getAi().getKieGeminiModel(),
+                "messages", List.of(
+                        Map.of("role", "system", "content", "Return only JSON, no markdown, no explanation."),
+                        Map.of(
+                                "role", "user",
+                                "content", List.of(
+                                        Map.of("type", "text", "text", buildFileExtractionPrompt(fileName)),
+                                        Map.of("type", "image_url", "image_url", Map.of("url", uploadedFile.downloadUrl()))
+                                )
+                        )
+                ),
+                "stream", false
+        );
+        try {
+            String url = appProperties.getAi().getKieBaseUrl() + appProperties.getAi().getKieGeminiEndpoint();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(appProperties.getAi().getGeminiTimeoutSeconds()))
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonHelper.writeValue(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() / 100 != 2) {
+                log.warn("Gemini file extraction failed. status={}, body={}",
+                        response.statusCode(),
+                        TextUtils.trimTo(response.body(), 1200));
+                return null;
+            }
+            JsonNode json = jsonHelper.readTree(response.body());
+            JsonNode content = json.path("choices").path(0).path("message").path("content");
+            if (content.isTextual() && !content.asText().isBlank()) {
+                return content.asText();
+            }
+            if (content.isArray()) {
+                String extracted = extractTextFromContentArray(content);
+                if (!extracted.isBlank()) {
+                    return extracted;
+                }
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Gemini file extraction interrupted: {}", e.getMessage());
+            return null;
+        } catch (IOException e) {
+            log.warn("Gemini file extraction failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private byte[] buildMultipartBody(String boundary, String fileName, String mimeType, byte[] bytes) {
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + safeFileName(fileName) + "\"\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            output.write(("Content-Type: " + mimeType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write(bytes);
+            output.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            output.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+            return output.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to build multipart request", e);
+        }
+    }
+
+    private String safeFileName(String fileName) {
+        return (fileName == null || fileName.isBlank() ? "upload.bin" : fileName)
+                .replace("\"", "")
+                .replace("\r", "")
+                .replace("\n", "");
+    }
+
+    private String detectMimeType(String fileName) {
+        String normalized = fileName == null ? "" : fileName.toLowerCase();
+        if (normalized.endsWith(".xlsx")) {
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        }
+        if (normalized.endsWith(".xlsm")) {
+            return "application/vnd.ms-excel.sheet.macroEnabled.12";
+        }
+        if (normalized.endsWith(".xls")) {
+            return "application/vnd.ms-excel";
+        }
+        if (normalized.endsWith(".docx")) {
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        }
+        if (normalized.endsWith(".doc")) {
+            return "application/msword";
+        }
+        if (normalized.endsWith(".pdf")) {
+            return "application/pdf";
+        }
+        return "application/octet-stream";
+    }
+
+    private String buildFileExtractionPrompt(String fileName) {
+        return """
+                Проанализируй вложенный прайс-лист целиком и верни только JSON без markdown.
+                Это может быть PDF, DOC, DOCX, XLS или XLSX.
+                Нужно извлечь только реальные товарные позиции, без реквизитов компании, приветствий, адресов, сносок и служебного текста.
+
+                Формат ответа:
+                {
+                  "rows": [
+                    {
+                      "name": "название товара",
+                      "section": "раздел или группа",
+                      "brand": "производитель или бренд",
+                      "categoryHint": "Семена|Пестициды|Агропитание|Адъюванты|Прочее",
+                      "subcategoryHint": "подкатегория",
+                      "cultures": ["Пшеница"],
+                      "description": "краткое описание",
+                      "composition": "состав или действующее вещество",
+                      "applicationRate": "норма расхода",
+                      "price": "цена числом или текст По запросу",
+                      "oldPrice": "старая цена если есть",
+                      "unit": "л|кг|шт|т|п.е.|г|мл",
+                      "packaging": "упаковка или фасовка",
+                      "availability": "остаток или наличие",
+                      "rawText": "краткая исходная строка"
+                    }
+                  ]
+                }
+
+                Правила:
+                - Количество rows должно отражать все найденные товары в документе.
+                - Если товар встречается в нескольких вариантах упаковки, можно вернуть несколько rows.
+                - Для семян указывай культуру и сезон, если они видны из документа.
+                - Для СЗР и агропитания указывай раздел, состав, норму расхода и культуры, если они читаются.
+                - Не придумывай данные, которых нет. Если поля нет, оставь пустую строку или пустой массив.
+                - В name пиши чистое товарное наименование.
+                - Исходный файл: %s
+                """.formatted(fileName == null ? "import" : fileName);
+    }
+
+    private List<ExcelImportService.ImportRow> parseImportedRows(String rawResponse, String fileName) {
+        JsonNode rowsNode = extractRowsNode(rawResponse);
+        if (rowsNode == null || !rowsNode.isArray()) {
+            throw new IllegalStateException("File extraction response is not an array");
+        }
+        List<ExcelImportService.ImportRow> rows = new ArrayList<>();
+        int rowNumber = 1;
+        for (JsonNode item : rowsNode) {
+            String name = firstNonBlank(
+                    item.path("name").asText(""),
+                    item.path("normalizedName").asText(""),
+                    item.path("title").asText(""));
+            if (name.isBlank()) {
+                continue;
+            }
+            String section = firstNonBlank(
+                    item.path("section").asText(""),
+                    item.path("categoryHint").asText(""),
+                    item.path("group").asText(""));
+            Map<String, String> columns = new LinkedHashMap<>();
+            putIfNotBlank(columns, "Позиция", name);
+            putIfNotBlank(columns, "Раздел", item.path("categoryHint").asText(""));
+            putIfNotBlank(columns, "Подкатегория", item.path("subcategoryHint").asText(""));
+            putIfNotBlank(columns, "Производитель", item.path("brand").asText(""));
+            putIfNotBlank(columns, "Описание", item.path("description").asText(""));
+            putIfNotBlank(columns, "Состав", item.path("composition").asText(""));
+            putIfNotBlank(columns, "Действующее вещество", item.path("composition").asText(""));
+            putIfNotBlank(columns, "Норма расхода", item.path("applicationRate").asText(""));
+            putIfNotBlank(columns, "Цена", item.path("price").asText(""));
+            putIfNotBlank(columns, "Старая цена", item.path("oldPrice").asText(""));
+            putIfNotBlank(columns, "Ед.изм", item.path("unit").asText(""));
+            putIfNotBlank(columns, "Фасовка", item.path("packaging").asText(""));
+            putIfNotBlank(columns, "Наличие", item.path("availability").asText(""));
+            putIfNotBlank(columns, "Культуры", String.join(", ", readFlexibleStringArray(item.path("cultures"))));
+            putIfNotBlank(columns, "Сырой текст", item.path("rawText").asText(""));
+            rows.add(new ExcelImportService.ImportRow(
+                    fileName + "#AI#" + rowNumber,
+                    fileName,
+                    "AI",
+                    rowNumber,
+                    columns,
+                    name,
+                    section
+            ));
+            rowNumber++;
+        }
+        return rows;
+    }
+
+    private JsonNode extractRowsNode(String rawResponse) {
+        String sanitized = sanitizeResponse(rawResponse);
+        JsonNode root = tryReadJsonNode(sanitized);
+        if (root == null) {
+            String fragment = extractFirstJsonFragment(sanitized);
+            root = tryReadJsonNode(fragment);
+        }
+        if (root == null) {
+            return null;
+        }
+        if (root.isArray()) {
+            return root;
+        }
+        if (root.isObject()) {
+            JsonNode rowsNode = root.path("rows");
+            if (rowsNode.isArray()) {
+                return rowsNode;
+            }
+            JsonNode productsNode = root.path("products");
+            if (productsNode.isArray()) {
+                return productsNode;
+            }
+            JsonNode itemsNode = root.path("items");
+            if (itemsNode.isArray()) {
+                return itemsNode;
+            }
+            JsonNode dataNode = root.path("data");
+            if (dataNode.isArray()) {
+                return dataNode;
+            }
+            if (dataNode.isObject()) {
+                JsonNode nestedRows = dataNode.path("rows");
+                if (nestedRows.isArray()) {
+                    return nestedRows;
+                }
+            }
+            JsonNode choicesContent = root.path("choices").path(0).path("message").path("content");
+            if (choicesContent.isTextual()) {
+                return extractRowsNode(choicesContent.asText());
+            }
+            if (choicesContent.isArray()) {
+                String extracted = extractTextFromContentArray(choicesContent);
+                if (!extracted.isBlank()) {
+                    return extractRowsNode(extracted);
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<String> readFlexibleStringArray(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return List.of();
+        }
+        if (node.isArray()) {
+            return readStringArray(node);
+        }
+        if (node.isTextual()) {
+            String raw = node.asText("");
+            if (raw.isBlank()) {
+                return List.of();
+            }
+            String[] parts = raw.split("[,;|/\\n]");
+            List<String> values = new ArrayList<>();
+            for (String part : parts) {
+                String value = part.trim();
+                if (!value.isBlank()) {
+                    values.add(value);
+                }
+            }
+            return values;
+        }
+        return List.of();
+    }
+
+    private void putIfNotBlank(Map<String, String> columns, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            columns.put(key, value.trim());
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String firstText(JsonNode node, String... paths) {
+        for (String path : paths) {
+            JsonNode current = node;
+            for (String part : path.split("\\.")) {
+                current = current.path(part);
+            }
+            String value = current.asText("");
+            if (!value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private List<ClassificationResult> parseResponse(String rawResponse, List<ExcelImportService.ImportRow> chunk) {
@@ -492,7 +866,7 @@ public class AiClassificationService {
     private String inferCategory(ExcelImportService.ImportRow row) {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
         if (context.contains("пшениц") || context.contains("ячмен") || context.contains("горох")
-                || context.contains("соя") || context.contains("гречих") || context.contains("рапс")
+                || context.contains("соя") || context.contains("гречих") || context.contains("рапс") || context.contains("кукуруз")
                 || context.contains("рожь") || context.contains("тритикал")) {
             if (context.contains("озим") || context.contains("яров") || context.contains("семен") || context.contains("сорт")) {
                 return "Семена";
@@ -506,7 +880,10 @@ public class AiClassificationService {
                 || context.contains("дефицит") || context.contains("аминокислот")) {
             return "Агропитание";
         }
-        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти") || context.contains("протрав")) {
+        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти")
+                || context.contains("протрав") || context.contains("десикант") || context.contains("роденти")
+                || context.contains("репелент") || context.contains("регулятор рост") || context.contains("красител")
+                || context.contains("специальн") && context.contains("назначен")) {
             return "Пестициды";
         }
         return "Прочее";
@@ -516,6 +893,16 @@ public class AiClassificationService {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
         if (context.contains("озим")) return "Озимые";
         if (context.contains("яров")) return "Яровые";
+        if (context.contains("гербиц")) return "Гербициды";
+        if (context.contains("фунгиц")) return "Фунгициды";
+        if (context.contains("инсекти")) return "Инсектициды";
+        if (context.contains("десикант")) return "Десиканты";
+        if (context.contains("протрав")) return "Протравители";
+        if (context.contains("роденти")) return "Родентициды";
+        if (context.contains("репелент")) return "Репеленты";
+        if (context.contains("регулятор рост")) return "Регуляторы роста растений";
+        if (context.contains("красител") && context.contains("сем")) return "Красители семян";
+        if (context.contains("специальн") && context.contains("назначен")) return "Препараты специального назначения";
         if (context.contains("обработк") && context.contains("сем")) return "Биостимуляторы";
         if (context.contains("антистресс")) return "Антистрессанты";
         if (context.contains("npk")) return "NPK-комплексы";
@@ -567,6 +954,18 @@ public class AiClassificationService {
         if (source.contains("cpp")) {
             return "CPP";
         }
+        if (source.contains("баиер") || source.contains("bayer")) {
+            return "Bayer";
+        }
+        if (source.contains("rainbow")) {
+            return "Rainbow";
+        }
+        if (source.contains("кропэкс") || source.contains("cropex")) {
+            return "Кропэкс";
+        }
+        if (source.contains("аэг")) {
+            return "АЭГ";
+        }
         return "";
     }
 
@@ -579,6 +978,7 @@ public class AiClassificationService {
         if (context.contains("соя")) cultures.add("Соя");
         if (context.contains("гречих")) cultures.add("Гречиха");
         if (context.contains("рапс")) cultures.add("Рапс");
+        if (context.contains("кукуруз")) cultures.add("Кукуруза");
         if (context.contains("рожь")) cultures.add("Рожь");
         if (context.contains("тритикал")) cultures.add("Тритикале");
         return new ArrayList<>(cultures);
@@ -611,14 +1011,38 @@ public class AiClassificationService {
     private Map<String, Object> inferFilterMap(ExcelImportService.ImportRow row, List<String> cultures, List<String> tags) {
         Map<String, Object> filterMap = new LinkedHashMap<>();
         if (!cultures.isEmpty()) {
-            filterMap.put("cultureGroup", List.of("зерновые"));
+            filterMap.put("cultures", cultures);
+            filterMap.put("cultureGroup", inferCultureGroups(cultures));
         }
         if (tags.stream().anyMatch(tag -> TextUtils.normalizeToken(tag).contains("озим"))) {
             filterMap.put("season", List.of("Озимые"));
         } else if (tags.stream().anyMatch(tag -> TextUtils.normalizeToken(tag).contains("яров"))) {
             filterMap.put("season", List.of("Яровые"));
         }
+        String subcategory = inferSubcategory(row);
+        if (!subcategory.isBlank()) {
+            filterMap.put("subcategory", List.of(subcategory));
+        }
+        String brand = inferBrand(row);
+        if (!brand.isBlank()) {
+            filterMap.put("manufacturer", List.of(brand));
+        }
         return filterMap;
+    }
+
+    private List<String> inferCultureGroups(List<String> cultures) {
+        LinkedHashSet<String> groups = new LinkedHashSet<>();
+        for (String culture : cultures) {
+            String normalized = TextUtils.normalizeToken(culture);
+            if (normalized.contains("рапс") || normalized.contains("соя")) {
+                groups.add("масличные");
+            } else if (normalized.contains("горох")) {
+                groups.add("бобовые");
+            } else {
+                groups.add("зерновые");
+            }
+        }
+        return new ArrayList<>(groups);
     }
 
     private String firstColumnValue(Map<String, String> columns, String... needles) {
@@ -656,6 +1080,13 @@ public class AiClassificationService {
             List<String> purposes,
             List<String> tags,
             Map<String, Object> filterMap
+    ) {
+    }
+
+    private record UploadedFile(
+            String fileId,
+            String downloadUrl,
+            String mimeType
     ) {
     }
 }

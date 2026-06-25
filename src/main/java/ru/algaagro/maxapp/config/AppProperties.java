@@ -135,6 +135,9 @@ public class AppProperties {
         private String kieGeminiModel = "gemini-3-flash";
         private String kieGeminiEndpoint = "/gemini-3-flash/v1/chat/completions";
         private int geminiTimeoutSeconds = 300;
+        private String kieUploadBaseUrl = "https://api.kie.ai";
+        private boolean directFileFallbackEnabled = true;
+        private int directFileFallbackMinRows = 8;
 
         public String getKieBaseUrl() {
             return kieBaseUrl;
@@ -206,6 +209,30 @@ public class AppProperties {
 
         public void setGeminiTimeoutSeconds(int geminiTimeoutSeconds) {
             this.geminiTimeoutSeconds = geminiTimeoutSeconds;
+        }
+
+        public String getKieUploadBaseUrl() {
+            return kieUploadBaseUrl;
+        }
+
+        public void setKieUploadBaseUrl(String kieUploadBaseUrl) {
+            this.kieUploadBaseUrl = kieUploadBaseUrl;
+        }
+
+        public boolean isDirectFileFallbackEnabled() {
+            return directFileFallbackEnabled;
+        }
+
+        public void setDirectFileFallbackEnabled(boolean directFileFallbackEnabled) {
+            this.directFileFallbackEnabled = directFileFallbackEnabled;
+        }
+
+        public int getDirectFileFallbackMinRows() {
+            return directFileFallbackMinRows;
+        }
+
+        public void setDirectFileFallbackMinRows(int directFileFallbackMinRows) {
+            this.directFileFallbackMinRows = directFileFallbackMinRows;
         }
     }
 
