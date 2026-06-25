@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -23,6 +25,7 @@ import ru.algaagro.maxapp.util.TextUtils;
 public class BotUpdateHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BotUpdateHandler.class);
+    private static final Pattern URL_PATTERN = Pattern.compile("(https?://\\S+)", Pattern.CASE_INSENSITIVE);
 
     private final UserService userService;
     private final BotSessionService botSessionService;
@@ -75,7 +78,7 @@ public class BotUpdateHandler {
             sendWelcome(user.getMaxUserId(), user.isAdmin());
             return;
         }
-        if ("message_created".equals(type)) {
+        if ("message_created".equals(type) || "message_edited".equals(type)) {
             handleMessage(update, user, chatId);
         }
     }
@@ -177,7 +180,7 @@ public class BotUpdateHandler {
         }
 
         if (isButtonFlow(session) && user.isAdmin()) {
-            handleButtonDraftMessage(user, session, text);
+            handleButtonDraftMessage(user, session, update, text);
             return;
         }
 
@@ -772,26 +775,67 @@ public class BotUpdateHandler {
         maxApiClient.answerCallback(callbackId, "Жду текст кнопки");
     }
 
-    private void handleButtonDraftMessage(AppUser user, BotSession session, String text) {
-        if (text == null || text.isBlank()) {
+    private void handleButtonDraftMessage(AppUser user, BotSession session, JsonNode update, String text) {
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        String resolvedInput = resolveButtonInput(update, text);
+        ButtonDraft draft = parseButtonDraft(resolvedInput);
+        String pendingTitle = cleanValue(payload.get("pendingButtonTitle"));
+        String pendingUrl = cleanValue(payload.get("pendingButtonUrl"));
+
+        if (draft.title() != null) {
+            pendingTitle = draft.title();
+        }
+        if (draft.url() != null) {
+            pendingUrl = draft.url();
+        }
+
+        if (pendingTitle != null && pendingUrl != null) {
+            postButtonService.createButton(pendingTitle, pendingUrl);
+            botSessionService.reset(user.getMaxUserId());
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "✅ Кнопка добавлена.",
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            return;
+        }
+
+        if (resolvedInput == null || resolvedInput.isBlank()) {
+            log.info("Button flow received message without recognizable text/url. update={}", update.toString());
             maxApiClient.sendToUser(user.getMaxUserId(),
                     "Нужен текст в формате:\n<code>Название кнопки - https://example.com</code>",
                     keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                     "html");
             return;
         }
-        String[] parts = text.split("\\s+-\\s+", 2);
-        if (parts.length != 2 || parts[0].isBlank() || !isValidUrl(parts[1])) {
+
+        Map<String, Object> nextPayload = new HashMap<>(payload);
+        nextPayload.put("mode", "button_waiting");
+        if (pendingTitle != null) {
+            nextPayload.put("pendingButtonTitle", pendingTitle);
+        } else {
+            nextPayload.remove("pendingButtonTitle");
+        }
+        if (pendingUrl != null) {
+            nextPayload.put("pendingButtonUrl", pendingUrl);
+        } else {
+            nextPayload.remove("pendingButtonUrl");
+        }
+        botSessionService.update(session, SessionState.IDLE, nextPayload);
+
+        if (pendingUrl == null) {
             maxApiClient.sendToUser(user.getMaxUserId(),
-                    "Не получилось распознать формат. Отправьте так:\n<code>Группа - https://max.ru/...</code>",
+                    "Ссылка не распознана. Отправьте так:\n<code>Каталог - https://max.ru/...</code>",
                     keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                     "html");
             return;
         }
-        postButtonService.createButton(parts[0].trim(), parts[1].trim());
-        botSessionService.reset(user.getMaxUserId());
+
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "✅ Кнопка добавлена.",
+                """
+                Ссылка получена. Теперь пришлите название кнопки одним сообщением.
+
+                Например: <code>Каталог</code>
+                """,
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                 "html");
     }
@@ -929,7 +973,13 @@ public class BotUpdateHandler {
     }
 
     private String extractText(JsonNode update) {
-        return firstText(update, "/message/body/text", "/message/text", "/text");
+        return firstText(update,
+                "/message/body/text",
+                "/message/text",
+                "/text",
+                "/message/body/link/url",
+                "/message/link/url",
+                "/link/url");
     }
 
     private String extractCallbackPayload(JsonNode update) {
@@ -1003,6 +1053,63 @@ public class BotUpdateHandler {
             }
         }
         return null;
+    }
+
+    private String resolveButtonInput(JsonNode update, String text) {
+        if (text != null && !text.isBlank()) {
+            return text.trim();
+        }
+        String linkUrl = firstText(update,
+                "/message/body/link/url",
+                "/message/link/url",
+                "/link/url",
+                "/message/body/url",
+                "/message/url",
+                "/url");
+        if (linkUrl != null && !linkUrl.isBlank()) {
+            return linkUrl.trim();
+        }
+        return null;
+    }
+
+    private ButtonDraft parseButtonDraft(String rawInput) {
+        if (rawInput == null || rawInput.isBlank()) {
+            return new ButtonDraft(null, null);
+        }
+        String input = rawInput.trim();
+        Matcher matcher = URL_PATTERN.matcher(input);
+        if (!matcher.find()) {
+            return new ButtonDraft(cleanTextLabel(input), null);
+        }
+        String url = matcher.group(1).trim();
+        if (!isValidUrl(url)) {
+            return new ButtonDraft(cleanTextLabel(input), null);
+        }
+        String title = (input.substring(0, matcher.start()) + " " + input.substring(matcher.end())).trim();
+        return new ButtonDraft(cleanTextLabel(title), url);
+    }
+
+    private String cleanTextLabel(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value
+                .replaceAll("^[\\s\\-—–:|]+", "")
+                .replaceAll("[\\s\\-—–:|]+$", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return cleaned.isBlank() ? null : cleaned;
+    }
+
+    private String cleanValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = String.valueOf(value).trim();
+        return cleaned.isBlank() ? null : cleaned;
+    }
+
+    private record ButtonDraft(String title, String url) {
     }
 
     @SuppressWarnings("unchecked")
