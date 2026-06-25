@@ -357,6 +357,14 @@ public class ProductService {
     public CatalogProduct updateProduct(Long id, AdminProductPayload payload, boolean syncToBitrix) {
         CatalogProduct product = catalogProductRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
+        return updateProduct(product, payload, syncToBitrix);
+    }
+
+    @Transactional
+    public CatalogProduct updateProduct(CatalogProduct product, AdminProductPayload payload, boolean syncToBitrix) {
+        if (product == null || product.getId() == null) {
+            throw new IllegalArgumentException("Товар не найден");
+        }
         applyPayload(product, payload);
         CatalogProduct saved = catalogProductRepository.save(product);
         ensureManufacturerExists(saved.getBrand());

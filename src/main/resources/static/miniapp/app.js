@@ -1225,8 +1225,10 @@ function renderFiltersDrawer() {
     const sectionProducts = getSectionProducts(state.catalog.section);
     const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
     const cultures = uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean));
-    const subcategories = uniqueValues(sectionProducts.map(item => item.subcategory || item.itemType).filter(Boolean));
-    const subcategoryTitle = normalize(state.catalog.section).includes("пестиц") ? "Тип СЗР" : "Подкатегория";
+    const cultureKeys = new Set(cultures.map(normalize));
+    const subcategories = uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, state.catalog.section)).filter(Boolean))
+        .filter(name => !cultureKeys.has(normalize(name)));
+    const subcategoryTitle = getSubcategoryFilterTitle(state.catalog.section);
     return `
         <div class="drawer">
             <div class="drawer-backdrop" data-action="close-filters"></div>
@@ -2327,7 +2329,10 @@ function applyCatalogFilters(products) {
         filtered = filtered.filter(product => applied.manufacturers.includes(product.brand));
     }
     if (applied.subcategories.length) {
-        filtered = filtered.filter(product => applied.subcategories.includes(product.subcategory || product.itemType || "Без категории"));
+        filtered = filtered.filter(product => {
+            const values = getFilterSubcategoryValues(product, state.catalog.section);
+            return values.some(value => applied.subcategories.includes(value));
+        });
     }
     if (applied.priceMin) {
         filtered = filtered.filter(product => product.price != null && Number(product.price) >= Number(applied.priceMin));
@@ -2714,7 +2719,73 @@ function normalize(value) {
 }
 
 function uniqueValues(values) {
-    return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), "ru", { sensitivity: "base" }));
+    const deduped = new Map();
+    values.forEach(value => {
+        const raw = String(value || "").replace(/\s+/g, " ").trim();
+        if (!raw) return;
+        const key = normalize(raw);
+        const current = deduped.get(key);
+        if (!current || shouldPreferDisplayValue(raw, current)) {
+            deduped.set(key, raw);
+        }
+    });
+    return [...deduped.values()].sort((a, b) => String(a).localeCompare(String(b), "ru", { sensitivity: "base" }));
+}
+
+function shouldPreferDisplayValue(candidate, current) {
+    const candidateStartsUpper = /^[A-ZА-ЯЁ]/.test(candidate);
+    const currentStartsUpper = /^[A-ZА-ЯЁ]/.test(current);
+    if (candidateStartsUpper !== currentStartsUpper) {
+        return candidateStartsUpper;
+    }
+    return candidate.length < current.length;
+}
+
+function getSubcategoryFilterTitle(sectionName) {
+    const normalized = normalize(sectionName);
+    if (normalized.includes("семен")) {
+        return "Группа культур";
+    }
+    if (normalized.includes("пестиц") || normalized === "сзр") {
+        return "Тип СЗР";
+    }
+    return "Подкатегория";
+}
+
+function getFilterSubcategoryValues(product, sectionName) {
+    const normalizedSection = normalize(sectionName || getProductSectionName(product));
+    if (normalizedSection.includes("семен")) {
+        const cultureGroups = toStringArray(product?.filterMap?.cultureGroup).map(formatSeedGroupLabel);
+        if (cultureGroups.length) {
+            return uniqueValues(cultureGroups);
+        }
+    }
+    const fallback = [product?.subcategory, product?.itemType]
+        .map(value => String(value || "").trim())
+        .filter(Boolean);
+    return uniqueValues(fallback);
+}
+
+function formatSeedGroupLabel(value) {
+    const normalized = normalize(value);
+    if (normalized === "зерновые") return "Зерновые";
+    if (normalized === "бобовые") return "Бобовые";
+    if (normalized === "масличные") return "Масличные";
+    if (normalized === "технические") return "Технические";
+    if (normalized === "травосмеси") return "Травосмеси";
+    if (normalized === "злаковые травы") return "Злаковые травы";
+    if (normalized === "бобовые травы") return "Бобовые травы";
+    return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function toStringArray(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map(item => String(item || "").trim())
+            .filter(Boolean);
+    }
+    const raw = String(value || "").trim();
+    return raw ? [raw] : [];
 }
 
 function parseOptionalNumber(value) {

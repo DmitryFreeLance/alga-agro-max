@@ -56,8 +56,8 @@ public class ProductResearchService {
     }
 
     private String researchUncategorizedProducts(Long initiatedBy) {
-        List<CatalogProduct> targets = catalogProductRepository.findAll().stream()
-                .filter(CatalogProduct::isActive)
+        List<CatalogProduct> activeProducts = catalogProductRepository.findAllByActiveTrue();
+        List<CatalogProduct> targets = activeProducts.stream()
                 .filter(this::needsResearch)
                 .sorted((left, right) -> String.valueOf(left.getName()).compareToIgnoreCase(String.valueOf(right.getName())))
                 .toList();
@@ -72,7 +72,7 @@ public class ProductResearchService {
         }
 
         LinkedHashSet<String> knownCultures = new LinkedHashSet<>();
-        productService.getActiveProducts().forEach(product -> knownCultures.addAll(productService.getStringList(product.getCulturesJson())));
+        activeProducts.forEach(product -> knownCultures.addAll(productService.getStringList(product.getCulturesJson())));
         List<AiClassificationService.ClassificationResult> classified = aiClassificationService.classify(rows, new ArrayList<>(knownCultures));
 
         int updated = 0;
@@ -122,7 +122,7 @@ public class ProductResearchService {
                     product.isActive()
             );
             try {
-                productService.updateProduct(product.getId(), payload, false);
+                productService.updateProduct(product, payload, false);
                 updated++;
                 bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
             } catch (Exception e) {
