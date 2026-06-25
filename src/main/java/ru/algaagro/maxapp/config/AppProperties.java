@@ -135,7 +135,7 @@ public class AppProperties {
         private String kieGeminiModel = "gemini-3-flash";
         private String kieGeminiEndpoint = "/gemini-3-flash/v1/chat/completions";
         private int geminiTimeoutSeconds = 300;
-        private String kieUploadBaseUrl = "https://api.kie.ai";
+        private String kieUploadBaseUrl = "https://kieai.redpandaai.co";
         private boolean directFileFallbackEnabled = true;
         private int directFileFallbackMinRows = 8;
 

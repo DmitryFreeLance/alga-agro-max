@@ -14,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -201,51 +202,50 @@ public class AiClassificationService {
         if (apiKey == null || apiKey.isBlank()) {
             return null;
         }
-        String boundary = "----AlgaAgroBoundary" + UUID.randomUUID().toString().replace("-", "");
         String mimeType = detectMimeType(fileName);
-        byte[] body = buildMultipartBody(boundary, fileName, mimeType, bytes);
-        String baseUrl = appProperties.getAi().getKieUploadBaseUrl();
-        if (baseUrl == null || baseUrl.isBlank()) {
-            baseUrl = appProperties.getAi().getKieBaseUrl();
-        }
-        if (baseUrl.endsWith("/")) {
-            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
-        }
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/api/v1/file-stream-upload"))
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                    .timeout(Duration.ofSeconds(appProperties.getAi().getGeminiTimeoutSeconds()))
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() / 100 != 2) {
-                log.warn("KIE file upload failed. status={}, body={}",
-                        response.statusCode(),
-                        TextUtils.trimTo(response.body(), 1200));
+        for (String uploadUrl : buildUploadUrls()) {
+            String boundary = "----AlgaAgroBoundary" + UUID.randomUUID().toString().replace("-", "");
+            byte[] body = buildMultipartBody(boundary, fileName, mimeType, bytes);
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(uploadUrl))
+                        .header("Authorization", "Bearer " + apiKey)
+                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                        .timeout(Duration.ofSeconds(appProperties.getAi().getGeminiTimeoutSeconds()))
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                        .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() / 100 != 2) {
+                    log.warn("KIE file upload failed. url={}, status={}, body={}",
+                            uploadUrl,
+                            response.statusCode(),
+                            TextUtils.trimTo(response.body(), 1200));
+                    continue;
+                }
+                JsonNode json = jsonHelper.readTree(response.body());
+                String downloadUrl = firstText(json,
+                        "data.downloadUrl",
+                        "data.url",
+                        "downloadUrl",
+                        "url");
+                if (downloadUrl.isBlank()) {
+                    log.warn("KIE file upload returned no downloadUrl. url={}, body={}",
+                            uploadUrl,
+                            TextUtils.trimTo(response.body(), 1200));
+                    continue;
+                }
+                String fileId = firstText(json, "data.fileId", "data.id", "fileId", "id");
+                log.info("KIE file uploaded successfully via {}", uploadUrl);
+                return new UploadedFile(fileId, downloadUrl, mimeType);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("KIE file upload interrupted: {}", e.getMessage());
                 return null;
+            } catch (IOException e) {
+                log.warn("KIE file upload failed for {}: {}", uploadUrl, e.getMessage());
             }
-            JsonNode json = jsonHelper.readTree(response.body());
-            String downloadUrl = firstText(json,
-                    "data.downloadUrl",
-                    "data.url",
-                    "downloadUrl",
-                    "url");
-            if (downloadUrl.isBlank()) {
-                log.warn("KIE file upload returned no downloadUrl. body={}", TextUtils.trimTo(response.body(), 1200));
-                return null;
-            }
-            String fileId = firstText(json, "data.fileId", "data.id", "fileId", "id");
-            return new UploadedFile(fileId, downloadUrl, mimeType);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("KIE file upload interrupted: {}", e.getMessage());
-            return null;
-        } catch (IOException e) {
-            log.warn("KIE file upload failed: {}", e.getMessage());
-            return null;
         }
+        return null;
     }
 
     private String callGeminiFileExtraction(String fileName, UploadedFile uploadedFile) {
@@ -305,6 +305,39 @@ public class AiClassificationService {
         }
     }
 
+    private List<String> buildUploadUrls() {
+        List<String> baseUrls = new ArrayList<>();
+        String configured = appProperties.getAi().getKieUploadBaseUrl();
+        if (configured != null && !configured.isBlank()) {
+            baseUrls.add(normalizeBaseUrl(configured));
+        }
+        String fallback = appProperties.getAi().getKieBaseUrl();
+        if (fallback != null && !fallback.isBlank()) {
+            String normalizedFallback = normalizeBaseUrl(fallback);
+            if (!baseUrls.contains(normalizedFallback)) {
+                baseUrls.add(normalizedFallback);
+            }
+        }
+        String legacyApi = "https://api.kie.ai";
+        String docsHost = "https://kieai.redpandaai.co";
+        if (!baseUrls.contains(docsHost)) {
+            baseUrls.add(docsHost);
+        }
+        if (!baseUrls.contains(legacyApi)) {
+            baseUrls.add(legacyApi);
+        }
+        List<String> urls = new ArrayList<>();
+        for (String baseUrl : baseUrls) {
+            urls.add(baseUrl + "/api/file-stream-upload");
+            urls.add(baseUrl + "/api/v1/file-stream-upload");
+        }
+        return urls;
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    }
+
     private byte[] buildMultipartBody(String boundary, String fileName, String mimeType, byte[] bytes) {
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -314,11 +347,25 @@ public class AiClassificationService {
             output.write(("Content-Type: " + mimeType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             output.write(bytes);
             output.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write("Content-Disposition: form-data; name=\"uploadPath\"\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            output.write((resolveUploadPath(fileName) + "\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write("Content-Disposition: form-data; name=\"fileName\"\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            output.write((safeFileName(fileName) + "\r\n").getBytes(StandardCharsets.UTF_8));
             output.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
             return output.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Unable to build multipart request", e);
         }
+    }
+
+    private String resolveUploadPath(String fileName) {
+        String normalized = fileName == null ? "" : fileName.toLowerCase();
+        if (normalized.endsWith(".png") || normalized.endsWith(".jpg") || normalized.endsWith(".jpeg") || normalized.endsWith(".webp")) {
+            return "images/user-uploads";
+        }
+        return "documents/user-uploads";
     }
 
     private String safeFileName(String fileName) {
