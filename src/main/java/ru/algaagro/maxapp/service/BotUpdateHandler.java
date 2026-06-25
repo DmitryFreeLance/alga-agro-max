@@ -1056,9 +1056,6 @@ public class BotUpdateHandler {
     }
 
     private String resolveButtonInput(JsonNode update, String text) {
-        if (text != null && !text.isBlank()) {
-            return text.trim();
-        }
         String linkUrl = firstText(update,
                 "/message/body/link/url",
                 "/message/link/url",
@@ -1066,6 +1063,13 @@ public class BotUpdateHandler {
                 "/message/body/url",
                 "/message/url",
                 "/url");
+        if (text != null && !text.isBlank()) {
+            String trimmed = text.trim();
+            if (linkUrl != null && !linkUrl.isBlank() && !trimmed.contains(linkUrl)) {
+                return (trimmed + " " + linkUrl.trim()).trim();
+            }
+            return trimmed;
+        }
         if (linkUrl != null && !linkUrl.isBlank()) {
             return linkUrl.trim();
         }
