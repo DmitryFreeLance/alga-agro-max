@@ -11,6 +11,7 @@ public class AppProperties {
     private String miniAppUrl;
     private String managerContactUrl = "https://max.ru/id27849376";
     private String managerDeepLink = "max://user/27849376";
+    private String storageDir = "/data/storage";
     private List<Long> startupAdminUserIds = new ArrayList<>();
     private final MaxProperties max = new MaxProperties();
     private final AiProperties ai = new AiProperties();
@@ -46,6 +47,14 @@ public class AppProperties {
 
     public void setManagerDeepLink(String managerDeepLink) {
         this.managerDeepLink = managerDeepLink;
+    }
+
+    public String getStorageDir() {
+        return storageDir;
+    }
+
+    public void setStorageDir(String storageDir) {
+        this.storageDir = storageDir;
     }
 
     public List<Long> getStartupAdminUserIds() {

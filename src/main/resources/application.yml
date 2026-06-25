@@ -6,6 +6,9 @@ spring:
   datasource:
     url: jdbc:sqlite:${APP_DB_PATH:/data/alga-agro.db}
     driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+      minimum-idle: 1
   jpa:
     hibernate:
       ddl-auto: update
@@ -17,6 +20,10 @@ spring:
         format_sql: false
   jackson:
     time-zone: Europe/Moscow
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
 management:
   endpoints:
     web:

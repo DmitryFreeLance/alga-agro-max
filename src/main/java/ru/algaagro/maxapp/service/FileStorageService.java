@@ -10,19 +10,21 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import ru.algaagro.maxapp.config.AppProperties;
 
 @Service
 public class FileStorageService {
 
     private final Path storageRoot;
+    private final String publicBaseUrl;
 
-    public FileStorageService(@Value("${app.storage-dir:/data/storage}") String storageDir) {
-        this.storageRoot = Path.of(storageDir).toAbsolutePath().normalize();
+    public FileStorageService(AppProperties appProperties) {
+        this.storageRoot = Path.of(appProperties.getStorageDir()).toAbsolutePath().normalize();
+        this.publicBaseUrl = normalizeBaseUrl(appProperties.getPublicBaseUrl());
     }
 
     public Map<String, Object> store(String scope, MultipartFile file) {
@@ -46,8 +48,9 @@ public class FileStorageService {
             dto.put("originalName", originalName);
             dto.put("contentType", file.getContentType());
             dto.put("size", file.getSize());
-            dto.put("downloadUrl", "/api/files/" + URLEncoder.encode(safeScope, StandardCharsets.UTF_8)
-                    + "/" + URLEncoder.encode(storedName, StandardCharsets.UTF_8));
+            String relativeUrl = "/api/files/" + URLEncoder.encode(safeScope, StandardCharsets.UTF_8)
+                    + "/" + URLEncoder.encode(storedName, StandardCharsets.UTF_8);
+            dto.put("downloadUrl", publicBaseUrl + relativeUrl);
             return dto;
         } catch (IOException e) {
             throw new IllegalStateException("Не удалось сохранить файл", e);
@@ -65,5 +68,13 @@ public class FileStorageService {
     private String extractExtension(String originalName) {
         int dotIndex = originalName.lastIndexOf('.');
         return dotIndex >= 0 ? originalName.substring(dotIndex) : "";
+    }
+
+    private String normalizeBaseUrl(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value;
     }
 }

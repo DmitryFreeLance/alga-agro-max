@@ -87,6 +87,8 @@ const state = {
         errors: {},
         form: {
             organization: "",
+            farmName: "",
+            inn: "",
             phone: "",
             email: "",
             address: "",
@@ -462,6 +464,8 @@ function renderCheckoutPage() {
             <div class="checkout-panel">
                 <div class="form-grid">
                     ${renderField("organization", "Организация / ФИО", state.checkout.form.organization, "ООО Агро-Степь", true)}
+                    ${renderField("farmName", "Название хозяйства", state.checkout.form.farmName, "КФХ Рассвет", false)}
+                    ${renderField("inn", "ИНН", state.checkout.form.inn, "1234567890", false)}
                     ${renderField("phone", "Телефон", state.checkout.form.phone, "+7 900 000-00-00", true)}
                     ${renderField("email", "Email", state.checkout.form.email, "mail@company.ru", true)}
                     ${renderField("address", "Адрес доставки", state.checkout.form.address, "Регион, район, населённый пункт", true)}
@@ -471,7 +475,7 @@ function renderCheckoutPage() {
                             <input type="file" data-field="checkout-attachment" multiple>
                             <div style="font-size:2rem;">📎</div>
                             <div>Прикрепить реквизиты</div>
-                            <div class="upload-hint">Фото, PDF, Word — любой формат</div>
+                            <div class="upload-hint">Фото, PDF, Word — любой формат, до 25 МБ</div>
                         </label>
                     </div>
                     ${attachmentHtml ? `<div class="attachment-list">${attachmentHtml}</div>` : ""}
@@ -1099,6 +1103,8 @@ function renderAdminOrderModal() {
                 <div class="product-detail-body">
                     <div class="summary-card">
                         <div class="summary-row"><span>Клиент</span><strong>${escapeHtml(order.customerName || "")}</strong></div>
+                        <div class="summary-row"><span>Хозяйство</span><span>${escapeHtml(order.customerFarmName || "—")}</span></div>
+                        <div class="summary-row"><span>ИНН</span><span>${escapeHtml(order.customerInn || "—")}</span></div>
                         <div class="summary-row"><span>Телефон</span><span>${escapeHtml(order.customerPhone || "")}</span></div>
                         <div class="summary-row"><span>Email</span><span>${escapeHtml(order.customerEmail || "—")}</span></div>
                         <div class="summary-row"><span>Адрес</span><span>${escapeHtml(order.deliveryAddress || "—")}</span></div>
@@ -1479,6 +1485,8 @@ async function submitOrder() {
         name: organization,
         phone: state.checkout.form.phone.trim(),
         company: organization,
+        farmName: state.checkout.form.farmName.trim(),
+        inn: state.checkout.form.inn.trim(),
         email: state.checkout.form.email.trim(),
         deliveryAddress: state.checkout.form.address.trim(),
         comment: state.checkout.form.comment.trim(),
@@ -1507,6 +1515,9 @@ async function submitOrder() {
 async function uploadCheckoutAttachments(fileList) {
     if (!fileList?.length) return;
     for (const file of Array.from(fileList)) {
+        if (file.size > 25 * 1024 * 1024) {
+            throw new Error(`Файл «${file.name}» больше 25 МБ. Уменьши вложение и попробуй снова.`);
+        }
         const formData = new FormData();
         formData.append("maxUserId", String(state.maxUserId || 0));
         formData.append("file", file);
@@ -1953,6 +1964,8 @@ function hydrateCheckoutFromProfile() {
     state.checkout.form.phone = state.profile.phone || "";
     state.checkout.form.email = state.profile.email || "";
     state.checkout.form.organization = state.profile.displayName || "";
+    state.checkout.form.farmName = state.profile.farmName || "";
+    state.checkout.form.inn = state.profile.inn || "";
 }
 
 function emptyFilters() {
@@ -2021,7 +2034,9 @@ function formatDate(value) {
 async function fetchJson(url, options = {}) {
     const response = await fetch(url, options);
     if (!response.ok) {
-        let message = `Ошибка ${response.status}`;
+        let message = response.status === 413
+            ? "Файл слишком большой. Допустимый размер вложения: 25 МБ."
+            : `Ошибка ${response.status}`;
         try {
             const data = await response.json();
             message = data.message || data.error || message;

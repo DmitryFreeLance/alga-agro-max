@@ -134,6 +134,8 @@ public class MiniAppApiController {
                 request.name(),
                 request.phone(),
                 request.company(),
+                request.farmName(),
+                request.inn(),
                 request.email(),
                 request.deliveryAddress(),
                 request.comment(),
@@ -202,6 +204,8 @@ public class MiniAppApiController {
         response.put("ordersCount", orderService.listOrdersForUser(maxUserId).size());
         response.put("phone", latestOrder == null ? "" : latestOrder.getCustomerPhone());
         response.put("email", latestOrder == null ? "" : latestOrder.getCustomerEmail());
+        response.put("farmName", latestOrder == null ? "" : latestOrder.getCustomerFarmName());
+        response.put("inn", latestOrder == null ? "" : latestOrder.getCustomerInn());
         response.put("managerName", "Марат");
         response.put("managerPhone", "+7 917 595-51-43");
         response.put("managerMaxLink", appProperties.getManagerDeepLink());
@@ -318,6 +322,8 @@ public class MiniAppApiController {
             @NotBlank String name,
             @NotBlank String phone,
             String company,
+            String farmName,
+            String inn,
             @Email @NotBlank String email,
             @NotBlank String deliveryAddress,
             String comment,

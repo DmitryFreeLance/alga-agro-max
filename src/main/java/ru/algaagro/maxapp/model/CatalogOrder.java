@@ -33,6 +33,8 @@ public class CatalogOrder {
     private String customerName;
     private String customerPhone;
     private String customerCompany;
+    private String customerFarmName;
+    private String customerInn;
     private String customerEmail;
 
     @Lob
@@ -122,6 +124,22 @@ public class CatalogOrder {
 
     public void setCustomerEmail(String customerEmail) {
         this.customerEmail = customerEmail;
+    }
+
+    public String getCustomerFarmName() {
+        return customerFarmName;
+    }
+
+    public void setCustomerFarmName(String customerFarmName) {
+        this.customerFarmName = customerFarmName;
+    }
+
+    public String getCustomerInn() {
+        return customerInn;
+    }
+
+    public void setCustomerInn(String customerInn) {
+        this.customerInn = customerInn;
     }
 
     public String getDeliveryAddress() {

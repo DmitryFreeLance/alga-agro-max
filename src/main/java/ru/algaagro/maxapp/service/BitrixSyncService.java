@@ -844,8 +844,34 @@ public class BitrixSyncService {
         if (order.getCustomerCompany() != null && !order.getCustomerCompany().isBlank()) {
             builder.append("Компания: ").append(order.getCustomerCompany()).append("\n");
         }
+        if (order.getCustomerFarmName() != null && !order.getCustomerFarmName().isBlank()) {
+            builder.append("Хозяйство: ").append(order.getCustomerFarmName()).append("\n");
+        }
+        if (order.getCustomerInn() != null && !order.getCustomerInn().isBlank()) {
+            builder.append("ИНН: ").append(order.getCustomerInn()).append("\n");
+        }
+        if (order.getCustomerPhone() != null && !order.getCustomerPhone().isBlank()) {
+            builder.append("Телефон: ").append(order.getCustomerPhone()).append("\n");
+        }
+        if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank()) {
+            builder.append("Email: ").append(order.getCustomerEmail()).append("\n");
+        }
+        if (order.getDeliveryAddress() != null && !order.getDeliveryAddress().isBlank()) {
+            builder.append("Адрес: ").append(order.getDeliveryAddress()).append("\n");
+        }
         if (order.getComment() != null && !order.getComment().isBlank()) {
             builder.append("Комментарий: ").append(order.getComment()).append("\n");
+        }
+        List<Map<String, Object>> attachments = jsonHelper.readValue(order.getAttachmentsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of());
+        if (!attachments.isEmpty()) {
+            builder.append("Реквизиты:\n");
+            attachments.forEach(attachment -> {
+                String name = String.valueOf(attachment.getOrDefault("originalName", attachment.getOrDefault("storedName", "Файл")));
+                String url = String.valueOf(attachment.getOrDefault("downloadUrl", ""));
+                if (!url.isBlank()) {
+                    builder.append("• ").append(name).append(": ").append(url).append("\n");
+                }
+            });
         }
         builder.append("\nСостав заказа:\n");
         order.getItems().forEach(item -> builder.append("• ")

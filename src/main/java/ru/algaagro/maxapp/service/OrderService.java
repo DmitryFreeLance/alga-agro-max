@@ -26,7 +26,11 @@ public class OrderService {
     private final ProductService productService;
     private final JsonHelper jsonHelper;
 
-    public OrderService(CatalogOrderRepository catalogOrderRepository, ProductService productService, JsonHelper jsonHelper) {
+    public OrderService(
+            CatalogOrderRepository catalogOrderRepository,
+            ProductService productService,
+            JsonHelper jsonHelper
+    ) {
         this.catalogOrderRepository = catalogOrderRepository;
         this.productService = productService;
         this.jsonHelper = jsonHelper;
@@ -40,6 +44,8 @@ public class OrderService {
         order.setCustomerName(command.name());
         order.setCustomerPhone(command.phone());
         order.setCustomerCompany(command.company());
+        order.setCustomerFarmName(command.farmName());
+        order.setCustomerInn(command.inn());
         order.setCustomerEmail(command.email());
         order.setDeliveryAddress(command.deliveryAddress());
         order.setComment(command.comment());
@@ -64,6 +70,8 @@ public class OrderService {
         payload.put("culture", command.culture());
         payload.put("deliveryNote", command.deliveryNote());
         payload.put("email", command.email());
+        payload.put("farmName", command.farmName());
+        payload.put("inn", command.inn());
         payload.put("deliveryAddress", command.deliveryAddress());
         payload.put("attachments", command.attachments());
         payload.put("items", command.items());
@@ -94,6 +102,12 @@ public class OrderService {
         if (order.getCustomerCompany() != null && !order.getCustomerCompany().isBlank()) {
             builder.append("🏢 ").append(order.getCustomerCompany()).append("\n");
         }
+        if (order.getCustomerFarmName() != null && !order.getCustomerFarmName().isBlank()) {
+            builder.append("🌾 Хозяйство: ").append(order.getCustomerFarmName()).append("\n");
+        }
+        if (order.getCustomerInn() != null && !order.getCustomerInn().isBlank()) {
+            builder.append("🧾 ИНН: ").append(order.getCustomerInn()).append("\n");
+        }
         if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank()) {
             builder.append("✉️ ").append(order.getCustomerEmail()).append("\n");
         }
@@ -106,6 +120,13 @@ public class OrderService {
         List<Map<String, Object>> attachments = jsonHelper.readValue(order.getAttachmentsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of());
         if (!attachments.isEmpty()) {
             builder.append("📎 Реквизиты: ").append(attachments.size()).append(" файл(а)\n");
+            attachments.forEach(attachment -> {
+                String url = String.valueOf(attachment.getOrDefault("downloadUrl", ""));
+                String name = String.valueOf(attachment.getOrDefault("originalName", attachment.getOrDefault("storedName", "Файл")));
+                if (!url.isBlank()) {
+                    builder.append("   • ").append(name).append(": ").append(url).append("\n");
+                }
+            });
         }
         builder.append("\n");
         order.getItems().forEach(item -> builder.append("• ")
@@ -150,6 +171,8 @@ public class OrderService {
         dto.put("customerName", order.getCustomerName());
         dto.put("customerPhone", order.getCustomerPhone());
         dto.put("customerCompany", order.getCustomerCompany());
+        dto.put("customerFarmName", order.getCustomerFarmName());
+        dto.put("customerInn", order.getCustomerInn());
         dto.put("customerEmail", order.getCustomerEmail());
         dto.put("deliveryAddress", order.getDeliveryAddress());
         dto.put("comment", order.getComment());
@@ -222,6 +245,8 @@ public class OrderService {
             String name,
             String phone,
             String company,
+            String farmName,
+            String inn,
             String email,
             String deliveryAddress,
             String comment,
