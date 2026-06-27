@@ -4,6 +4,7 @@ const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const bridgeUserId = parseMaxUserIdFromBridgeInitData();
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
 let clientStateSyncTimer = null;
+let noticeTimer = null;
 
 const SECTION_VISUALS = [
     {
@@ -89,6 +90,7 @@ const state = {
     favorites: loadStorage("alga-favorites", []),
     cart: loadStorage("alga-cart", []),
     successOrderCode: "",
+    notice: { open: false, message: "", type: "success" },
     catalog: {
         query: "",
         section: "",
@@ -237,6 +239,7 @@ function render() {
                 ${renderAdminManufacturerModal()}
                 ${renderAdminOrderModal()}
                 ${renderAdminCustomerModal()}
+                ${renderNotice()}
             </div>
         `;
         return;
@@ -252,9 +255,17 @@ function render() {
             ${renderAdminManufacturerModal()}
             ${renderAdminOrderModal()}
             ${renderAdminCustomerModal()}
+            ${renderNotice()}
         </div>
     `;
     applyPendingFilterFocus();
+}
+
+function renderNotice() {
+    if (!state.notice?.open || !state.notice.message) {
+        return "";
+    }
+    return `<div class="app-notice app-notice-${escapeAttr(state.notice.type || "success")}">${escapeHtml(state.notice.message)}</div>`;
 }
 
 function renderPreservingFocus() {
@@ -1452,7 +1463,7 @@ function renderAdminProductModal() {
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
-            <div class="modal-sheet modal-sheet-wide">
+            <div class="modal-sheet modal-sheet-wide modal-sheet-admin-product">
                 <div class="modal-head">
                     <div class="modal-title-wrap">
                         <div class="modal-title">${product ? "Редактирование товара" : "Добавить товар"}</div>
@@ -1498,10 +1509,12 @@ function renderAdminProductModal() {
                     </div>
                     <div class="admin-form-section">
                         <div class="admin-form-section-title">Дополнительно</div>
-                        <div class="admin-field"><label>Описание</label><textarea name="description">${escapeHtml(product?.description || "")}</textarea></div>
-                        <div class="admin-form-row admin-form-row-3">
+                        <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
+                            <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
                             <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
                             <div class="admin-field"><label>Культуры</label><input name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"></div>
+                        </div>
+                        <div class="admin-form-row">
                             <div class="admin-field"><label>Теги / назначение</label><input name="tags" value="${escapeAttr((product?.tags || []).join(", "))}"></div>
                         </div>
                     </div>
@@ -2344,6 +2357,7 @@ async function saveAdminProduct(formData) {
     });
     await refreshCatalogData();
     state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    showNotice(id ? "Товар сохранен." : "Товар добавлен.");
     render();
 }
 
@@ -2391,6 +2405,7 @@ async function deleteAdminProduct(productId) {
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
     await refreshCatalogData();
     state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    showNotice("Товар удален.");
     render();
 }
 
@@ -2420,6 +2435,7 @@ async function saveManufacturer(formData) {
     });
     state.admin.manufacturerModal = { open: false, id: null, name: "" };
     state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
+    showNotice(id ? "Производитель сохранен." : "Производитель добавлен.");
     render();
 }
 
@@ -3234,7 +3250,7 @@ async function fetchJson(url, options = {}) {
 
 function handleActionError(error) {
     console.error(error);
-    alert(error.message || "Что-то пошло не так");
+    showNotice(error.message || "Что-то пошло не так", "error");
     if (state.admin.broadcastForm.sending) {
         state.admin.broadcastForm.sending = false;
         render();
@@ -3243,6 +3259,22 @@ function handleActionError(error) {
         state.checkout.submitting = false;
         render();
     }
+}
+
+function showNotice(message, type = "success") {
+    state.notice = {
+        open: true,
+        message: String(message || "").trim(),
+        type,
+    };
+    if (noticeTimer) {
+        window.clearTimeout(noticeTimer);
+    }
+    noticeTimer = window.setTimeout(() => {
+        state.notice = { open: false, message: "", type: "success" };
+        noticeTimer = null;
+        render();
+    }, 2200);
 }
 
 function loadStorage(key, fallback) {
