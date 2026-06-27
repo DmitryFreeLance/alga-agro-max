@@ -400,7 +400,6 @@ function renderSectionPage() {
                 <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="subcategory">${escapeHtml(primaryFilterTitle)}</button>
                 <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="manufacturer">Производитель</button>
                 <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="culture">Культура</button>
-                <button type="button" class="quick-filter-btn accent" data-action="open-filter-focus" data-focus="more">Еще фильтры</button>
             </div>
             <div class="toolbar-row">
                 <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
@@ -1250,12 +1249,13 @@ function renderFiltersDrawer() {
     const draft = state.catalog.draft || cloneFilters(state.catalog.applied);
     const panels = state.catalog.filterPanels || emptyFilterPanels();
     const sectionProducts = getDraftSectionProducts(draft);
+    const effectiveSection = draft.sections[0] || state.catalog.section || "";
     const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
     const cultures = uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean));
     const cultureKeys = new Set(cultures.map(normalize));
-    const subcategories = uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, state.catalog.section)).filter(Boolean))
+    const subcategories = uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, effectiveSection)).filter(Boolean))
         .filter(name => !cultureKeys.has(normalize(name)));
-    const subcategoryTitle = getSubcategoryFilterTitle(state.catalog.section);
+    const subcategoryTitle = getSubcategoryFilterTitle(effectiveSection);
     return `
         <div class="drawer">
             <div class="drawer-backdrop" data-action="close-filters"></div>
@@ -1265,17 +1265,12 @@ function renderFiltersDrawer() {
                     <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
                 </div>
                 <div class="drawer-section" data-filter-anchor="sections">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="sections">
-                        <span>Раздел</span>
-                        <span class="drawer-section-arrow">${panels.sections ? "▾" : "▸"}</span>
-                    </button>
-                    ${panels.sections ? `
-                        <div class="filter-chips-row">
-                            ${getCatalogSections().map(section => `
-                                <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
-                            `).join("")}
-                        </div>
-                    ` : ""}
+                    <h4>Раздел</h4>
+                    <div class="filter-chips-row">
+                        ${getCatalogSections().map(section => `
+                            <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
+                        `).join("")}
+                    </div>
                 </div>
                 <div class="drawer-section" data-filter-anchor="culture">
                     <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
@@ -1327,7 +1322,7 @@ function renderFiltersDrawer() {
                 </div>
                 <div class="drawer-section" data-filter-anchor="more">
                     <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
-                        <span>Еще фильтры</span>
+                        <span>Цена</span>
                         <span class="drawer-section-arrow">${panels.more ? "▾" : "▸"}</span>
                     </button>
                     ${panels.more ? `
@@ -1838,7 +1833,7 @@ function handleClick(event) {
     if (action === "open-filters") {
         state.catalog.filtersOpen = true;
         state.catalog.filterFocus = "";
-        state.catalog.filterPanels = emptyFilterPanels();
+        state.catalog.filterPanels = defaultFilterPanels();
         state.catalog.draft = cloneFilters(state.catalog.applied);
         render();
         return;
@@ -1847,7 +1842,7 @@ function handleClick(event) {
         state.catalog.filtersOpen = true;
         state.catalog.filterFocus = button.dataset.focus || "";
         state.catalog.filterPanels = {
-            ...emptyFilterPanels(),
+            ...defaultFilterPanels(),
             [state.catalog.filterFocus || "more"]: true,
         };
         state.catalog.draft = cloneFilters(state.catalog.applied);
@@ -1857,8 +1852,8 @@ function handleClick(event) {
     if (action === "toggle-filter-panel") {
         const panel = button.dataset.panel;
         state.catalog.filterPanels = {
-            ...(state.catalog.filterPanels || emptyFilterPanels()),
-            [panel]: !(state.catalog.filterPanels || emptyFilterPanels())[panel],
+            ...(state.catalog.filterPanels || defaultFilterPanels()),
+            [panel]: !(state.catalog.filterPanels || defaultFilterPanels())[panel],
         };
         render();
         return;
@@ -1866,7 +1861,7 @@ function handleClick(event) {
     if (action === "close-filters") {
         state.catalog.filtersOpen = false;
         state.catalog.filterFocus = "";
-        state.catalog.filterPanels = emptyFilterPanels();
+        state.catalog.filterPanels = defaultFilterPanels();
         render();
         return;
     }
@@ -1879,16 +1874,14 @@ function handleClick(event) {
         state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
         state.catalog.filtersOpen = false;
         state.catalog.filterFocus = "";
-        state.catalog.filterPanels = emptyFilterPanels();
+        state.catalog.filterPanels = defaultFilterPanels();
         render();
         return;
     }
     if (action === "toggle-filter-section") {
         const section = button.dataset.section;
-        const current = state.catalog.draft.sections;
-        state.catalog.draft.sections = current.includes(section)
-            ? current.filter(item => item !== section)
-            : [...current, section];
+        const current = state.catalog.draft.sections[0] || "";
+        state.catalog.draft.sections = current === section ? [] : [section];
         trimDraftFiltersToAvailable();
         render();
         return;
@@ -2875,6 +2868,10 @@ function emptyFilterPanels() {
     return { sections: false, culture: false, manufacturer: false, subcategory: false, more: false };
 }
 
+function defaultFilterPanels() {
+    return { sections: true, culture: false, manufacturer: false, subcategory: false, more: false };
+}
+
 function cloneFilters(filters) {
     return {
         sections: [...(filters.sections || [])],
@@ -2906,8 +2903,9 @@ function trimDraftFiltersToAvailable() {
     const manufacturers = new Set(uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean)));
     const cultures = new Set(uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean)));
     const cultureKeys = new Set([...cultures].map(normalize));
+    const effectiveSection = draft.sections[0] || state.catalog.section || "";
     const subcategories = new Set(
-        uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, state.catalog.section)).filter(Boolean))
+        uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, effectiveSection)).filter(Boolean))
             .filter(name => !cultureKeys.has(normalize(name)))
     );
     draft.manufacturers = draft.manufacturers.filter(item => manufacturers.has(item));
