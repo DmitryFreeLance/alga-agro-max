@@ -1182,6 +1182,9 @@ function renderProductModal() {
     const product = getProductById(state.productModal.productId);
     if (!product) return "";
     const visual = getProductVisual(product);
+    const sectionName = getSectionDisplayName(getProductSectionName(product));
+    const subcategoryName = getAdminCatalogChildName(product);
+    const modalSubtitle = [subcategoryName, product.brand].filter(Boolean).join(" · ");
     const galleryItems = [visual.icon];
     const currentImage = galleryItems[state.productModal.imageIndex] || visual.icon;
     const favorite = isFavorite(product.id);
@@ -1194,7 +1197,7 @@ function renderProductModal() {
                 <div class="modal-head">
                     <div class="modal-title-wrap">
                         <div class="modal-title">${escapeHtml(product.name)}</div>
-                        <div class="modal-subtitle">${escapeHtml(product.brand || "")}</div>
+                        <div class="modal-subtitle">${escapeHtml(modalSubtitle)}</div>
                     </div>
                     <button class="modal-close" data-action="close-product">×</button>
                 </div>
@@ -1209,8 +1212,9 @@ function renderProductModal() {
                 </div>
                 <div class="product-detail-body">
                     <div>
-                        <div class="eyebrow">${escapeHtml(product.category || "Каталог")}</div>
+                        <div class="eyebrow">${escapeHtml(sectionName || product.category || "Каталог")}</div>
                         <h3>${escapeHtml(product.name)}</h3>
+                        ${subcategoryName ? `<div class="product-brand">${escapeHtml(subcategoryName)}</div>` : ""}
                         <div class="product-brand">${escapeHtml(product.brand || "")}</div>
                     </div>
                     <div class="detail-price">
@@ -1395,6 +1399,22 @@ function getAdminBrandOptions() {
     ].filter(Boolean));
 }
 
+function getAdminFieldOptions(field) {
+    if (field === "activeIngredient") {
+        return uniqueValues((state.admin.products || []).map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean));
+    }
+    if (field === "cultures") {
+        return uniqueValues((state.admin.products || []).flatMap(item => item.cultures || []).filter(Boolean));
+    }
+    if (field === "tags") {
+        return uniqueValues((state.admin.products || []).flatMap(item => [
+            ...(item.tags || []),
+            ...(item.purposes || []),
+        ]).filter(Boolean));
+    }
+    return [];
+}
+
 function inferAdminOrderPreset(product) {
     const packageType = normalize(product?.packageType);
     const unitName = normalize(product?.unitName);
@@ -1447,6 +1467,9 @@ function renderAdminProductModal() {
     const selectedSubcategory = product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || "");
     const subcategoryOptions = getAdminSubcategoryOptions(selectedCategory);
     const brandOptions = getAdminBrandOptions();
+    const activeIngredientOptions = getAdminFieldOptions("activeIngredient");
+    const cultureOptions = getAdminFieldOptions("cultures");
+    const tagOptions = getAdminFieldOptions("tags");
     const orderMode = getAdminOrderMode(product);
     return `
         <div class="modal">
@@ -1463,6 +1486,9 @@ function renderAdminProductModal() {
                     <input type="hidden" name="productId" value="${product?.id || ""}">
                     ${renderDatalist("admin-subcategory-options", subcategoryOptions)}
                     ${renderDatalist("admin-brand-options", brandOptions)}
+                    ${renderDatalist("admin-active-ingredient-options", activeIngredientOptions)}
+                    ${renderDatalist("admin-culture-options", cultureOptions)}
+                    ${renderDatalist("admin-tag-options", tagOptions)}
                     <div class="admin-form-section admin-form-section-product">
                         <div class="admin-form-section-title">Карточка товара</div>
                         <div class="admin-form-row admin-form-row-3">
@@ -1481,9 +1507,8 @@ function renderAdminProductModal() {
                     </div>
                     <div class="admin-form-section admin-form-section-order">
                         <div class="admin-form-section-title">Цена и заказ</div>
-                        <div class="admin-form-row admin-form-row-4">
+                        <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239"></div>
-                            <div class="admin-field"><label>Старая цена</label><input name="oldPrice" type="number" min="0" step="0.01" value="${escapeAttr(product?.oldPrice ?? "")}" placeholder="2890"></div>
                             <div class="admin-field"><label>Мин. объем заказа</label><input name="minOrderQuantity" type="number" min="0.001" step="0.001" required value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
                             <div class="admin-field"><label>Кратность</label><input name="orderStep" type="number" min="0.001" step="0.001" value="${escapeAttr(product?.orderStep ?? 1)}"></div>
                         </div>
@@ -1492,11 +1517,11 @@ function renderAdminProductModal() {
                         <div class="admin-form-section-title">Дополнительно</div>
                         <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                             <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
-                            <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
-                            <div class="admin-field"><label>Культуры</label><input name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"></div>
+                            <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" list="admin-active-ingredient-options" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите"></div>
+                            <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите"></div>
                         </div>
                         <div class="admin-form-row">
-                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" value="${escapeAttr((product?.tags || []).join(", "))}"></div>
+                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" list="admin-tag-options" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите"></div>
                         </div>
                     </div>
                     <div class="admin-actions">
@@ -2263,7 +2288,6 @@ async function uploadBroadcastImage(file) {
 async function saveAdminProduct(formData) {
     const id = Number(formData.get("productId")) || null;
     const activeIngredient = String(formData.get("activeIngredient") || "").trim();
-    const oldPrice = String(formData.get("oldPrice") || "").trim();
     const minOrderQuantity = parseOptionalNumber(formData.get("minOrderQuantity"));
     if (minOrderQuantity == null || minOrderQuantity <= 0) {
         throw new Error("Минимальный объем заказа обязателен.");
@@ -2304,7 +2328,7 @@ async function saveAdminProduct(formData) {
         tags: String(formData.get("tags") || "").trim(),
         filterMap: {
             activeIngredient,
-            oldPrice,
+            oldPrice: "",
         },
         active: String(formData.get("active")) !== "false",
     };
