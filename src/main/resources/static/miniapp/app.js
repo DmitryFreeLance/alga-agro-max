@@ -2927,6 +2927,9 @@ function normalizeFilterLabel(value) {
     if (normalized.includes("роденти")) return "Родентициды";
     if (normalized.includes("репелент")) return "Репеленты";
     if (normalized.includes("регулятор рост")) return "Регуляторы роста растений";
+    if (normalized.includes("инокулянт")) return "Инокулянты";
+    if (normalized.includes("прилипател")) return "Прилипатели";
+    if (normalized.includes("биостимулятор")) return "Биостимуляторы";
     if (normalized.includes("красител")) return "Красители семян";
     if (normalized.includes("адъюв") || normalized.includes("адьюв")) return "Адъюванты";
     if (normalized.includes("микроудобр")) return "Микроудобрения";

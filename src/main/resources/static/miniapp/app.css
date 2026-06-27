@@ -220,13 +220,14 @@ img {
     box-shadow: var(--shadow);
     display: grid;
     grid-template-columns: 74px minmax(0, 1fr) auto;
-    align-items: center;
+    align-items: stretch;
     overflow: hidden;
     text-align: left;
 }
 
 .section-card-visual {
     min-height: 74px;
+    height: 100%;
     display: grid;
     place-items: center;
 }
@@ -242,12 +243,7 @@ img {
 }
 
 .visual-icon-adjuvants {
-    transform: scale(1.24);
-}
-
-.section-card-visual .visual-icon-adjuvants {
-    width: 58px;
-    height: 58px;
+    transform: scale(1.18);
 }
 
 .section-card-body {
@@ -404,9 +400,7 @@ img {
 
 .product-card-visual .visual-icon-adjuvants,
 .gallery-stage .visual-icon-adjuvants {
-    width: 108px;
-    height: 108px;
-    transform: scale(1.18);
+    transform: scale(1.14);
 }
 
 .favorite-fab {
