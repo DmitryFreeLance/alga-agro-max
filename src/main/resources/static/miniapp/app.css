@@ -177,6 +177,21 @@ img {
     font-size: 0.85rem;
 }
 
+.back-button {
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(40, 115, 52, 0.16);
+    background: linear-gradient(180deg, #f7fbf3, #edf6e7);
+    box-shadow: var(--shadow-soft);
+    color: var(--green-700);
+    font-weight: 800;
+}
+
 .search-clear-btn {
     width: 24px;
     height: 24px;
@@ -283,6 +298,35 @@ img {
     grid-template-columns: minmax(0, 1fr) 1fr;
     gap: 10px;
     margin-bottom: 12px;
+}
+
+.quick-filters-row {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    margin-bottom: 12px;
+    scrollbar-width: none;
+}
+
+.quick-filters-row::-webkit-scrollbar {
+    display: none;
+}
+
+.quick-filter-btn {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(40, 115, 52, 0.14);
+    background: var(--white);
+    box-shadow: var(--shadow-soft);
+    color: var(--green-700);
+    font-weight: 800;
+}
+
+.quick-filter-btn.accent {
+    background: linear-gradient(180deg, #eef8e4, #e5f2d8);
 }
 
 .toolbar-button,

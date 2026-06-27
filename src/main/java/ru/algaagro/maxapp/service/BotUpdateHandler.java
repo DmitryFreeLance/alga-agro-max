@@ -217,7 +217,7 @@ public class BotUpdateHandler {
 
         maxApiClient.sendToUser(user.getMaxUserId(),
                 """
-                🌾 <b>ООО «АЛГА АГРО»</b>
+                🌾 <b>ООО "Алга Агро Групп"</b>
 
                 Это официальный бот компании: каталог, подбор товаров по культурам, оформление заказа и быстрые публикации для команды.
                 Чтобы перейти в каталог, воспользуйтесь системной кнопкой мини-приложения внизу слева внутри MAX.
@@ -848,7 +848,7 @@ public class BotUpdateHandler {
 
     private void openAdminMenu(AppUser user) {
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "🛠 <b>Админ-панель АЛГА АГРО</b>\nВыберите нужный раздел ниже.",
+                "🛠 <b>Админ-панель Алга Агро Групп</b>\nВыберите нужный раздел ниже.",
                 keyboardFactory.adminMenu(),
                 "html");
     }

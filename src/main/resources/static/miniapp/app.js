@@ -78,6 +78,7 @@ const state = {
         section: "",
         sort: "default",
         filtersOpen: false,
+        filterFocus: "",
         draft: null,
         applied: emptyFilters(),
     },
@@ -236,6 +237,7 @@ function render() {
             ${renderAdminCustomerModal()}
         </div>
     `;
+    applyPendingFilterFocus();
 }
 
 function renderPreservingFocus() {
@@ -264,9 +266,9 @@ function renderTopbar() {
     return `
         <header class="topbar">
             <div class="topbar-row">
-                <div class="topbar-logo"><img src="./assets/logo.png" alt="АЛГА АГРО"></div>
+                <div class="topbar-logo"><img src="./assets/logo.png" alt="ООО Алга Агро Групп"></div>
                 <div class="topbar-title">
-                    <h1>${escapeHtml(state.meta?.company || "АЛГА АГРО ГРУПП")}</h1>
+                    <h1>${escapeHtml(state.meta?.company || 'ООО "Алга Агро Групп"')}</h1>
                     <p>Только вперёд!</p>
                 </div>
                 ${shouldShowBackButton()
@@ -369,12 +371,19 @@ function renderSectionCard(section) {
 function renderSectionPage() {
     const products = getSectionProducts(state.catalog.section);
     const filtered = applyCatalogFilters(products);
+    const primaryFilterTitle = getSubcategoryFilterTitle(state.catalog.section);
     return `
         <div class="stack">
-            <button class="search-muted" data-action="back">‹ Назад</button>
+            <button class="back-button" data-action="back">‹ Назад</button>
             <div class="page-head">
                 <h2 class="page-title">${escapeHtml(getSectionDisplayName(state.catalog.section))}</h2>
                 <p>${filtered.length} товаров</p>
+            </div>
+            <div class="quick-filters-row">
+                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="subcategory">${escapeHtml(primaryFilterTitle)}</button>
+                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="manufacturer">Производитель</button>
+                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="culture">Культура</button>
+                <button type="button" class="quick-filter-btn accent" data-action="open-filter-focus" data-focus="more">Еще фильтры</button>
             </div>
             <div class="toolbar-row">
                 <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
@@ -630,7 +639,7 @@ function renderAdminPage() {
                     <div class="admin-brand">
                         <img src="./assets/logo-green-bg.png" alt="Алга Агро">
                         <div class="admin-brand-text">
-                            <strong>${escapeHtml(state.meta?.company || "АЛГА АГРО ГРУПП")}</strong>
+                            <strong>${escapeHtml(state.meta?.company || 'ООО "Алга Агро Групп"')}</strong>
                             <span>Панель управления</span>
                         </div>
                     </div>
@@ -1237,7 +1246,7 @@ function renderFiltersDrawer() {
                     <div class="modal-title">Фильтры</div>
                     <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
                 </div>
-                <div class="drawer-section">
+                <div class="drawer-section" data-filter-anchor="sections">
                     <h4>Раздел</h4>
                     <div class="filter-chips-row">
                         ${getCatalogSections().map(section => `
@@ -1245,7 +1254,7 @@ function renderFiltersDrawer() {
                         `).join("")}
                     </div>
                 </div>
-                <div class="drawer-section">
+                <div class="drawer-section" data-filter-anchor="culture">
                     <h4>Культура</h4>
                     <div class="checkbox-list">
                         ${cultures.map(name => `
@@ -1256,7 +1265,7 @@ function renderFiltersDrawer() {
                         `).join("")}
                     </div>
                 </div>
-                <div class="drawer-section">
+                <div class="drawer-section" data-filter-anchor="manufacturer">
                     <h4>Производитель</h4>
                     <div class="checkbox-list">
                         ${manufacturers.map(name => `
@@ -1267,7 +1276,7 @@ function renderFiltersDrawer() {
                         `).join("")}
                     </div>
                 </div>
-                <div class="drawer-section">
+                <div class="drawer-section" data-filter-anchor="subcategory">
                     <h4>${escapeHtml(subcategoryTitle)}</h4>
                     <div class="checkbox-list">
                         ${subcategories.map(name => `
@@ -1278,7 +1287,7 @@ function renderFiltersDrawer() {
                         `).join("")}
                     </div>
                 </div>
-                <div class="drawer-section">
+                <div class="drawer-section" data-filter-anchor="more">
                     <h4>Цена, ₽</h4>
                     <div class="price-range">
                         <input type="number" data-field="filter-price-min" value="${escapeAttr(draft.priceMin)}" placeholder="от">
@@ -1785,12 +1794,21 @@ function handleClick(event) {
     }
     if (action === "open-filters") {
         state.catalog.filtersOpen = true;
+        state.catalog.filterFocus = "";
+        state.catalog.draft = cloneFilters(state.catalog.applied);
+        render();
+        return;
+    }
+    if (action === "open-filter-focus") {
+        state.catalog.filtersOpen = true;
+        state.catalog.filterFocus = button.dataset.focus || "";
         state.catalog.draft = cloneFilters(state.catalog.applied);
         render();
         return;
     }
     if (action === "close-filters") {
         state.catalog.filtersOpen = false;
+        state.catalog.filterFocus = "";
         render();
         return;
     }
@@ -1802,6 +1820,7 @@ function handleClick(event) {
     if (action === "apply-filters") {
         state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
         state.catalog.filtersOpen = false;
+        state.catalog.filterFocus = "";
         render();
         return;
     }
@@ -2387,8 +2406,8 @@ function getSectionVisual(name) {
 
 function getSectionDisplayName(name) {
     const normalized = normalize(name);
-    if (normalized.includes("пестиц")) {
-        return "СЗР";
+    if (normalized.includes("пестиц") || normalized === "сзр") {
+        return "Пестициды";
     }
     if (normalized.includes("мелиор")) {
         return "Мелиоранты";
@@ -2831,9 +2850,22 @@ function getSubcategoryFilterTitle(sectionName) {
         return "Группа культур";
     }
     if (normalized.includes("пестиц") || normalized === "сзр") {
-        return "Тип СЗР";
+        return "Тип пестицида";
     }
     return "Подкатегория";
+}
+
+function applyPendingFilterFocus() {
+    if (!state.catalog.filtersOpen || !state.catalog.filterFocus) {
+        return;
+    }
+    const anchor = root.querySelector(`[data-filter-anchor="${CSS.escape(state.catalog.filterFocus)}"]`);
+    if (!anchor) {
+        return;
+    }
+    requestAnimationFrame(() => {
+        anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
 }
 
 function getFilterSubcategoryValues(product, sectionName) {
