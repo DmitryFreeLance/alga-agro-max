@@ -242,7 +242,12 @@ img {
 }
 
 .visual-icon-adjuvants {
-    transform: scale(1.18);
+    transform: scale(1.24);
+}
+
+.section-card-visual .visual-icon-adjuvants {
+    width: 58px;
+    height: 58px;
 }
 
 .section-card-body {
@@ -399,7 +404,9 @@ img {
 
 .product-card-visual .visual-icon-adjuvants,
 .gallery-stage .visual-icon-adjuvants {
-    transform: scale(1.14);
+    width: 108px;
+    height: 108px;
+    transform: scale(1.18);
 }
 
 .favorite-fab {

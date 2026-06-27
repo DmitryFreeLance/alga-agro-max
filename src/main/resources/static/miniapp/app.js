@@ -2407,7 +2407,16 @@ function compareNames(left, right) {
 }
 
 function getProductVisual(product) {
-    return getSectionVisual(getProductLeafSectionName(product));
+    return getSectionVisual(getVisualSectionName(product));
+}
+
+function getVisualSectionName(product) {
+    const leafSection = getProductLeafSectionName(product);
+    const normalizedLeaf = normalize(leafSection);
+    if (!normalizedLeaf || normalizedLeaf === "товар" || normalizedLeaf.includes("проч")) {
+        return getProductSectionName(product);
+    }
+    return leafSection;
 }
 
 function getSectionVisual(name) {
