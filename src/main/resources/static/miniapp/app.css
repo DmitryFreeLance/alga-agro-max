@@ -1003,6 +1003,26 @@ img {
     border-top: 0;
 }
 
+.drawer-section-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: left;
+    padding: 0;
+    color: var(--text-700);
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.drawer-section-arrow {
+    color: var(--green-700);
+    font-size: 0.95rem;
+}
+
 .filter-grid {
     display: grid;
     gap: 10px;

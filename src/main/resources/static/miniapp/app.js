@@ -95,6 +95,7 @@ const state = {
         sort: "default",
         filtersOpen: false,
         filterFocus: "",
+        filterPanels: emptyFilterPanels(),
         draft: null,
         applied: emptyFilters(),
     },
@@ -1247,7 +1248,8 @@ function renderProductModal() {
 function renderFiltersDrawer() {
     if (!state.catalog.filtersOpen) return "";
     const draft = state.catalog.draft || cloneFilters(state.catalog.applied);
-    const sectionProducts = getSectionProducts(state.catalog.section);
+    const panels = state.catalog.filterPanels || emptyFilterPanels();
+    const sectionProducts = getDraftSectionProducts(draft);
     const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
     const cultures = uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean));
     const cultureKeys = new Set(cultures.map(normalize));
@@ -1263,53 +1265,78 @@ function renderFiltersDrawer() {
                     <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
                 </div>
                 <div class="drawer-section" data-filter-anchor="sections">
-                    <h4>Раздел</h4>
-                    <div class="filter-chips-row">
-                        ${getCatalogSections().map(section => `
-                            <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
-                        `).join("")}
-                    </div>
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="sections">
+                        <span>Раздел</span>
+                        <span class="drawer-section-arrow">${panels.sections ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.sections ? `
+                        <div class="filter-chips-row">
+                            ${getCatalogSections().map(section => `
+                                <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
+                            `).join("")}
+                        </div>
+                    ` : ""}
                 </div>
                 <div class="drawer-section" data-filter-anchor="culture">
-                    <h4>Культура</h4>
-                    <div class="checkbox-list">
-                        ${cultures.map(name => `
-                            <label class="checkbox-row">
-                                <input type="checkbox" data-field="filter-culture" value="${escapeAttr(name)}" ${draft.cultures.includes(name) ? "checked" : ""}>
-                                <span>${escapeHtml(name)}</span>
-                            </label>
-                        `).join("")}
-                    </div>
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
+                        <span>Культура</span>
+                        <span class="drawer-section-arrow">${panels.culture ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.culture ? `
+                        <div class="checkbox-list">
+                            ${cultures.map(name => `
+                                <label class="checkbox-row">
+                                    <input type="checkbox" data-field="filter-culture" value="${escapeAttr(name)}" ${draft.cultures.includes(name) ? "checked" : ""}>
+                                    <span>${escapeHtml(name)}</span>
+                                </label>
+                            `).join("")}
+                        </div>
+                    ` : ""}
                 </div>
                 <div class="drawer-section" data-filter-anchor="manufacturer">
-                    <h4>Производитель</h4>
-                    <div class="checkbox-list">
-                        ${manufacturers.map(name => `
-                            <label class="checkbox-row">
-                                <input type="checkbox" data-field="filter-manufacturer" value="${escapeAttr(name)}" ${draft.manufacturers.includes(name) ? "checked" : ""}>
-                                <span>${escapeHtml(name)}</span>
-                            </label>
-                        `).join("")}
-                    </div>
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="manufacturer">
+                        <span>Производитель</span>
+                        <span class="drawer-section-arrow">${panels.manufacturer ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.manufacturer ? `
+                        <div class="checkbox-list">
+                            ${manufacturers.map(name => `
+                                <label class="checkbox-row">
+                                    <input type="checkbox" data-field="filter-manufacturer" value="${escapeAttr(name)}" ${draft.manufacturers.includes(name) ? "checked" : ""}>
+                                    <span>${escapeHtml(name)}</span>
+                                </label>
+                            `).join("")}
+                        </div>
+                    ` : ""}
                 </div>
                 <div class="drawer-section" data-filter-anchor="subcategory">
-                    <h4>${escapeHtml(subcategoryTitle)}</h4>
-                    <div class="checkbox-list">
-                        ${subcategories.map(name => `
-                            <label class="checkbox-row">
-                                <input type="checkbox" data-field="filter-subcategory" value="${escapeAttr(name)}" ${draft.subcategories.includes(name) ? "checked" : ""}>
-                                <span>${escapeHtml(name)}</span>
-                            </label>
-                        `).join("")}
-                    </div>
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
+                        <span>${escapeHtml(subcategoryTitle)}</span>
+                        <span class="drawer-section-arrow">${panels.subcategory ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.subcategory ? `
+                        <div class="checkbox-list">
+                            ${subcategories.map(name => `
+                                <label class="checkbox-row">
+                                    <input type="checkbox" data-field="filter-subcategory" value="${escapeAttr(name)}" ${draft.subcategories.includes(name) ? "checked" : ""}>
+                                    <span>${escapeHtml(name)}</span>
+                                </label>
+                            `).join("")}
+                        </div>
+                    ` : ""}
                 </div>
                 <div class="drawer-section" data-filter-anchor="more">
-                    <h4>Цена, ₽</h4>
-                    <div class="price-range">
-                        <input type="number" data-field="filter-price-min" value="${escapeAttr(draft.priceMin)}" placeholder="от">
-                        <span>—</span>
-                        <input type="number" data-field="filter-price-max" value="${escapeAttr(draft.priceMax)}" placeholder="до">
-                    </div>
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
+                        <span>Еще фильтры</span>
+                        <span class="drawer-section-arrow">${panels.more ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.more ? `
+                        <div class="price-range">
+                            <input type="number" data-field="filter-price-min" value="${escapeAttr(draft.priceMin)}" placeholder="от">
+                            <span>—</span>
+                            <input type="number" data-field="filter-price-max" value="${escapeAttr(draft.priceMax)}" placeholder="до">
+                        </div>
+                    ` : ""}
                 </div>
                 <div class="drawer-actions">
                     <button class="ghost-btn" data-action="close-filters">Сбросить</button>
@@ -1811,6 +1838,7 @@ function handleClick(event) {
     if (action === "open-filters") {
         state.catalog.filtersOpen = true;
         state.catalog.filterFocus = "";
+        state.catalog.filterPanels = emptyFilterPanels();
         state.catalog.draft = cloneFilters(state.catalog.applied);
         render();
         return;
@@ -1818,13 +1846,27 @@ function handleClick(event) {
     if (action === "open-filter-focus") {
         state.catalog.filtersOpen = true;
         state.catalog.filterFocus = button.dataset.focus || "";
+        state.catalog.filterPanels = {
+            ...emptyFilterPanels(),
+            [state.catalog.filterFocus || "more"]: true,
+        };
         state.catalog.draft = cloneFilters(state.catalog.applied);
+        render();
+        return;
+    }
+    if (action === "toggle-filter-panel") {
+        const panel = button.dataset.panel;
+        state.catalog.filterPanels = {
+            ...(state.catalog.filterPanels || emptyFilterPanels()),
+            [panel]: !(state.catalog.filterPanels || emptyFilterPanels())[panel],
+        };
         render();
         return;
     }
     if (action === "close-filters") {
         state.catalog.filtersOpen = false;
         state.catalog.filterFocus = "";
+        state.catalog.filterPanels = emptyFilterPanels();
         render();
         return;
     }
@@ -1837,6 +1879,7 @@ function handleClick(event) {
         state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
         state.catalog.filtersOpen = false;
         state.catalog.filterFocus = "";
+        state.catalog.filterPanels = emptyFilterPanels();
         render();
         return;
     }
@@ -1846,6 +1889,7 @@ function handleClick(event) {
         state.catalog.draft.sections = current.includes(section)
             ? current.filter(item => item !== section)
             : [...current, section];
+        trimDraftFiltersToAvailable();
         render();
         return;
     }
@@ -2827,6 +2871,10 @@ function emptyFilters() {
     return { sections: [], cultures: [], manufacturers: [], subcategories: [], priceMin: "", priceMax: "" };
 }
 
+function emptyFilterPanels() {
+    return { sections: false, culture: false, manufacturer: false, subcategory: false, more: false };
+}
+
 function cloneFilters(filters) {
     return {
         sections: [...(filters.sections || [])],
@@ -2836,6 +2884,35 @@ function cloneFilters(filters) {
         priceMin: filters.priceMin || "",
         priceMax: filters.priceMax || "",
     };
+}
+
+function getDraftSectionProducts(filters) {
+    const selectedSections = filters?.sections || [];
+    if (selectedSections.length) {
+        return state.products.filter(product => selectedSections.includes(getProductSectionName(product)));
+    }
+    if (state.catalog.section) {
+        return getSectionProducts(state.catalog.section);
+    }
+    return state.products;
+}
+
+function trimDraftFiltersToAvailable() {
+    const draft = state.catalog.draft;
+    if (!draft) {
+        return;
+    }
+    const sectionProducts = getDraftSectionProducts(draft);
+    const manufacturers = new Set(uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean)));
+    const cultures = new Set(uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean)));
+    const cultureKeys = new Set([...cultures].map(normalize));
+    const subcategories = new Set(
+        uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, state.catalog.section)).filter(Boolean))
+            .filter(name => !cultureKeys.has(normalize(name)))
+    );
+    draft.manufacturers = draft.manufacturers.filter(item => manufacturers.has(item));
+    draft.cultures = draft.cultures.filter(item => cultures.has(item));
+    draft.subcategories = draft.subcategories.filter(item => subcategories.has(item));
 }
 
 function toggleDraftFilterArray(key, value, checked) {
