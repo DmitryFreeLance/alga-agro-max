@@ -868,25 +868,6 @@ function renderAdminCatalog() {
                             </div>
                         </div>
                     </div>
-                    <div class="admin-card admin-card-spacious">
-                        <div class="admin-section-head">
-                            <div>
-                                <h3>Подкатегории</h3>
-                                <p>${activeSection.children.length} подкатегорий</p>
-                            </div>
-                        </div>
-                        <div class="admin-subcategory-list">
-                            ${activeSection.children.map(child => `
-                                <div class="admin-subcategory-row">
-                                    <div>
-                                        <strong>${escapeHtml(child.name)}</strong>
-                                        <p>${child.count} тов.</p>
-                                    </div>
-                                    <button class="admin-table-btn" data-action="admin-section" data-section="${escapeAttr(activeSection.name)}" data-category="${escapeAttr(child.name)}">Открыть</button>
-                                </div>
-                            `).join("")}
-                        </div>
-                    </div>
                 ` : ""}
                 <div class="admin-card admin-card-spacious">
                     <div class="admin-section-head">
