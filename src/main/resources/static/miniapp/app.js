@@ -172,6 +172,8 @@ root.addEventListener("click", handleClick);
 root.addEventListener("input", handleInput);
 root.addEventListener("change", handleChange);
 root.addEventListener("submit", handleSubmit);
+root.addEventListener("focusin", handleFocusIn);
+root.addEventListener("focusout", handleFocusOut);
 
 async function bootstrap() {
     const [meta, profile, products, sections, profileOrders] = await Promise.all([
@@ -1350,6 +1352,10 @@ function renderDatalist(id, options) {
     `;
 }
 
+function renderAdminSuggestionBox(field) {
+    return `<div class="admin-inline-suggestions" data-suggestions-for="${escapeAttr(field)}"></div>`;
+}
+
 function getAdminPrimarySections() {
     return ["Агропитание", "Адъюванты", "СЗР", "Семена"];
 }
@@ -1497,8 +1503,8 @@ function renderAdminProductModal() {
                         </div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Раздел</label><select name="category" data-field="admin-product-category">${renderOptions(categories.map(item => [item, getSectionDisplayName(item)]), selectedCategory)}</select></div>
-                            <div class="admin-field"><label>Подкатегория</label><input name="subcategory" list="admin-subcategory-options" value="${escapeAttr(selectedSubcategory)}" placeholder="Выберите или введите новую"></div>
-                            <div class="admin-field"><label>Производитель</label><input name="brand" list="admin-brand-options" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового"></div>
+                            <div class="admin-field"><label>Подкатегория</label><input name="subcategory" list="admin-subcategory-options" data-field="admin-product-subcategory" data-options-id="admin-subcategory-options" data-suggest-mode="single" value="${escapeAttr(selectedSubcategory)}" placeholder="Выберите или введите новую">${renderAdminSuggestionBox("admin-product-subcategory")}</div>
+                            <div class="admin-field"><label>Производитель</label><input name="brand" list="admin-brand-options" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
                             <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["canister", "Канистра"], ["pe", "П.е."], ["ton", "Тонна"]], orderMode)}</select></div>
@@ -1517,11 +1523,11 @@ function renderAdminProductModal() {
                         <div class="admin-form-section-title">Дополнительно</div>
                         <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                             <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
-                            <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" list="admin-active-ingredient-options" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите"></div>
-                            <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите"></div>
+                            <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" list="admin-active-ingredient-options" data-field="admin-product-active-ingredient" data-options-id="admin-active-ingredient-options" data-suggest-mode="single" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-active-ingredient")}</div>
+                            <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                         </div>
                         <div class="admin-form-row">
-                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" list="admin-tag-options" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите"></div>
+                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" list="admin-tag-options" data-field="admin-product-tags" data-options-id="admin-tag-options" data-suggest-mode="multi" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-tags")}</div>
                         </div>
                     </div>
                     <div class="admin-actions">
@@ -1809,6 +1815,10 @@ function handleClick(event) {
     const button = event.target.closest("[data-action]");
     if (!button) return;
     const { action } = button.dataset;
+    if (action === "pick-admin-suggestion") {
+        applyAdminSuggestion(button.dataset.field, button.dataset.value || "");
+        return;
+    }
     if (action === "nav") {
         state.nav = button.dataset.nav;
         state.catalog.query = "";
@@ -2093,6 +2103,10 @@ function handleClick(event) {
 function handleInput(event) {
     const { field } = event.target.dataset;
     if (!field) return;
+    if (event.target.dataset.optionsId) {
+        updateAdminSuggestions(event.target);
+        return;
+    }
     if (field === "catalog-query") {
         state.catalog.query = event.target.value;
         renderPreservingFocus();
@@ -2141,6 +2155,24 @@ function handleInput(event) {
         state.catalog.draft.priceMax = event.target.value;
         return;
     }
+}
+
+function handleFocusIn(event) {
+    const input = event.target.closest("input[data-options-id]");
+    if (!input) return;
+    updateAdminSuggestions(input);
+}
+
+function handleFocusOut(event) {
+    const input = event.target.closest("input[data-options-id]");
+    if (!input) return;
+    const field = input.dataset.field;
+    window.setTimeout(() => {
+        if (document.activeElement?.dataset?.field === field) {
+            return;
+        }
+        clearAdminSuggestions(field);
+    }, 120);
 }
 
 function handleChange(event) {
@@ -2201,6 +2233,93 @@ function handleSubmit(event) {
     }
     if (form === "manufacturer") {
         saveManufacturer(new FormData(event.target)).catch(handleActionError);
+    }
+}
+
+function getAdminSuggestionOptions(input) {
+    const listId = input?.dataset?.optionsId;
+    if (!listId) return [];
+    return [...root.querySelectorAll(`#${CSS.escape(listId)} option`)]
+        .map(option => option.value)
+        .filter(Boolean);
+}
+
+function getAdminSuggestionState(input) {
+    const mode = input.dataset.suggestMode || "single";
+    const rawValue = String(input.value || "");
+    if (mode !== "multi") {
+        return {
+            mode,
+            prefix: "",
+            query: rawValue.trim(),
+            selectedKeys: new Set(),
+        };
+    }
+    const tokens = rawValue.split(",");
+    const currentToken = String(tokens.pop() || "").trim();
+    const selectedKeys = new Set(tokens.map(item => normalize(item)).filter(Boolean));
+    const prefix = tokens
+        .map(item => item.trim())
+        .filter(Boolean);
+    return {
+        mode,
+        prefix,
+        query: currentToken,
+        selectedKeys,
+    };
+}
+
+function getAdminSuggestionMatches(input) {
+    const options = uniqueValues(getAdminSuggestionOptions(input));
+    const { query, selectedKeys } = getAdminSuggestionState(input);
+    const normalizedQuery = normalize(query);
+    return options
+        .filter(option => !selectedKeys.has(normalize(option)))
+        .filter(option => !normalizedQuery || normalize(option).includes(normalizedQuery))
+        .slice(0, 8);
+}
+
+function updateAdminSuggestions(input) {
+    const field = input.dataset.field;
+    if (!field) return;
+    const holder = root.querySelector(`[data-suggestions-for="${CSS.escape(field)}"]`);
+    if (!holder) return;
+    const matches = getAdminSuggestionMatches(input);
+    if (!matches.length) {
+        holder.innerHTML = "";
+        holder.classList.remove("visible");
+        return;
+    }
+    holder.innerHTML = matches.map(value => `
+        <button type="button" class="admin-suggestion-btn" data-action="pick-admin-suggestion" data-field="${escapeAttr(field)}" data-value="${escapeAttr(value)}">${escapeHtml(value)}</button>
+    `).join("");
+    holder.classList.add("visible");
+}
+
+function clearAdminSuggestions(field) {
+    if (!field) return;
+    const holder = root.querySelector(`[data-suggestions-for="${CSS.escape(field)}"]`);
+    if (!holder) return;
+    holder.innerHTML = "";
+    holder.classList.remove("visible");
+}
+
+function applyAdminSuggestion(field, value) {
+    const input = root.querySelector(`input[data-field="${CSS.escape(field)}"]`);
+    if (!input) return;
+    const mode = input.dataset.suggestMode || "single";
+    if (mode === "multi") {
+        const state = getAdminSuggestionState(input);
+        const nextTokens = [...state.prefix, value];
+        input.value = `${nextTokens.join(", ")}, `;
+    } else {
+        input.value = value;
+    }
+    updateAdminSuggestions(input);
+    input.focus();
+    if (typeof input.setSelectionRange === "function") {
+        const pos = input.value.length;
+        input.setSelectionRange(pos, pos);
     }
 }
 
