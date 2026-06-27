@@ -1190,9 +1190,21 @@ img {
     gap: 10px;
 }
 
+.admin-form-row-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-form-row-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .admin-field {
     display: grid;
     gap: 6px;
+}
+
+.admin-field-span-2 {
+    grid-column: span 2;
 }
 
 .admin-actions {
@@ -1269,6 +1281,15 @@ img {
 
     .admin-form-row {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-form-row-3,
+    .admin-form-row-4 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-field-span-2 {
+        grid-column: span 1;
     }
 
     .admin-actions {

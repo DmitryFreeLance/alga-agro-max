@@ -136,7 +136,7 @@ const state = {
         catalogSection: "",
         catalogCategory: "",
         customerSearch: "",
-        productEditor: { open: false, productId: null },
+        productEditor: { open: false, productId: null, categoryDraft: "" },
         orderModal: { open: false, orderId: null },
         customerModal: { open: false, maxUserId: null },
         manufacturerModal: { open: false, id: null, name: "" },
@@ -916,7 +916,7 @@ function renderAdminCatalog() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td data-label="Категория">${escapeHtml(product.subcategory || product.itemType || product.category || "—")}</td>
+                                        <td data-label="Категория">${escapeHtml(getAdminCatalogChildName(product) || product.category || "—")}</td>
                                         <td data-label="Цена">
                                             <strong>${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
                                             ${product.oldPrice ? `<div class="search-muted"><s>${formatPrice(product.oldPrice)}</s></div>` : ""}
@@ -1342,12 +1342,113 @@ function renderFiltersDrawer() {
     `;
 }
 
+function renderDatalist(id, options) {
+    const values = uniqueValues(options.filter(Boolean));
+    if (!values.length) {
+        return "";
+    }
+    return `
+        <datalist id="${escapeAttr(id)}">
+            ${values.map(value => `<option value="${escapeAttr(value)}"></option>`).join("")}
+        </datalist>
+    `;
+}
+
+function getAdminPrimarySections() {
+    return ["Агропитание", "Адъюванты", "СЗР", "Семена"];
+}
+
+function getAdminCatalogChildName(product) {
+    return normalizeFilterLabel(product?.subcategory || product?.itemType || "") || "Без категории";
+}
+
+function getAdminSubcategoryOptions(sectionName) {
+    const collected = state.admin.products
+        .filter(product => !sectionName || getProductSectionName(product) === sectionName)
+        .map(getAdminCatalogChildName)
+        .filter(name => name && name !== "Без категории");
+    const normalizedSection = normalize(sectionName);
+    if (normalizedSection.includes("сзр") || normalizedSection.includes("пестиц")) {
+        collected.push(
+            "Гербициды",
+            "Фунгициды",
+            "Инсектициды",
+            "Десиканты",
+            "Протравители",
+            "Родентициды",
+            "Репеленты",
+            "Регуляторы роста растений",
+            "Красители семян",
+            "Инокулянты",
+            "Прилипатели",
+            "Биостимуляторы"
+        );
+    }
+    if (normalizedSection.includes("адъюв")) {
+        collected.push("Адъюванты", "Прилипатели");
+    }
+    if (normalizedSection.includes("агропитан")) {
+        collected.push("Удобрения", "Микроудобрения", "Биостимуляторы", "Мелиоранты");
+    }
+    if (normalizedSection.includes("сем")) {
+        collected.push("Пшеница озимая", "Пшеница яровая", "Подсолнечник", "Кукуруза", "Соя", "Рапс");
+    }
+    return uniqueValues(collected);
+}
+
+function getAdminBrandOptions() {
+    return uniqueValues([
+        ...(state.admin.manufacturers || []).map(item => item.name),
+        ...(state.admin.products || []).map(item => item.brand),
+    ].filter(Boolean));
+}
+
+function inferAdminOrderPreset(product) {
+    const packageType = normalize(product?.packageType);
+    const unitName = normalize(product?.unitName);
+    if (unitName.includes("п.е")) return "pe";
+    if (unitName === "т" || unitName.includes("тон")) return "ton";
+    if (packageType.includes("короб")) return "box";
+    if (packageType.includes("канистр")) return "canister";
+    if (packageType.includes("меш")) return "bag";
+    return "manual";
+}
+
+function inferAdminOrderConfig(product) {
+    const preset = inferAdminOrderPreset(product);
+    const description = String(product?.packageDescription || "").trim();
+    const step = Number(product?.orderStep || 1);
+    const unitName = String(product?.unitName || "шт").trim();
+    let orderUnitQuantity = step;
+    let orderUnitsPerPackage = "";
+    if (preset === "box") {
+        const match = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)/i)
+            || description.match(/(\d+(?:[.,]\d+)?)\s*канистр[^\d]{0,12}(?:по\s*)?(\d+(?:[.,]\d+)?)/i);
+        if (match) {
+            orderUnitsPerPackage = String(match[1]).replace(",", ".");
+            orderUnitQuantity = Number(String(match[2]).replace(",", ".")) || step;
+        }
+    }
+    if (preset === "pe" || preset === "ton") {
+        orderUnitQuantity = 1;
+    }
+    return {
+        preset,
+        unitName,
+        orderUnitQuantity: Number.isFinite(orderUnitQuantity) ? orderUnitQuantity : 1,
+        orderUnitsPerPackage,
+    };
+}
+
 function renderAdminProductModal() {
     if (!state.admin.productEditor.open) return "";
     const product = state.admin.productEditor.productId ? state.admin.products.find(item => item.id === state.admin.productEditor.productId) : null;
-    const categories = getCatalogSections().map(item => item.name);
-    const visual = getProductVisual(product || { category: state.admin.catalogSection || "Прочее" });
-    const selectedCategory = product ? getProductSectionName(product) : (state.admin.catalogSection || "");
+    const categories = getAdminPrimarySections();
+    const selectedCategory = state.admin.productEditor.categoryDraft || (product ? getProductSectionName(product) : (state.admin.catalogSection || categories[0] || ""));
+    const selectedSubcategory = product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || "");
+    const subcategoryOptions = getAdminSubcategoryOptions(selectedCategory);
+    const brandOptions = getAdminBrandOptions();
+    const orderConfig = inferAdminOrderConfig(product);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
@@ -1361,64 +1462,48 @@ function renderAdminProductModal() {
                 </div>
                 <form class="admin-form-grid admin-product-form" data-form="admin-product">
                     <input type="hidden" name="productId" value="${product?.id || ""}">
+                    ${renderDatalist("admin-subcategory-options", subcategoryOptions)}
+                    ${renderDatalist("admin-brand-options", brandOptions)}
                     <div class="admin-form-section">
-                        <div class="admin-form-section-title">Основное</div>
-                        <div class="admin-form-row">
-                            <div class="admin-field"><label>Раздел</label><select name="category">${renderOptions(categories.map(item => [item, item]), selectedCategory)}</select></div>
-                            <div class="admin-field"><label>Подкатегория</label><input name="subcategory" value="${escapeAttr(product?.subcategory || "")}"></div>
+                        <div class="admin-form-section-title">Карточка товара</div>
+                        <div class="admin-form-row admin-form-row-3">
+                            <div class="admin-field admin-field-span-2"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
+                            <div class="admin-field"><label>Показывать</label><select name="active">${renderOptions([["true", "Да"], ["false", "Нет"]], String(product?.active ?? true))}</select></div>
                         </div>
-                        <div class="admin-field"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
-                        <div class="admin-form-row">
-                            <div class="admin-field"><label>Производитель</label><input name="brand" required value="${escapeAttr(product?.brand || "")}"></div>
-                            <div class="admin-field"><label>Ед. измерения</label><input name="unitName" value="${escapeAttr(product?.unitName || "шт")}"></div>
+                        <div class="admin-form-row admin-form-row-3">
+                            <div class="admin-field"><label>Раздел</label><select name="category" data-field="admin-product-category">${renderOptions(categories.map(item => [item, getSectionDisplayName(item)]), selectedCategory)}</select></div>
+                            <div class="admin-field"><label>Подкатегория</label><input name="subcategory" list="admin-subcategory-options" value="${escapeAttr(selectedSubcategory)}" placeholder="Выберите или введите новую"></div>
+                            <div class="admin-field"><label>Производитель</label><input name="brand" list="admin-brand-options" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового"></div>
+                        </div>
+                        <div class="admin-form-row admin-form-row-4">
+                            <div class="admin-field"><label>Ед. измерения</label><select name="unitName">${renderOptions([["л", "л"], ["кг", "кг"], ["шт", "шт"], ["т", "т"], ["п.е.", "п.е."]], orderConfig.unitName || product?.unitName || "шт")}</select></div>
+                            <div class="admin-field"><label>Тип упаковки</label><select name="packageType">${renderOptions([["", "—"], ["канистра", "Канистра"], ["коробка", "Коробка"], ["мешок", "Мешок"], ["п.е.", "П.е."], ["тонна", "Тонна"]], product?.packageType || "")}</select></div>
+                            <div class="admin-field"><label>Схема заказа</label><select name="orderPreset">${renderOptions([["manual", "Своя"], ["canister", "Кратно канистре"], ["box", "Кратно коробке"], ["bag", "Кратно мешку"], ["pe", "1 п.е."], ["ton", "Тоннами"]], orderConfig.preset)}</select></div>
+                            <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="0.001" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
                         </div>
                     </div>
                     <div class="admin-form-section">
-                        <div class="admin-form-section-title">Описание</div>
-                        <div class="admin-field"><label>Описание</label><textarea name="description">${escapeHtml(product?.description || "")}</textarea></div>
-                        <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
-                    </div>
-                    <div class="admin-form-section">
-                        <div class="admin-form-section-title">Визуал карточки</div>
-                        <div class="admin-visual-note">
-                            <div class="admin-visual-drop">
-                                <div class="admin-upload-icon">▣</div>
-                                <div>Иконка раздела применяется автоматически</div>
-                                <small>Визуал формируется по категории товара</small>
-                            </div>
-                            <div class="admin-visual-thumbs">
-                                <span class="admin-visual-thumb" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});"><img src="${visual.icon}" alt=""></span>
-                            </div>
+                        <div class="admin-form-section-title">Цена и заказ</div>
+                        <div class="admin-form-row admin-form-row-4">
+                            <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239"></div>
+                            <div class="admin-field"><label>Старая цена</label><input name="oldPrice" type="number" min="0" step="0.01" value="${escapeAttr(product?.oldPrice ?? "")}" placeholder="2890"></div>
+                            <div class="admin-field"><label>Мин. объем заказа</label><input name="minOrderQuantity" type="number" min="0.001" step="0.001" required value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
+                            <div class="admin-field"><label>Кратность</label><input name="orderStep" type="number" min="0.001" step="0.001" value="${escapeAttr(product?.orderStep ?? 1)}"></div>
                         </div>
-                    </div>
-                    <div class="admin-form-section">
-                        <div class="admin-form-section-title">Упаковка и цены</div>
-                        <div class="admin-price-grid admin-price-grid-head">
-                            <span>Объём / упаковка</span>
-                            <span>Ед.</span>
-                            <span>Цена</span>
-                            <span>Старая цена</span>
-                            <span>Мин. шаг</span>
-                        </div>
-                        <div class="admin-price-grid">
-                            <input name="packageDescription" value="${escapeAttr(product?.packageDescription || "")}" placeholder="4×5 л">
-                            <select name="packageType">${renderOptions([["", "—"], ["канистра", "Канистра"], ["коробка", "Коробка"], ["мешок", "Мешок"], ["п.е.", "П.е."], ["тонна", "Тонна"]], product?.packageType || "")}</select>
-                            <input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239">
-                            <input name="oldPrice" type="number" min="0" step="0.01" value="${escapeAttr(product?.oldPrice ?? "")}" placeholder="2890">
-                            <input name="orderStep" type="number" min="1" step="1" value="${escapeAttr(product?.orderStep ?? 1)}" placeholder="1">
-                        </div>
-                        <div class="admin-form-row">
-                            <div class="admin-field"><label>Минимум</label><input name="minOrderQuantity" type="number" min="1" step="1" value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
-                            <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="1" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
+                        <div class="admin-form-row admin-form-row-4">
+                            <div class="admin-field"><label>Объем единицы</label><input name="orderUnitQuantity" type="number" min="0.001" step="0.001" value="${escapeAttr(orderConfig.orderUnitQuantity ?? "")}" placeholder="5"></div>
+                            <div class="admin-field"><label>Ед. в коробке</label><input name="orderUnitsPerPackage" type="number" min="1" step="1" value="${escapeAttr(orderConfig.orderUnitsPerPackage || "")}" placeholder="5"></div>
+                            <div class="admin-field admin-field-span-2"><label>Описание упаковки</label><input name="packageDescription" value="${escapeAttr(product?.packageDescription || "")}" placeholder="5 канистр по 5 л / 1 п.е. / 1 тонна"></div>
                         </div>
                     </div>
                     <div class="admin-form-section">
                         <div class="admin-form-section-title">Дополнительно</div>
-                        <div class="admin-form-row">
+                        <div class="admin-field"><label>Описание</label><textarea name="description">${escapeHtml(product?.description || "")}</textarea></div>
+                        <div class="admin-form-row admin-form-row-3">
+                            <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" value="${escapeAttr(product?.activeIngredient || "")}"></div>
                             <div class="admin-field"><label>Культуры</label><input name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"></div>
                             <div class="admin-field"><label>Теги / назначение</label><input name="tags" value="${escapeAttr((product?.tags || []).join(", "))}"></div>
                         </div>
-                        <div class="admin-field"><label>Показывать в каталоге</label><select name="active">${renderOptions([["true", "Да"], ["false", "Нет"]], String(product?.active ?? true))}</select></div>
                     </div>
                     <div class="admin-actions">
                         ${product ? `<button type="button" class="ghost-btn" data-action="delete-admin-product" data-product-id="${product.id}">Удалить</button>` : ""}
@@ -1909,12 +1994,18 @@ function handleClick(event) {
         return;
     }
     if (action === "open-admin-product") {
-        state.admin.productEditor = { open: true, productId: button.dataset.productId ? Number(button.dataset.productId) : null };
+        const productId = button.dataset.productId ? Number(button.dataset.productId) : null;
+        const product = productId ? state.admin.products.find(item => item.id === productId) : null;
+        state.admin.productEditor = {
+            open: true,
+            productId,
+            categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
+        };
         render();
         return;
     }
     if (action === "close-admin-product") {
-        state.admin.productEditor = { open: false, productId: null };
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
         render();
         return;
     }
@@ -1999,6 +2090,11 @@ function handleInput(event) {
     }
     if (field === "admin-product-search") {
         state.admin.catalogSearch = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-category") {
+        state.admin.productEditor.categoryDraft = event.target.value;
         renderPreservingFocus();
         return;
     }
@@ -2173,19 +2269,64 @@ async function saveAdminProduct(formData) {
     const id = Number(formData.get("productId")) || null;
     const activeIngredient = String(formData.get("activeIngredient") || "").trim();
     const oldPrice = String(formData.get("oldPrice") || "").trim();
+    const minOrderQuantity = parseOptionalNumber(formData.get("minOrderQuantity"));
+    if (minOrderQuantity == null || minOrderQuantity <= 0) {
+        throw new Error("Минимальный объем заказа обязателен.");
+    }
+    const orderPreset = String(formData.get("orderPreset") || "manual").trim();
+    let category = String(formData.get("category") || "").trim();
+    let subcategory = normalizeFilterLabel(String(formData.get("subcategory") || "").trim());
+    let unitName = String(formData.get("unitName") || "шт").trim();
+    let packageType = String(formData.get("packageType") || "").trim();
+    let packageDescription = String(formData.get("packageDescription") || "").trim();
+    let orderStep = parseOptionalNumber(formData.get("orderStep")) || 1;
+    const orderUnitQuantity = parseOptionalNumber(formData.get("orderUnitQuantity"));
+    const orderUnitsPerPackage = parseOptionalNumber(formData.get("orderUnitsPerPackage"));
+
+    if (orderPreset === "canister") {
+        packageType = "канистра";
+        if (orderUnitQuantity != null && orderUnitQuantity > 0) {
+            orderStep = orderUnitQuantity;
+            packageDescription = packageDescription || `${formatAdminNumber(orderUnitQuantity)} ${unitName} / канистра`;
+        }
+    } else if (orderPreset === "bag") {
+        packageType = "мешок";
+        if (orderUnitQuantity != null && orderUnitQuantity > 0) {
+            orderStep = orderUnitQuantity;
+            packageDescription = packageDescription || `${formatAdminNumber(orderUnitQuantity)} ${unitName} / мешок`;
+        }
+    } else if (orderPreset === "box") {
+        packageType = "коробка";
+        if (orderUnitQuantity != null && orderUnitQuantity > 0 && orderUnitsPerPackage != null && orderUnitsPerPackage > 0) {
+            orderStep = orderUnitQuantity * orderUnitsPerPackage;
+            packageDescription = packageDescription || `${formatAdminNumber(orderUnitsPerPackage)} канистр по ${formatAdminNumber(orderUnitQuantity)} ${unitName}`;
+        }
+    } else if (orderPreset === "pe") {
+        unitName = "п.е.";
+        packageType = "п.е.";
+        orderStep = 1;
+        packageDescription = packageDescription || "1 п.е.";
+    } else if (orderPreset === "ton") {
+        unitName = "т";
+        packageType = "тонна";
+        orderStep = 1;
+        packageDescription = packageDescription || "1 тонна";
+    }
+
     const payload = {
         name: String(formData.get("name") || "").trim(),
-        category: String(formData.get("category") || "").trim(),
-        subcategory: String(formData.get("subcategory") || "").trim(),
+        category,
+        subcategory,
+        itemType: subcategory,
         brand: String(formData.get("brand") || "").trim(),
         description: String(formData.get("description") || "").trim(),
-        unitName: String(formData.get("unitName") || "шт").trim(),
+        unitName,
         price: parseOptionalNumber(formData.get("price")),
         stockQuantity: parseOptionalNumber(formData.get("stockQuantity")),
-        packageType: String(formData.get("packageType") || "").trim(),
-        packageDescription: String(formData.get("packageDescription") || "").trim(),
-        minOrderQuantity: parseOptionalNumber(formData.get("minOrderQuantity")) || 1,
-        orderStep: parseOptionalNumber(formData.get("orderStep")) || 1,
+        packageType,
+        packageDescription,
+        minOrderQuantity,
+        orderStep,
         cultures: String(formData.get("cultures") || "").trim(),
         tags: String(formData.get("tags") || "").trim(),
         filterMap: {
@@ -2202,8 +2343,16 @@ async function saveAdminProduct(formData) {
         body: JSON.stringify(payload),
     });
     await refreshCatalogData();
-    state.admin.productEditor = { open: false, productId: null };
+    state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
     render();
+}
+
+function formatAdminNumber(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return "";
+    }
+    return Number.isInteger(numeric) ? String(numeric) : numeric.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 }
 
 function buildAdminProductPayload(product, overrides = {}) {
@@ -2241,7 +2390,7 @@ function buildAdminProductPayload(product, overrides = {}) {
 async function deleteAdminProduct(productId) {
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
     await refreshCatalogData();
-    state.admin.productEditor = { open: false, productId: null };
+    state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
     render();
 }
 
@@ -2641,7 +2790,7 @@ function buildCategoriesTree(products) {
     const tree = {};
     products.forEach(product => {
         const parent = getProductSectionName(product);
-        const child = product.subcategory || product.itemType || "Без категории";
+        const child = getAdminCatalogChildName(product);
         if (!tree[parent]) tree[parent] = [];
         if (!tree[parent].includes(child)) tree[parent].push(child);
     });
@@ -2653,7 +2802,7 @@ function getAdminSectionTree() {
     const grouped = {};
     state.admin.products.forEach(product => {
         const section = getProductSectionName(product);
-        const child = product.subcategory || product.itemType || "Без категории";
+        const child = getAdminCatalogChildName(product);
         if (!grouped[section]) {
             grouped[section] = {
                 name: section,
@@ -2684,7 +2833,7 @@ function getAdminFilteredProducts() {
         if (state.admin.catalogStatus === "ACTIVE" && !product.active) return false;
         if (state.admin.catalogStatus === "HIDDEN" && product.active) return false;
         if (effectiveSection && getProductSectionName(product) !== effectiveSection) return false;
-        if (state.admin.catalogCategory && (product.subcategory || product.itemType || "Без категории") !== state.admin.catalogCategory) return false;
+        if (state.admin.catalogCategory && getAdminCatalogChildName(product) !== state.admin.catalogCategory) return false;
         if (search && !normalize([product.name, product.brand, getProductSectionName(product), product.category, product.subcategory].join(" ")).includes(search)) return false;
         return true;
     });
