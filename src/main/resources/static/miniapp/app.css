@@ -237,6 +237,14 @@ img {
     object-fit: contain;
 }
 
+.visual-icon {
+    object-fit: contain;
+}
+
+.visual-icon-adjuvants {
+    transform: scale(1.18);
+}
+
 .section-card-body {
     padding: 12px 10px;
     min-width: 0;
@@ -387,6 +395,11 @@ img {
     height: 88px;
     object-fit: contain;
     filter: drop-shadow(0 6px 12px rgba(16, 43, 18, 0.08));
+}
+
+.product-card-visual .visual-icon-adjuvants,
+.gallery-stage .visual-icon-adjuvants {
+    transform: scale(1.14);
 }
 
 .favorite-fab {

@@ -90,7 +90,7 @@ public class MiniAppApiController {
     @GetMapping("/meta")
     public Map<String, Object> meta() {
         return Map.of(
-                "company", "ООО \"Алга Агро Групп\"",
+                "company", "ООО «Алга Агро Групп»",
                 "miniAppUrl", appProperties.getMiniAppUrl(),
                 "totalProducts", productService.getActiveProducts().size(),
                 "managerName", "Марат",

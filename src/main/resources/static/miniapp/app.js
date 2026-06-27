@@ -7,54 +7,70 @@ let clientStateSyncTimer = null;
 
 const SECTION_VISUALS = [
     {
+        key: "herbicides",
         match: ["гербиц"],
         icon: "./assets/category-herbicides-ref.png",
         palette: ["#bfeec2", "#e7f6d3"],
         description: "Защита от сорняков",
     },
     {
+        key: "fungicides",
         match: ["фунгиц"],
         icon: "./assets/category-fungicides-ref.png",
         palette: ["#bfeee2", "#def7de"],
         description: "Защита от болезней",
     },
     {
+        key: "insecticides",
         match: ["инсекти"],
         icon: "./assets/category-insecticides-ref.png",
         palette: ["#ffeeb9", "#ffd7ab"],
         description: "Защита от вредителей",
     },
     {
+        key: "adjuvants",
         match: ["адъюв", "адьюв"],
         icon: "./assets/category-adjuvants-ref.png",
         palette: ["#d9edf0", "#d3f4e1"],
         description: "Прилипатели и вспомогательные компоненты",
     },
     {
+        key: "seeds",
         match: ["семен", "озим", "яров"],
         icon: "./assets/category-seeds-flaticon.png",
         palette: ["#fff2b7", "#ffd681"],
         description: "Зерновые, масличные, бобовые",
     },
     {
+        key: "pesticides",
+        match: ["проч"],
+        icon: "./assets/category-pesticides-ref.png",
+        palette: ["#dff3d8", "#eaf7d8"],
+        description: "Комплексная защита растений",
+    },
+    {
+        key: "pesticides",
         match: ["пестиц", "сзр"],
         icon: "./assets/category-pesticides-ref.png",
         palette: ["#dff3d8", "#eaf7d8"],
         description: "Комплексная защита растений",
     },
     {
+        key: "pesticides",
         match: ["десикант", "протрав", "роденти", "репелент", "регулятор рост", "красител", "специальн"],
         icon: "./assets/category-pesticides-ref.png",
         palette: ["#dff3d8", "#eaf7d8"],
         description: "Специализированные препараты защиты растений",
     },
     {
+        key: "nutrition",
         match: ["агрохим", "удобр", "агропитан", "питан", "микро", "биостим"],
         icon: "./assets/category-nutrition-flaticon.png",
         palette: ["#c8eff6", "#a8e0ee"],
         description: "Удобрения и стимуляторы",
     },
     {
+        key: "meliorants",
         match: ["мелиор"],
         icon: "./assets/category-other.svg",
         palette: ["#d9d3cf", "#bfb0aa"],
@@ -268,7 +284,7 @@ function renderTopbar() {
             <div class="topbar-row">
                 <div class="topbar-logo"><img src="./assets/logo.png" alt="ООО Алга Агро Групп"></div>
                 <div class="topbar-title">
-                    <h1>${escapeHtml(state.meta?.company || 'ООО "Алга Агро Групп"')}</h1>
+                    <h1>${escapeHtml(state.meta?.company || "ООО «Алга Агро Групп»")}</h1>
                     <p>Только вперёд!</p>
                 </div>
                 ${shouldShowBackButton()
@@ -354,7 +370,7 @@ function renderSectionCard(section) {
     return `
         <button type="button" class="section-card" data-action="open-section" data-section="${escapeAttr(section.name)}">
             <div class="section-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
-                <img src="${visual.icon}" alt="${escapeAttr(getSectionDisplayName(section.name))}">
+                <img class="${escapeAttr(getVisualImageClass(visual))}" src="${visual.icon}" alt="${escapeAttr(getSectionDisplayName(section.name))}">
             </div>
             <div class="section-card-body">
                 <p class="section-card-title">${escapeHtml(getSectionDisplayName(section.name))}</p>
@@ -412,7 +428,7 @@ function renderProductCard(product) {
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
-                <img src="${visual.icon}" alt="${escapeAttr(product.name)}">
+                <img class="${escapeAttr(getVisualImageClass(visual))}" src="${visual.icon}" alt="${escapeAttr(product.name)}">
                 <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
             </div>
             <div class="product-card-body">
@@ -639,7 +655,7 @@ function renderAdminPage() {
                     <div class="admin-brand">
                         <img src="./assets/logo-green-bg.png" alt="Алга Агро">
                         <div class="admin-brand-text">
-                            <strong>${escapeHtml(state.meta?.company || 'ООО "Алга Агро Групп"')}</strong>
+                            <strong>${escapeHtml(state.meta?.company || "ООО «Алга Агро Групп»")}</strong>
                             <span>Панель управления</span>
                         </div>
                     </div>
@@ -2398,10 +2414,15 @@ function getSectionVisual(name) {
     const normalized = normalize(name);
     const matched = SECTION_VISUALS.find(item => item.match.some(match => normalized.includes(match)));
     return matched || {
+        key: "other",
         icon: "./assets/category-other.svg",
         palette: ["#e1f1de", "#d7e9f6"],
         description: getSectionDescription(name),
     };
+}
+
+function getVisualImageClass(visual) {
+    return visual?.key === "adjuvants" ? "visual-icon visual-icon-adjuvants" : "visual-icon";
 }
 
 function getSectionDisplayName(name) {
@@ -2878,8 +2899,30 @@ function getFilterSubcategoryValues(product, sectionName) {
     }
     const fallback = [product?.subcategory, product?.itemType]
         .map(value => String(value || "").trim())
+        .map(normalizeFilterLabel)
         .filter(Boolean);
     return uniqueValues(fallback);
+}
+
+function normalizeFilterLabel(value) {
+    const raw = String(value || "").replace(/\s+/g, " ").trim();
+    if (!raw) {
+        return "";
+    }
+    const normalized = normalize(raw);
+    if (normalized.includes("фунгиц")) return "Фунгициды";
+    if (normalized.includes("гербиц")) return "Гербициды";
+    if (normalized.includes("инсекти")) return "Инсектициды";
+    if (normalized.includes("десикант")) return "Десиканты";
+    if (normalized.includes("протрав")) return "Протравители";
+    if (normalized.includes("роденти")) return "Родентициды";
+    if (normalized.includes("репелент")) return "Репеленты";
+    if (normalized.includes("регулятор рост")) return "Регуляторы роста растений";
+    if (normalized.includes("красител")) return "Красители семян";
+    if (normalized.includes("адъюв") || normalized.includes("адьюв")) return "Адъюванты";
+    if (normalized.includes("микроудобр")) return "Микроудобрения";
+    if (normalized.includes("удобр")) return "Удобрения";
+    return raw;
 }
 
 function formatSeedGroupLabel(value) {
