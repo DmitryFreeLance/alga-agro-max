@@ -1226,6 +1226,10 @@ img {
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.admin-form-row-2-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .admin-form-row-compact {
     align-items: start;
 }
@@ -1316,7 +1320,8 @@ img {
     }
 
     .admin-form-row-3,
-    .admin-form-row-4 {
+    .admin-form-row-4,
+    .admin-form-row-2-compact {
         grid-template-columns: minmax(0, 1fr);
     }
 
@@ -2021,13 +2026,29 @@ button[disabled] {
 .admin-form-section {
     display: grid;
     gap: 10px;
-    padding: 0 0 12px;
-    border-bottom: 1px solid rgba(30, 43, 31, 0.06);
+    padding: 14px 14px 12px;
+    border: 1px solid rgba(30, 43, 31, 0.06);
+    border-radius: 20px;
+    background: #fbfdf9;
 }
 
 .admin-form-section:last-of-type {
-    border-bottom: 0;
     padding-bottom: 0;
+}
+
+.admin-form-section-product {
+    background: linear-gradient(135deg, #f3fbf2, #fcfef9);
+    border-color: rgba(89, 154, 95, 0.16);
+}
+
+.admin-form-section-order {
+    background: linear-gradient(135deg, #fff8e8, #fffdf6);
+    border-color: rgba(220, 169, 62, 0.18);
+}
+
+.admin-form-section-meta {
+    background: linear-gradient(135deg, #eef8ff, #fbfdff);
+    border-color: rgba(90, 151, 208, 0.16);
 }
 
 .admin-price-grid {

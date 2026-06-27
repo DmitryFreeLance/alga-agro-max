@@ -1425,6 +1425,13 @@ function inferAdminOrderPreset(product) {
     return "manual";
 }
 
+function getAdminOrderMode(product) {
+    const preset = inferAdminOrderPreset(product);
+    if (preset === "pe") return "pe";
+    if (preset === "ton") return "ton";
+    return "canister";
+}
+
 function inferAdminOrderConfig(product) {
     const preset = inferAdminOrderPreset(product);
     const description = String(product?.packageDescription || "").trim();
@@ -1459,7 +1466,7 @@ function renderAdminProductModal() {
     const selectedSubcategory = product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || "");
     const subcategoryOptions = getAdminSubcategoryOptions(selectedCategory);
     const brandOptions = getAdminBrandOptions();
-    const orderConfig = inferAdminOrderConfig(product);
+    const orderMode = getAdminOrderMode(product);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
@@ -1475,7 +1482,7 @@ function renderAdminProductModal() {
                     <input type="hidden" name="productId" value="${product?.id || ""}">
                     ${renderDatalist("admin-subcategory-options", subcategoryOptions)}
                     ${renderDatalist("admin-brand-options", brandOptions)}
-                    <div class="admin-form-section">
+                    <div class="admin-form-section admin-form-section-product">
                         <div class="admin-form-section-title">Карточка товара</div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field admin-field-span-2"><label>Название</label><input name="name" required value="${escapeAttr(product?.name || "")}"></div>
@@ -1486,14 +1493,12 @@ function renderAdminProductModal() {
                             <div class="admin-field"><label>Подкатегория</label><input name="subcategory" list="admin-subcategory-options" value="${escapeAttr(selectedSubcategory)}" placeholder="Выберите или введите новую"></div>
                             <div class="admin-field"><label>Производитель</label><input name="brand" list="admin-brand-options" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового"></div>
                         </div>
-                        <div class="admin-form-row admin-form-row-4">
-                            <div class="admin-field"><label>Ед. измерения</label><select name="unitName">${renderOptions([["л", "л"], ["кг", "кг"], ["шт", "шт"], ["т", "т"], ["п.е.", "п.е."]], orderConfig.unitName || product?.unitName || "шт")}</select></div>
-                            <div class="admin-field"><label>Тип упаковки</label><select name="packageType">${renderOptions([["", "—"], ["канистра", "Канистра"], ["коробка", "Коробка"], ["мешок", "Мешок"], ["п.е.", "П.е."], ["тонна", "Тонна"]], product?.packageType || "")}</select></div>
-                            <div class="admin-field"><label>Схема заказа</label><select name="orderPreset">${renderOptions([["manual", "Своя"], ["canister", "Кратно канистре"], ["box", "Кратно коробке"], ["bag", "Кратно мешку"], ["pe", "1 п.е."], ["ton", "Тоннами"]], orderConfig.preset)}</select></div>
+                        <div class="admin-form-row admin-form-row-2-compact">
+                            <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["canister", "Канистра"], ["pe", "П.е."], ["ton", "Тонна"]], orderMode)}</select></div>
                             <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="0.001" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
                         </div>
                     </div>
-                    <div class="admin-form-section">
+                    <div class="admin-form-section admin-form-section-order">
                         <div class="admin-form-section-title">Цена и заказ</div>
                         <div class="admin-form-row admin-form-row-4">
                             <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239"></div>
@@ -1501,13 +1506,8 @@ function renderAdminProductModal() {
                             <div class="admin-field"><label>Мин. объем заказа</label><input name="minOrderQuantity" type="number" min="0.001" step="0.001" required value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
                             <div class="admin-field"><label>Кратность</label><input name="orderStep" type="number" min="0.001" step="0.001" value="${escapeAttr(product?.orderStep ?? 1)}"></div>
                         </div>
-                        <div class="admin-form-row admin-form-row-4">
-                            <div class="admin-field"><label>Объем единицы</label><input name="orderUnitQuantity" type="number" min="0.001" step="0.001" value="${escapeAttr(orderConfig.orderUnitQuantity ?? "")}" placeholder="5"></div>
-                            <div class="admin-field"><label>Ед. в коробке</label><input name="orderUnitsPerPackage" type="number" min="1" step="1" value="${escapeAttr(orderConfig.orderUnitsPerPackage || "")}" placeholder="5"></div>
-                            <div class="admin-field admin-field-span-2"><label>Описание упаковки</label><input name="packageDescription" value="${escapeAttr(product?.packageDescription || "")}" placeholder="5 канистр по 5 л / 1 п.е. / 1 тонна"></div>
-                        </div>
                     </div>
-                    <div class="admin-form-section">
+                    <div class="admin-form-section admin-form-section-meta">
                         <div class="admin-form-section-title">Дополнительно</div>
                         <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                             <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
@@ -1519,6 +1519,7 @@ function renderAdminProductModal() {
                         </div>
                     </div>
                     <div class="admin-actions">
+                        ${product ? `<button type="button" class="ghost-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">${product.active ? "Скрыть" : "Показать"}</button>` : ""}
                         ${product ? `<button type="button" class="ghost-btn" data-action="delete-admin-product" data-product-id="${product.id}">Удалить</button>` : ""}
                         <button type="button" class="ghost-btn" data-action="close-admin-product">Отмена</button>
                         <button type="submit" class="primary-btn">Сохранить</button>
@@ -2286,44 +2287,22 @@ async function saveAdminProduct(formData) {
     if (minOrderQuantity == null || minOrderQuantity <= 0) {
         throw new Error("Минимальный объем заказа обязателен.");
     }
-    const orderPreset = String(formData.get("orderPreset") || "manual").trim();
+    const orderMode = String(formData.get("orderMode") || "canister").trim();
     let category = String(formData.get("category") || "").trim();
     let subcategory = normalizeFilterLabel(String(formData.get("subcategory") || "").trim());
-    let unitName = String(formData.get("unitName") || "шт").trim();
-    let packageType = String(formData.get("packageType") || "").trim();
-    let packageDescription = String(formData.get("packageDescription") || "").trim();
+    let unitName = "канистра";
+    let packageType = "канистра";
+    let packageDescription = "Канистра";
     let orderStep = parseOptionalNumber(formData.get("orderStep")) || 1;
-    const orderUnitQuantity = parseOptionalNumber(formData.get("orderUnitQuantity"));
-    const orderUnitsPerPackage = parseOptionalNumber(formData.get("orderUnitsPerPackage"));
 
-    if (orderPreset === "canister") {
-        packageType = "канистра";
-        if (orderUnitQuantity != null && orderUnitQuantity > 0) {
-            orderStep = orderUnitQuantity;
-            packageDescription = packageDescription || `${formatAdminNumber(orderUnitQuantity)} ${unitName} / канистра`;
-        }
-    } else if (orderPreset === "bag") {
-        packageType = "мешок";
-        if (orderUnitQuantity != null && orderUnitQuantity > 0) {
-            orderStep = orderUnitQuantity;
-            packageDescription = packageDescription || `${formatAdminNumber(orderUnitQuantity)} ${unitName} / мешок`;
-        }
-    } else if (orderPreset === "box") {
-        packageType = "коробка";
-        if (orderUnitQuantity != null && orderUnitQuantity > 0 && orderUnitsPerPackage != null && orderUnitsPerPackage > 0) {
-            orderStep = orderUnitQuantity * orderUnitsPerPackage;
-            packageDescription = packageDescription || `${formatAdminNumber(orderUnitsPerPackage)} канистр по ${formatAdminNumber(orderUnitQuantity)} ${unitName}`;
-        }
-    } else if (orderPreset === "pe") {
+    if (orderMode === "pe") {
         unitName = "п.е.";
         packageType = "п.е.";
-        orderStep = 1;
-        packageDescription = packageDescription || "1 п.е.";
-    } else if (orderPreset === "ton") {
+        packageDescription = "П.е.";
+    } else if (orderMode === "ton") {
         unitName = "т";
         packageType = "тонна";
-        orderStep = 1;
-        packageDescription = packageDescription || "1 тонна";
+        packageDescription = "Тонна";
     }
 
     const payload = {
@@ -2414,12 +2393,17 @@ async function toggleAdminProductVisibility(productId) {
     if (!product) {
         return;
     }
+    const nextActive = !product.active;
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildAdminProductPayload(product, { active: !product.active })),
+        body: JSON.stringify(buildAdminProductPayload(product, { active: nextActive })),
     });
     await refreshCatalogData();
+    if (state.admin.productEditor.open && state.admin.productEditor.productId === productId) {
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    }
+    showNotice(nextActive ? "Товар снова показан." : "Товар скрыт.");
     render();
 }
 
