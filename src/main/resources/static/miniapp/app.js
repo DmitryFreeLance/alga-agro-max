@@ -91,6 +91,12 @@ const state = {
     cart: loadStorage("alga-cart", []),
     successOrderCode: "",
     notice: { open: false, message: "", type: "success" },
+    app: {
+        catalogLoading: true,
+        profileLoading: Boolean(resolveMaxUserId()),
+        profileOrdersLoading: false,
+        profileOrdersReady: false,
+    },
     catalog: {
         query: "",
         section: "",
@@ -126,6 +132,7 @@ const state = {
     profileOrdersFilter: "ALL",
     admin: {
         ready: false,
+        loading: false,
         menu: "dashboard",
         dashboard: null,
         products: [],
@@ -163,6 +170,8 @@ if (maxBridge?.expand) {
     }
 }
 
+render();
+
 bootstrap().catch(error => {
     console.error(error);
     root.innerHTML = `<div class="page"><div class="empty-box">Не удалось загрузить каталог. Попробуйте обновить мини-приложение.</div></div>`;
@@ -176,29 +185,46 @@ root.addEventListener("focusin", handleFocusIn);
 root.addEventListener("focusout", handleFocusOut);
 
 async function bootstrap() {
-    const [meta, profile, products, sections, profileOrders] = await Promise.all([
-        fetchJson("/api/meta"),
-        state.maxUserId ? fetchJson(`/api/profile?maxUserId=${state.maxUserId}`) : Promise.resolve({ admin: false, displayName: "Пользователь MAX" }),
-        fetchJson("/api/catalog/products?sort=name"),
-        fetchJson("/api/catalog/sections"),
-        state.maxUserId ? fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`) : Promise.resolve([]),
-    ]);
-    state.meta = meta;
-    state.profile = profile;
-    if (!state.cart.length && Array.isArray(profile.savedCart) && profile.savedCart.length) {
-        state.cart = profile.savedCart;
-        saveStorage("alga-cart", state.cart);
+    const criticalProducts = fetchJson("/api/catalog/products?sort=name").then(products => {
+        state.products = products;
+        state.sections = getCatalogSections();
+        state.app.catalogLoading = false;
+        render();
+    });
+
+    fetchJson("/api/meta")
+        .then(meta => {
+            state.meta = meta;
+            render();
+        })
+        .catch(error => console.warn("Meta preload failed", error));
+
+    if (state.maxUserId) {
+        fetchJson(`/api/profile?maxUserId=${state.maxUserId}`)
+            .then(profile => {
+                state.profile = profile;
+                state.app.profileLoading = false;
+                if (!state.cart.length && Array.isArray(profile.savedCart) && profile.savedCart.length) {
+                    state.cart = profile.savedCart;
+                    saveStorage("alga-cart", state.cart);
+                }
+                hydrateCheckoutFromProfile();
+                rememberMaxUserId(state.maxUserId);
+                scheduleClientStateSync(150);
+                render();
+            })
+            .catch(error => {
+                state.app.profileLoading = false;
+                console.warn("Profile preload failed", error);
+                render();
+            });
+    } else {
+        state.profile = { admin: false, displayName: "Пользователь MAX" };
+        state.app.profileLoading = false;
+        render();
     }
-    state.products = products;
-    state.sections = sections;
-    state.profileOrders = profileOrders;
-    hydrateCheckoutFromProfile();
-    rememberMaxUserId(state.maxUserId);
-    scheduleClientStateSync(150);
-    if (state.profile.admin && state.maxUserId) {
-        await loadAdminData();
-    }
-    render();
+
+    await criticalProducts;
 }
 
 async function loadAdminData() {
@@ -360,6 +386,9 @@ function renderCatalogPage() {
 }
 
 function renderCatalogHome(results) {
+    if (state.app.catalogLoading) {
+        return `<div class="empty-box">Загружаем каталог...</div>`;
+    }
     const searching = state.catalog.query.trim().length > 0;
     if (searching) {
         return `
@@ -595,6 +624,9 @@ function renderFavoritesPage() {
 
 function renderProfilePage() {
     const orders = filterProfileOrders();
+    const ordersBlock = state.app.profileOrdersLoading
+        ? `<div class="empty-box">Загружаем заявки...</div>`
+        : (orders.length ? orders.map(renderOrderCard).join("") : `<div class="empty-box">Заявок по этому фильтру пока нет.</div>`);
     return `
         <section class="page stack">
             <div class="profile-card">
@@ -620,7 +652,7 @@ function renderProfilePage() {
                     `).join("")}
                 </div>
                 <div class="orders-stack">
-                    ${orders.length ? orders.map(renderOrderCard).join("") : `<div class="empty-box">Заявок по этому фильтру пока нет.</div>`}
+                    ${ordersBlock}
                 </div>
             </div>
             <div class="profile-section">
@@ -660,6 +692,20 @@ function renderOrderCard(order) {
 }
 
 function renderAdminPage() {
+    if (state.admin.loading && !state.admin.ready) {
+        return `
+            <section class="admin-page">
+                <div class="admin-shell">
+                    <div class="admin-main" style="width:100%;">
+                        <div class="admin-card admin-card-spacious">
+                            <h3>Загружаем админ-панель...</h3>
+                            <p>Подтягиваем каталог, заявки и клиентов.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        `;
+    }
     const meta = getAdminPageMeta();
     return `
         <section class="admin-page">
@@ -1822,6 +1868,10 @@ function handleClick(event) {
     if (action === "nav") {
         state.nav = button.dataset.nav;
         state.catalog.query = "";
+        if (state.nav === "profile") {
+            loadProfileOrders().catch(error => console.warn("Profile orders preload failed", error));
+            ensureAdminDataLoaded().catch(error => console.warn("Admin preload failed", error));
+        }
         render();
         return;
     }
@@ -1938,6 +1988,7 @@ function handleClick(event) {
     }
     if (action === "profile-status") {
         state.profileOrdersFilter = button.dataset.status;
+        loadProfileOrders().catch(error => console.warn("Profile orders load failed", error));
         render();
         return;
     }
@@ -2013,6 +2064,7 @@ function handleClick(event) {
         if (state.admin.menu === "catalog" && !state.admin.catalogSection) {
             state.admin.catalogSection = getAdminSectionTree()[0]?.name || "";
         }
+        ensureAdminDataLoaded().catch(error => console.warn("Admin data load failed", error));
         render();
         return;
     }
@@ -2587,16 +2639,50 @@ async function sendBroadcast() {
 }
 
 async function refreshCatalogData() {
-    const [products, sections, profileOrders] = await Promise.all([
+    const [products] = await Promise.all([
         fetchJson("/api/catalog/products?sort=name"),
-        fetchJson("/api/catalog/sections"),
-        state.maxUserId ? fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`) : Promise.resolve([]),
     ]);
     state.products = products;
-    state.sections = sections;
-    state.profileOrders = profileOrders;
+    state.sections = getCatalogSections();
     if (state.profile?.admin) {
         await loadAdminData();
+    }
+}
+
+async function loadProfileOrders() {
+    if (!state.maxUserId || state.app.profileOrdersReady || state.app.profileOrdersLoading) {
+        return;
+    }
+    state.app.profileOrdersLoading = true;
+    if (state.nav === "profile") {
+        render();
+    }
+    try {
+        state.profileOrders = await fetchJson(`/api/profile/orders?maxUserId=${state.maxUserId}`);
+        state.app.profileOrdersReady = true;
+    } finally {
+        state.app.profileOrdersLoading = false;
+        if (state.nav === "profile") {
+            render();
+        }
+    }
+}
+
+async function ensureAdminDataLoaded() {
+    if (!state.maxUserId || !state.profile?.admin || state.admin.ready || state.admin.loading) {
+        return;
+    }
+    state.admin.loading = true;
+    if (state.nav === "profile") {
+        render();
+    }
+    try {
+        await loadAdminData();
+    } finally {
+        state.admin.loading = false;
+        if (state.nav === "profile") {
+            render();
+        }
     }
 }
 
