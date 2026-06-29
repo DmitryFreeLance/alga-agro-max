@@ -495,9 +495,9 @@ function renderProductPrice(product) {
         return `<div class="price-block request"><div class="old-price">&nbsp;</div><strong>По запросу</strong></div>`;
     }
     return `
-        <div class="price-block">
+        <div class="price-block ${oldPrice ? "discounted" : ""}">
             <div class="old-price">${oldPrice ? `${formatPrice(oldPrice)}` : "&nbsp;"}</div>
-            <strong>${formatPrice(product.price)}</strong>
+            <strong class="${oldPrice ? "price-current-discount" : ""}">${formatPrice(product.price)}</strong>
         </div>
     `;
 }
@@ -598,7 +598,7 @@ function renderCheckoutPage() {
                     <div class="field">
                         <label>Состав заявки</label>
                         <div class="summary-card">
-                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.product.name)}</span><span>${formatQuantity(item.quantity)} ед.</span></div>`).join("")}
+                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.product.name)}</span><span>${formatQuantity(item.quantity)} ${escapeHtml(item.product.unitName || "ед.")}</span></div>`).join("")}
                             <div class="summary-row"><strong>Итого позиций</strong><strong>${getCartProducts().length}</strong></div>
                         </div>
                     </div>
@@ -686,7 +686,7 @@ function renderOrderCard(order) {
                 <span class="status-chip active">${escapeHtml(order.statusLabel || profileStatusLabel(order.status))}</span>
             </div>
             <div class="search-muted">${formatDate(order.createdAt)}</div>
-            <div class="search-muted">${order.items.map(item => `${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)}`).join(", ")}</div>
+            <div class="search-muted">${order.items.map(item => `${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "ед.")}`).join(", ")}</div>
         </article>
     `;
 }
@@ -1262,18 +1262,33 @@ function renderProductModal() {
                     <div>
                         <div class="eyebrow">${escapeHtml(sectionName || product.category || "Каталог")}</div>
                         <h3>${escapeHtml(product.name)}</h3>
+                        <div class="product-spec-list">
+                            <div class="product-spec-item">
+                                <span>Название препарата</span>
+                                <strong>${escapeHtml(product.name)}</strong>
+                            </div>
+                            ${product.activeIngredient ? `
+                                <div class="product-spec-item">
+                                    <span>ДВ</span>
+                                    <strong>${escapeHtml(product.activeIngredient)}</strong>
+                                </div>
+                            ` : ""}
+                            <div class="product-spec-item">
+                                <span>Упаковка</span>
+                                <strong>${escapeHtml(product.packageDescription || product.packageType || product.unitName || "Не указана")}</strong>
+                            </div>
+                        </div>
                         ${subcategoryName ? `<div class="product-brand">${escapeHtml(subcategoryName)}</div>` : ""}
                         <div class="product-brand">${escapeHtml(product.brand || "")}</div>
                     </div>
                     <div class="detail-price">
                         ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
-                        <strong>${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
+                        <strong class="${product.oldPrice ? "price-current-discount" : ""}">${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
                     </div>
                     <div class="packaging-chips">
                         <span class="packaging-chip">${escapeHtml(product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
                     </div>
                     ${product.description ? `<p class="detail-paragraph">${escapeHtml(product.description)}</p>` : ""}
-                    ${product.activeIngredient ? `<div><div class="eyebrow">Действующее вещество</div><p class="detail-paragraph">${escapeHtml(product.activeIngredient)}</p></div>` : ""}
                     ${canBuy ? `
                         <div class="detail-footer">
                             ${renderStepper(product.id, currentQty, "modal")}
@@ -1464,6 +1479,19 @@ function getAdminFieldOptions(field) {
             ...(item.purposes || []),
         ]).filter(Boolean));
     }
+    if (field === "packageDescription") {
+        return uniqueValues((state.admin.products || []).map(item => item.packageDescription).filter(Boolean));
+    }
+    if (field === "packageVolume") {
+        return uniqueValues((state.admin.products || [])
+            .map(item => inferAdminOrderConfig(item).packageVolume)
+            .filter(Boolean));
+    }
+    if (field === "unitsPerPackage") {
+        return uniqueValues((state.admin.products || [])
+            .map(item => inferAdminOrderConfig(item).unitsPerPackage)
+            .filter(Boolean));
+    }
     return [];
 }
 
@@ -1472,6 +1500,8 @@ function inferAdminOrderPreset(product) {
     const unitName = normalize(product?.unitName);
     if (unitName.includes("п.е")) return "pe";
     if (unitName === "т" || unitName.includes("тон")) return "ton";
+    if (unitName === "кг" || unitName.includes("кил")) return "kg";
+    if (unitName === "л" || unitName.includes("лит")) return "liters";
     if (packageType.includes("короб")) return "box";
     if (packageType.includes("канистр")) return "canister";
     if (packageType.includes("меш")) return "bag";
@@ -1480,34 +1510,42 @@ function inferAdminOrderPreset(product) {
 
 function getAdminOrderMode(product) {
     const preset = inferAdminOrderPreset(product);
+    if (preset === "kg") return "kg";
+    if (preset === "liters") return "liters";
     if (preset === "pe") return "pe";
     if (preset === "ton") return "ton";
-    return "canister";
+    return "liters";
 }
 
 function inferAdminOrderConfig(product) {
     const preset = inferAdminOrderPreset(product);
     const description = String(product?.packageDescription || "").trim();
     const step = Number(product?.orderStep || 1);
-    const unitName = String(product?.unitName || "шт").trim();
-    let orderUnitQuantity = step;
-    let orderUnitsPerPackage = "";
-    if (preset === "box") {
-        const match = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)/i)
-            || description.match(/(\d+(?:[.,]\d+)?)\s*канистр[^\d]{0,12}(?:по\s*)?(\d+(?:[.,]\d+)?)/i);
-        if (match) {
-            orderUnitsPerPackage = String(match[1]).replace(",", ".");
-            orderUnitQuantity = Number(String(match[2]).replace(",", ".")) || step;
-        }
+    const unitName = String(product?.unitName || "л").trim();
+    let packageVolume = "";
+    let unitsPerPackage = "";
+    const boxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)/i)
+        || description.match(/(\d+(?:[.,]\d+)?)\s*(?:шт|упаков(?:ки|ок)|канистр)[^\d]{0,12}(?:по\s*)?(\d+(?:[.,]\d+)?)/i);
+    const singleLike = description.match(/(\d+(?:[.,]\d+)?)\s*(л|лит|кг|кил|т)\b/i);
+    if (boxLike) {
+        unitsPerPackage = String(boxLike[1]).replace(",", ".");
+        packageVolume = String(boxLike[2]).replace(",", ".");
+    } else if (singleLike) {
+        packageVolume = String(singleLike[1]).replace(",", ".");
+        unitsPerPackage = "1";
+    } else if (step > 0) {
+        packageVolume = String(step).replace(",", ".");
+        unitsPerPackage = "1";
     }
     if (preset === "pe" || preset === "ton") {
-        orderUnitQuantity = 1;
+        packageVolume = "1";
+        unitsPerPackage = "1";
     }
     return {
         preset,
         unitName,
-        orderUnitQuantity: Number.isFinite(orderUnitQuantity) ? orderUnitQuantity : 1,
-        orderUnitsPerPackage,
+        packageVolume,
+        unitsPerPackage,
     };
 }
 
@@ -1522,7 +1560,11 @@ function renderAdminProductModal() {
     const activeIngredientOptions = getAdminFieldOptions("activeIngredient");
     const cultureOptions = getAdminFieldOptions("cultures");
     const tagOptions = getAdminFieldOptions("tags");
+    const packageDescriptionOptions = getAdminFieldOptions("packageDescription");
+    const packageVolumeOptions = getAdminFieldOptions("packageVolume");
+    const unitsPerPackageOptions = getAdminFieldOptions("unitsPerPackage");
     const orderMode = getAdminOrderMode(product);
+    const orderConfig = inferAdminOrderConfig(product);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
@@ -1541,6 +1583,9 @@ function renderAdminProductModal() {
                     ${renderDatalist("admin-active-ingredient-options", activeIngredientOptions)}
                     ${renderDatalist("admin-culture-options", cultureOptions)}
                     ${renderDatalist("admin-tag-options", tagOptions)}
+                    ${renderDatalist("admin-package-description-options", packageDescriptionOptions)}
+                    ${renderDatalist("admin-package-volume-options", packageVolumeOptions)}
+                    ${renderDatalist("admin-units-per-package-options", unitsPerPackageOptions)}
                     <div class="admin-form-section admin-form-section-product">
                         <div class="admin-form-section-title">Карточка товара</div>
                         <div class="admin-form-row admin-form-row-3">
@@ -1552,15 +1597,23 @@ function renderAdminProductModal() {
                             <div class="admin-field"><label>Подкатегория</label><input name="subcategory" list="admin-subcategory-options" data-field="admin-product-subcategory" data-options-id="admin-subcategory-options" data-suggest-mode="single" value="${escapeAttr(selectedSubcategory)}" placeholder="Выберите или введите новую">${renderAdminSuggestionBox("admin-product-subcategory")}</div>
                             <div class="admin-field"><label>Производитель</label><input name="brand" list="admin-brand-options" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
                         </div>
+                        <div class="admin-form-row admin-form-row-3">
+                            <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["liters", "Литры"], ["kg", "Килограммы"], ["pe", "П.е."], ["ton", "Тонны"]], orderMode)}</select></div>
+                            <div class="admin-field"><label>Объем упаковки</label><input name="packageVolume" type="number" min="0.001" step="0.001" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
+                            <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
+                        </div>
                         <div class="admin-form-row admin-form-row-2-compact">
-                            <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["canister", "Канистра"], ["pe", "П.е."], ["ton", "Тонна"]], orderMode)}</select></div>
                             <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="0.001" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
+                            <div class="admin-field"><label>Фасовка</label><input name="packageDescription" list="admin-package-description-options" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(product?.packageDescription || "")}" placeholder="Коробка 2 × 10 л">${renderAdminSuggestionBox("admin-product-package-description")}</div>
                         </div>
                     </div>
                     <div class="admin-form-section admin-form-section-order">
                         <div class="admin-form-section-title">Цена и заказ</div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239"></div>
+                            <div class="admin-field"><label>Скидка, %</label><input name="discountPercent" type="number" min="0" max="100" step="0.01" value="${escapeAttr(product?.discountPercent ?? "")}" placeholder="10"></div>
+                        </div>
+                        <div class="admin-form-row admin-form-row-2-compact">
                             <div class="admin-field"><label>Мин. объем заказа</label><input name="minOrderQuantity" type="number" min="0.001" step="0.001" required value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
                             <div class="admin-field"><label>Кратность</label><input name="orderStep" type="number" min="0.001" step="0.001" value="${escapeAttr(product?.orderStep ?? 1)}"></div>
                         </div>
@@ -1643,7 +1696,7 @@ function renderAdminOrderModal() {
                         </div>
                         <div class="summary-card">
                             <div class="admin-block-title">Состав и сумма</div>
-                            ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity)}</strong></div>`).join("")}
+                            ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "ед.")}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity)}</strong></div>`).join("")}
                             <div class="summary-row"><span>Дата</span><strong>${formatDate(order.createdAt)}</strong></div>
                             <div class="summary-row"><span>Статус</span>${renderAdminStatusBadge(order.status, order.statusLabel)}</div>
                             <div class="summary-row"><strong>Итого</strong><strong>${formatPrice(order.totalPrice || 0)}</strong></div>
@@ -1838,7 +1891,7 @@ function summarizeOrderItems(items) {
     if (!safeItems.length) {
         return "—";
     }
-    const preview = safeItems.slice(0, 2).map(item => `${item.productName} × ${formatQuantity(item.quantity)}`);
+    const preview = safeItems.slice(0, 2).map(item => `${item.productName} × ${formatQuantity(item.quantity)} ${item.unitName || "ед."}`);
     return safeItems.length > 2 ? `${preview.join(", ")} + ещё ${safeItems.length - 2}` : preview.join(", ");
 }
 
@@ -2459,19 +2512,24 @@ async function uploadBroadcastImage(file) {
 async function saveAdminProduct(formData) {
     const id = Number(formData.get("productId")) || null;
     const activeIngredient = String(formData.get("activeIngredient") || "").trim();
+    const discountPercent = parseOptionalNumber(formData.get("discountPercent"));
     const minOrderQuantity = parseOptionalNumber(formData.get("minOrderQuantity"));
     if (minOrderQuantity == null || minOrderQuantity <= 0) {
         throw new Error("Минимальный объем заказа обязателен.");
     }
-    const orderMode = String(formData.get("orderMode") || "canister").trim();
+    const orderMode = String(formData.get("orderMode") || "liters").trim();
     let category = String(formData.get("category") || "").trim();
     let subcategory = normalizeFilterLabel(String(formData.get("subcategory") || "").trim());
-    let unitName = "канистра";
-    let packageType = "канистра";
-    let packageDescription = "Канистра";
+    let unitName = "л";
+    let packageType = "упаковка";
+    let packageDescription = String(formData.get("packageDescription") || "").trim();
     let orderStep = parseOptionalNumber(formData.get("orderStep")) || 1;
+    const packageVolume = parseOptionalNumber(formData.get("packageVolume"));
+    const unitsPerPackage = parseOptionalNumber(formData.get("unitsPerPackage"));
 
-    if (orderMode === "pe") {
+    if (orderMode === "kg") {
+        unitName = "кг";
+    } else if (orderMode === "pe") {
         unitName = "п.е.";
         packageType = "п.е.";
         packageDescription = "П.е.";
@@ -2479,6 +2537,18 @@ async function saveAdminProduct(formData) {
         unitName = "т";
         packageType = "тонна";
         packageDescription = "Тонна";
+    }
+
+    if (orderMode === "liters" || orderMode === "kg") {
+        if (unitsPerPackage != null && unitsPerPackage > 1 && packageVolume != null && packageVolume > 0) {
+            packageType = "коробка";
+            packageDescription = packageDescription || `Коробка ${formatAdminNumber(unitsPerPackage)} × ${formatAdminNumber(packageVolume)} ${unitName}`;
+        } else if (packageVolume != null && packageVolume > 0) {
+            packageType = "упаковка";
+            packageDescription = packageDescription || `${formatAdminNumber(packageVolume)} ${unitName}`;
+        } else {
+            packageDescription = packageDescription || unitName;
+        }
     }
 
     const payload = {
@@ -2499,6 +2569,7 @@ async function saveAdminProduct(formData) {
         tags: String(formData.get("tags") || "").trim(),
         filterMap: {
             activeIngredient,
+            discountPercent: discountPercent == null ? "" : formatAdminNumber(discountPercent),
             oldPrice: "",
         },
         active: String(formData.get("active")) !== "false",
@@ -3150,15 +3221,15 @@ function adjustCartQuantity(productId, direction) {
 }
 
 function getSanitizedQuantityForProduct(product, quantity) {
-    const step = Math.max(1, Number(product.orderStep || 1));
-    const min = Math.max(1, Number(product.minOrderQuantity || 1));
-    const safeQuantity = Math.max(min, Math.round(Number(quantity) || min));
-    if (safeQuantity <= min) return min;
-    return min + Math.round((safeQuantity - min) / step) * step;
+    const step = Math.max(0.001, Number(product.orderStep || 1));
+    const min = Math.max(0.001, Number(product.minOrderQuantity || 1));
+    const safeQuantity = Math.max(min, Number(quantity) || min);
+    if (safeQuantity <= min) return roundQuantity(min);
+    return roundQuantity(min + Math.round((safeQuantity - min) / step) * step);
 }
 
 function getInitialQuantity(product) {
-    return Math.max(1, Number(product.minOrderQuantity || 1));
+    return roundQuantity(Math.max(0.001, Number(product.minOrderQuantity || 1)));
 }
 
 function removeFromCart(productId) {
@@ -3412,6 +3483,10 @@ function formatPrice(value) {
 function formatQuantity(value) {
     const amount = Number(value || 0);
     return Number.isInteger(amount) ? String(amount) : amount.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+
+function roundQuantity(value) {
+    return Math.round(Number(value || 0) * 1000) / 1000;
 }
 
 function formatDate(value) {

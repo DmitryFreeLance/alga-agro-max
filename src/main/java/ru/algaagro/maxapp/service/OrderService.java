@@ -133,6 +133,8 @@ public class OrderService {
                 .append(item.getProductName())
                 .append(" × ")
                 .append(item.getQuantity().stripTrailingZeros().toPlainString())
+                .append(" ")
+                .append(resolveOrderItemUnitName(item))
                 .append(" = ")
                 .append(TextUtils.formatPrice(item.getUnitPrice().multiply(item.getQuantity())))
                 .append("\n"));
@@ -152,6 +154,8 @@ public class OrderService {
                 .append(item.getProductName())
                 .append(" × ")
                 .append(item.getQuantity().stripTrailingZeros().toPlainString())
+                .append(" ")
+                .append(resolveOrderItemUnitName(item))
                 .append("\n"));
         builder.append("\n💳 Итого: ").append(TextUtils.formatPrice(order.getTotalPrice()))
                 .append("\n📞 Менеджер свяжется с вами для подтверждения деталей.");
@@ -185,9 +189,16 @@ public class OrderService {
                 "productId", item.getProductId(),
                 "productName", item.getProductName(),
                 "quantity", item.getQuantity(),
-                "unitPrice", item.getUnitPrice()
+                "unitPrice", item.getUnitPrice(),
+                "unitName", resolveOrderItemUnitName(item)
         )).toList());
         return dto;
+    }
+
+    private String resolveOrderItemUnitName(CatalogOrderItem item) {
+        return productService.findById(item.getProductId())
+                .map(product -> product.getUnitName() == null || product.getUnitName().isBlank() ? "ед." : product.getUnitName())
+                .orElse("ед.");
     }
 
     @Transactional

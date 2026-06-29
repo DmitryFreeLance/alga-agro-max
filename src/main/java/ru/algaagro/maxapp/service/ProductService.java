@@ -119,47 +119,46 @@ public class ProductService {
 
     @Transactional
     public UpsertResult upsertProduct(ImportedProduct importedProduct, boolean syncToBitrix) {
-        CatalogProduct product = importedProduct.externalId() == null
-                ? null
-                : catalogProductRepository.findByExternalId(importedProduct.externalId()).orElse(null);
-        if (product == null && importedProduct.name() != null && !importedProduct.name().isBlank()) {
-            String normalizedImportName = TextUtils.normalizeToken(importedProduct.name());
-            product = catalogProductRepository.findAll().stream()
-                    .filter(existing -> existing.getName() != null && !existing.getName().isBlank())
-                    .filter(existing -> TextUtils.normalizeToken(existing.getName()).equals(normalizedImportName))
-                    .findFirst()
-                    .orElse(null);
-        }
+        CatalogProduct product = findExistingProductForImport(importedProduct);
         boolean created = product == null;
         if (product == null) {
             product = new CatalogProduct();
         } else if (!created && !hasImportedChanges(product, importedProduct)) {
             return new UpsertResult(product, false, false);
         }
-        product.setExternalId(importedProduct.externalId());
-        product.setSourceFile(importedProduct.sourceFile());
-        product.setSku(importedProduct.sku());
-        product.setName(importedProduct.name());
-        product.setDescription(importedProduct.description());
-        product.setBrand(importedProduct.brand());
-        product.setCategory(importedProduct.category());
-        product.setSubcategory(importedProduct.subcategory());
-        product.setItemType(importedProduct.itemType());
-        product.setUnitName(importedProduct.unitName());
+        product.setExternalId(firstNonBlank(importedProduct.externalId(), product.getExternalId(), created ? "manual-" + System.currentTimeMillis() : null));
+        product.setSourceFile(firstNonBlank(importedProduct.sourceFile(), product.getSourceFile()));
+        product.setSku(firstNonBlank(importedProduct.sku(), product.getSku()));
+        product.setName(firstNonBlank(importedProduct.name(), product.getName()));
+        product.setDescription(firstNonBlank(importedProduct.description(), product.getDescription()));
+        product.setBrand(firstNonBlank(importedProduct.brand(), product.getBrand()));
+        product.setCategory(firstNonBlank(importedProduct.category(), product.getCategory()));
+        product.setSubcategory(firstNonBlank(importedProduct.subcategory(), product.getSubcategory()));
+        product.setItemType(firstNonBlank(importedProduct.itemType(), product.getItemType()));
+        product.setUnitName(firstNonBlank(importedProduct.unitName(), product.getUnitName()));
         product.setPackageType(firstNonBlank(importedProduct.packageType(), product.getPackageType()));
         product.setPackageDescription(firstNonBlank(importedProduct.packageDescription(), product.getPackageDescription()));
-        product.setPrice(importedProduct.price());
-        product.setStockQuantity(importedProduct.stockQuantity());
+        product.setPrice(firstPositive(importedProduct.price(), product.getPrice()));
+        product.setStockQuantity(firstPositive(importedProduct.stockQuantity(), product.getStockQuantity()));
         product.setMinOrderQuantity(firstPositive(importedProduct.minOrderQuantity(), product.getMinOrderQuantity()));
         product.setOrderStep(firstPositive(importedProduct.orderStep(), product.getOrderStep()));
-        product.setCulturesJson(jsonHelper.writeValue(importedProduct.cultures()));
-        product.setPurposesJson(jsonHelper.writeValue(importedProduct.purposes()));
-        product.setTagsJson(jsonHelper.writeValue(importedProduct.tags()));
-        product.setCulturesIndex(TextUtils.toIndex(importedProduct.cultures()));
-        product.setPurposesIndex(TextUtils.toIndex(importedProduct.purposes()));
-        product.setTagsIndex(TextUtils.toIndex(importedProduct.tags()));
-        product.setFilterMapJson(jsonHelper.writeValue(importedProduct.filterMap()));
-        product.setRawDataJson(jsonHelper.writeValue(importedProduct.rawData()));
+        List<String> mergedCultures = importedProduct.cultures() == null || importedProduct.cultures().isEmpty()
+                ? getStringList(product.getCulturesJson())
+                : importedProduct.cultures();
+        List<String> mergedPurposes = importedProduct.purposes() == null || importedProduct.purposes().isEmpty()
+                ? getStringList(product.getPurposesJson())
+                : importedProduct.purposes();
+        List<String> mergedTags = importedProduct.tags() == null || importedProduct.tags().isEmpty()
+                ? getStringList(product.getTagsJson())
+                : importedProduct.tags();
+        product.setCulturesJson(jsonHelper.writeValue(mergedCultures));
+        product.setPurposesJson(jsonHelper.writeValue(mergedPurposes));
+        product.setTagsJson(jsonHelper.writeValue(mergedTags));
+        product.setCulturesIndex(TextUtils.toIndex(mergedCultures));
+        product.setPurposesIndex(TextUtils.toIndex(mergedPurposes));
+        product.setTagsIndex(TextUtils.toIndex(mergedTags));
+        product.setFilterMapJson(jsonHelper.writeValue(mergeMaps(jsonHelper.readMap(product.getFilterMapJson()), importedProduct.filterMap())));
+        product.setRawDataJson(jsonHelper.writeValue(mergeStringMaps(jsonHelper.readValue(product.getRawDataJson(), new TypeReference<>() { }, Map.of()), importedProduct.rawData())));
         product.setActive(true);
         CatalogProduct saved = catalogProductRepository.save(product);
         ensureManufacturerExists(saved.getBrand());
@@ -167,6 +166,24 @@ public class ProductService {
             syncProductWithBitrix(saved.getId());
         }
         return new UpsertResult(saved, created, true);
+    }
+
+    private CatalogProduct findExistingProductForImport(ImportedProduct importedProduct) {
+        CatalogProduct product = importedProduct.externalId() == null || importedProduct.externalId().isBlank()
+                ? null
+                : catalogProductRepository.findByExternalId(importedProduct.externalId()).orElse(null);
+        if (product != null) {
+            return product;
+        }
+        String normalizedImportName = TextUtils.normalizeToken(importedProduct.name());
+        if (normalizedImportName.isBlank()) {
+            return null;
+        }
+        return catalogProductRepository.findAll().stream()
+                .filter(existing -> existing.getName() != null && !existing.getName().isBlank())
+                .filter(existing -> TextUtils.normalizeToken(existing.getName()).equals(normalizedImportName))
+                .findFirst()
+                .orElse(null);
     }
 
     public List<String> getStringList(String json) {
@@ -288,6 +305,16 @@ public class ProductService {
         OrderRules orderRules = resolveOrderRules(product);
         Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
         Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
+        BigDecimal basePrice = product.getPrice();
+        BigDecimal discountPercent = firstPositive(
+                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
+                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Скидка", ""), ""))
+        );
+        BigDecimal effectivePrice = applyDiscount(basePrice, discountPercent);
+        BigDecimal legacyOldPrice = firstPositive(
+                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("oldPrice", ""), "")),
+                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Старая цена", ""), ""))
+        );
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("id", product.getId());
         dto.put("name", product.getName());
@@ -297,7 +324,7 @@ public class ProductService {
         dto.put("subcategory", product.getSubcategory());
         dto.put("itemType", product.getItemType());
         dto.put("unitName", orderRules.unitName());
-        dto.put("price", product.getPrice());
+        dto.put("price", effectivePrice);
         dto.put("stockQuantity", product.getStockQuantity());
         dto.put("cultures", getStringList(product.getCulturesJson()));
         dto.put("purposes", getStringList(product.getPurposesJson()));
@@ -310,10 +337,8 @@ public class ProductService {
         dto.put("orderStep", orderRules.orderStep());
         dto.put("orderHint", buildOrderHint(orderRules));
         dto.put("imageStyle", buildImageStyle(product));
-        dto.put("oldPrice", firstPositive(
-                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("oldPrice", ""), "")),
-                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Старая цена", ""), ""))
-        ));
+        dto.put("oldPrice", effectivePrice != null && basePrice != null && effectivePrice.compareTo(basePrice) < 0 ? basePrice : legacyOldPrice);
+        dto.put("discountPercent", discountPercent);
         dto.put("activeIngredient", firstNonBlank(
                 Objects.toString(filterMap.getOrDefault("activeIngredient", ""), ""),
                 Objects.toString(rawData.getOrDefault("Действующее вещество", ""), ""),
@@ -324,12 +349,27 @@ public class ProductService {
 
     public Map<String, Object> toAdminDto(CatalogProduct product) {
         Map<String, Object> dto = new LinkedHashMap<>(toMiniAppDto(product));
+        Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
         dto.put("externalId", product.getExternalId());
         dto.put("sourceFile", product.getSourceFile());
         dto.put("sku", product.getSku());
+        dto.put("price", product.getPrice());
+        dto.put("discountPercent", firstPositive(
+                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
+                BigDecimal.ZERO
+        ));
         dto.put("active", product.isActive());
         dto.put("updatedAt", product.getUpdatedAt());
         return dto;
+    }
+
+    private BigDecimal applyDiscount(BigDecimal basePrice, BigDecimal discountPercent) {
+        if (basePrice == null || discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) <= 0) {
+            return basePrice;
+        }
+        BigDecimal normalizedDiscount = discountPercent.min(new BigDecimal("100"));
+        BigDecimal multiplier = BigDecimal.ONE.subtract(normalizedDiscount.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP));
+        return basePrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
     @Transactional
@@ -811,31 +851,85 @@ public class ProductService {
     }
 
     private boolean hasImportedChanges(CatalogProduct existing, ImportedProduct imported) {
-        return !Objects.equals(blankToNull(existing.getExternalId()), blankToNull(imported.externalId()))
-                || !Objects.equals(blankToNull(existing.getSourceFile()), blankToNull(imported.sourceFile()))
-                || !Objects.equals(blankToNull(existing.getSku()), blankToNull(imported.sku()))
-                || !Objects.equals(blankToNull(existing.getName()), blankToNull(imported.name()))
-                || !Objects.equals(blankToNull(existing.getDescription()), blankToNull(imported.description()))
-                || !Objects.equals(blankToNull(existing.getBrand()), blankToNull(imported.brand()))
-                || !Objects.equals(blankToNull(existing.getCategory()), blankToNull(imported.category()))
-                || !Objects.equals(blankToNull(existing.getSubcategory()), blankToNull(imported.subcategory()))
-                || !Objects.equals(blankToNull(existing.getItemType()), blankToNull(imported.itemType()))
-                || !Objects.equals(blankToNull(existing.getUnitName()), blankToNull(imported.unitName()))
+        List<String> mergedCultures = imported.cultures() == null || imported.cultures().isEmpty()
+                ? getStringList(existing.getCulturesJson())
+                : imported.cultures();
+        List<String> mergedPurposes = imported.purposes() == null || imported.purposes().isEmpty()
+                ? getStringList(existing.getPurposesJson())
+                : imported.purposes();
+        List<String> mergedTags = imported.tags() == null || imported.tags().isEmpty()
+                ? getStringList(existing.getTagsJson())
+                : imported.tags();
+        Map<String, Object> mergedFilterMap = mergeMaps(jsonHelper.readMap(existing.getFilterMapJson()), imported.filterMap());
+        Map<String, String> mergedRawData = mergeStringMaps(
+                jsonHelper.readValue(existing.getRawDataJson(), new TypeReference<>() { }, Map.of()),
+                imported.rawData()
+        );
+        return !Objects.equals(blankToNull(existing.getExternalId()), blankToNull(firstNonBlank(imported.externalId(), existing.getExternalId())))
+                || !Objects.equals(blankToNull(existing.getSourceFile()), blankToNull(firstNonBlank(imported.sourceFile(), existing.getSourceFile())))
+                || !Objects.equals(blankToNull(existing.getSku()), blankToNull(firstNonBlank(imported.sku(), existing.getSku())))
+                || !Objects.equals(blankToNull(existing.getName()), blankToNull(firstNonBlank(imported.name(), existing.getName())))
+                || !Objects.equals(blankToNull(existing.getDescription()), blankToNull(firstNonBlank(imported.description(), existing.getDescription())))
+                || !Objects.equals(blankToNull(existing.getBrand()), blankToNull(firstNonBlank(imported.brand(), existing.getBrand())))
+                || !Objects.equals(blankToNull(existing.getCategory()), blankToNull(firstNonBlank(imported.category(), existing.getCategory())))
+                || !Objects.equals(blankToNull(existing.getSubcategory()), blankToNull(firstNonBlank(imported.subcategory(), existing.getSubcategory())))
+                || !Objects.equals(blankToNull(existing.getItemType()), blankToNull(firstNonBlank(imported.itemType(), existing.getItemType())))
+                || !Objects.equals(blankToNull(existing.getUnitName()), blankToNull(firstNonBlank(imported.unitName(), existing.getUnitName())))
                 || !Objects.equals(blankToNull(existing.getPackageType()), blankToNull(firstNonBlank(imported.packageType(), existing.getPackageType())))
                 || !Objects.equals(blankToNull(existing.getPackageDescription()), blankToNull(firstNonBlank(imported.packageDescription(), existing.getPackageDescription())))
-                || !sameDecimal(existing.getPrice(), imported.price())
-                || !sameDecimal(existing.getStockQuantity(), imported.stockQuantity())
+                || !sameDecimal(existing.getPrice(), firstPositive(imported.price(), existing.getPrice()))
+                || !sameDecimal(existing.getStockQuantity(), firstPositive(imported.stockQuantity(), existing.getStockQuantity()))
                 || !sameDecimal(existing.getMinOrderQuantity(), firstPositive(imported.minOrderQuantity(), existing.getMinOrderQuantity()))
                 || !sameDecimal(existing.getOrderStep(), firstPositive(imported.orderStep(), existing.getOrderStep()))
-                || !Objects.equals(existing.getCulturesJson(), jsonHelper.writeValue(imported.cultures()))
-                || !Objects.equals(existing.getPurposesJson(), jsonHelper.writeValue(imported.purposes()))
-                || !Objects.equals(existing.getTagsJson(), jsonHelper.writeValue(imported.tags()))
-                || !Objects.equals(existing.getCulturesIndex(), TextUtils.toIndex(imported.cultures()))
-                || !Objects.equals(existing.getPurposesIndex(), TextUtils.toIndex(imported.purposes()))
-                || !Objects.equals(existing.getTagsIndex(), TextUtils.toIndex(imported.tags()))
-                || !Objects.equals(existing.getFilterMapJson(), jsonHelper.writeValue(imported.filterMap()))
-                || !Objects.equals(existing.getRawDataJson(), jsonHelper.writeValue(imported.rawData()))
+                || !Objects.equals(existing.getCulturesJson(), jsonHelper.writeValue(mergedCultures))
+                || !Objects.equals(existing.getPurposesJson(), jsonHelper.writeValue(mergedPurposes))
+                || !Objects.equals(existing.getTagsJson(), jsonHelper.writeValue(mergedTags))
+                || !Objects.equals(existing.getCulturesIndex(), TextUtils.toIndex(mergedCultures))
+                || !Objects.equals(existing.getPurposesIndex(), TextUtils.toIndex(mergedPurposes))
+                || !Objects.equals(existing.getTagsIndex(), TextUtils.toIndex(mergedTags))
+                || !Objects.equals(existing.getFilterMapJson(), jsonHelper.writeValue(mergedFilterMap))
+                || !Objects.equals(existing.getRawDataJson(), jsonHelper.writeValue(mergedRawData))
                 || !existing.isActive();
+    }
+
+    private Map<String, Object> mergeMaps(Map<String, Object> existing, Map<String, Object> incoming) {
+        Map<String, Object> merged = new LinkedHashMap<>(existing == null ? Map.of() : existing);
+        if (incoming == null || incoming.isEmpty()) {
+            return merged;
+        }
+        incoming.forEach((key, value) -> {
+            if (key == null) {
+                return;
+            }
+            if (value instanceof String stringValue) {
+                String normalized = blankToNull(stringValue);
+                if (normalized != null) {
+                    merged.put(key, normalized);
+                }
+                return;
+            }
+            if (value != null) {
+                merged.put(key, value);
+            }
+        });
+        return merged;
+    }
+
+    private Map<String, String> mergeStringMaps(Map<String, String> existing, Map<String, String> incoming) {
+        Map<String, String> merged = new LinkedHashMap<>(existing == null ? Map.of() : existing);
+        if (incoming == null || incoming.isEmpty()) {
+            return merged;
+        }
+        incoming.forEach((key, value) -> {
+            if (key == null) {
+                return;
+            }
+            String normalized = blankToNull(value);
+            if (normalized != null) {
+                merged.put(key, normalized);
+            }
+        });
+        return merged;
     }
 
     private boolean sameDecimal(BigDecimal left, BigDecimal right) {
