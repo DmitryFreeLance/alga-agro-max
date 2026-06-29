@@ -45,6 +45,7 @@ import ru.algaagro.maxapp.service.MaxApiClient;
 import ru.algaagro.maxapp.service.OrderService;
 import ru.algaagro.maxapp.service.ProductService;
 import ru.algaagro.maxapp.service.UserService;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.JsonHelper;
 
 @Validated
@@ -102,21 +103,20 @@ public class MiniAppApiController {
 
     @GetMapping("/catalog/sections")
     public List<Map<String, Object>> sections() {
-        return productService.getActiveProducts().stream()
+        Map<String, Long> counts = productService.getActiveProducts().stream()
                 .collect(Collectors.groupingBy(
-                        product -> product.getCategory() == null || product.getCategory().isBlank() ? "Прочее" : product.getCategory().trim(),
+                        product -> CatalogStructure.normalizeSectionName(product.getCategory()),
                         LinkedHashMap::new,
-                        Collectors.toList()
-                ))
-                .entrySet().stream()
-                .map(entry -> {
+                        Collectors.counting()
+                ));
+        return CatalogStructure.SECTIONS.stream()
+                .map(sectionName -> {
                     Map<String, Object> dto = new LinkedHashMap<>();
-                    dto.put("name", entry.getKey());
-                    dto.put("description", buildSectionDescription(entry.getKey()));
-                    dto.put("productsCount", entry.getValue().size());
+                    dto.put("name", sectionName);
+                    dto.put("description", buildSectionDescription(sectionName));
+                    dto.put("productsCount", counts.getOrDefault(sectionName, 0L));
                     return dto;
                 })
-                .sorted(Comparator.comparing(item -> String.valueOf(item.get("name")), String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
 
@@ -640,52 +640,31 @@ public class MiniAppApiController {
     }
 
     private String buildSectionDescription(String sectionName) {
-        String normalized = sectionName == null ? "" : sectionName.toLowerCase();
-        if (normalized.contains("герб")) {
-            return "Защита от сорняков";
-        }
-        if (normalized.contains("фунг")) {
-            return "Защита от болезней";
-        }
-        if (normalized.contains("инсект")) {
-            return "Защита от вредителей";
-        }
-        if (normalized.contains("адъюв") || normalized.contains("адьюв")) {
-            return "Прилипатели и вспомогательные компоненты";
-        }
-        if (normalized.contains("сзр") || normalized.contains("пестиц")) {
-            return "Комплексная защита растений";
-        }
-        if (normalized.contains("десикант")) {
-            return "Препараты для десикации культур";
-        }
-        if (normalized.contains("протрав")) {
-            return "Защита семян перед посевом";
-        }
-        if (normalized.contains("роденти")) {
-            return "Средства против грызунов";
-        }
-        if (normalized.contains("репелент")) {
-            return "Средства отпугивания вредителей";
-        }
-        if (normalized.contains("регулятор рост")) {
-            return "Контроль роста и развития растений";
-        }
-        if (normalized.contains("красител")) {
-            return "Красители и специальные добавки для семян";
-        }
-        if (normalized.contains("сем")) {
+        String normalized = CatalogStructure.normalizeSectionName(sectionName);
+        if (CatalogStructure.SEEDS.equals(normalized)) {
             return "Зерновые, масличные, бобовые";
         }
-        if (normalized.contains("агрохим") || normalized.contains("удобр") || normalized.contains("питан")) {
+        if (CatalogStructure.PESTICIDES.equals(normalized)) {
+            return "Средства защиты растений";
+        }
+        if (CatalogStructure.AGROCHEMICALS.equals(normalized)) {
             return "Удобрения и стимуляторы";
         }
-        if (normalized.contains("мелиор")) {
+        if (CatalogStructure.MELIORANTS.equals(normalized)) {
             return "Известкование почв";
         }
-        if (normalized.contains("проч")) {
-            return "Дополнительные товары каталога";
+        if (CatalogStructure.CLOSED_GROUND.equals(normalized)) {
+            return "Решения для закрытого грунта";
         }
-        return sectionName == null || sectionName.isBlank() ? "Товары каталога" : "Товары раздела " + sectionName;
+        if (CatalogStructure.PAVS.equals(normalized)) {
+            return "Поверхностно-активные вещества";
+        }
+        if (CatalogStructure.DEFOAMERS.equals(normalized)) {
+            return "Контроль пены и технологических процессов";
+        }
+        if (CatalogStructure.SPECIAL.equals(normalized)) {
+            return "Специальные препараты";
+        }
+        return "Товары каталога";
     }
 }

@@ -89,6 +89,15 @@ public class KeyboardFactory {
         ));
     }
 
+    public List<Map<String, Object>> researchKeyboard(boolean hasMore) {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        if (hasMore) {
+            rows.add(List.of(callbackButton("▶️ Продолжить", "research:continue")));
+        }
+        rows.add(List.of(callbackButton("⏹ Остановить", "research:stop")));
+        return inlineKeyboard(rows);
+    }
+
     public Map<String, Object> callbackButton(String text, String payload) {
         Map<String, Object> button = new LinkedHashMap<>();
         button.put("type", "callback");

@@ -194,7 +194,8 @@ public class MaxApiClient {
             JsonNode fileJson = jsonHelper.readTree(fileResponse.body());
             String token = fileJson.path("token").asText("");
             if (token.isBlank()) {
-                throw new IllegalStateException("MAX image token is empty");
+                log.info("MAX image upload completed without token for {}. Attachment will be skipped.", classpathLocation);
+                return "";
             }
             return token;
         } catch (InterruptedException e) {

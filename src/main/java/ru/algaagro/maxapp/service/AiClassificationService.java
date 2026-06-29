@@ -416,7 +416,7 @@ public class AiClassificationService {
                       "name": "название товара",
                       "section": "раздел или группа",
                       "brand": "производитель или бренд",
-                      "categoryHint": "Семена|Пестициды|Агрохимикаты|Хим Мелиоранты|Препараты для закрытого грунта|ПАВы|Пеногасители|Спецпрепараты|Прочее",
+                      "categoryHint": "Семена|Пестициды|Агрохимикаты|Хим Мелиоранты|Препараты для закрытого грунта|ПАВы|Пеногасители|Спецпрепараты",
                       "subcategoryHint": "подкатегория",
                       "cultures": ["Пшеница"],
                       "description": "краткое описание",
@@ -610,6 +610,10 @@ public class AiClassificationService {
             String subcategory = item.path("subcategory").asText("");
             String itemType = item.path("itemType").asText("");
             String description = item.path("description").asText("");
+            String activeIngredient = item.path("activeIngredient").asText("");
+            String unitName = item.path("unitName").asText("");
+            String packageType = item.path("packageType").asText("");
+            String packageDescription = item.path("packageDescription").asText("");
             ExcelImportService.ImportRow row = chunk.get(results.size());
             String context = row.section() + " " + row.nameGuess() + " " + row.columns();
             category = CatalogStructure.normalizeSectionName(category);
@@ -631,6 +635,10 @@ public class AiClassificationService {
                     category.isBlank() ? CatalogStructure.OTHER : category,
                     subcategory,
                     itemType.isBlank() ? "Товар" : itemType,
+                    activeIngredient,
+                    unitName,
+                    packageType,
+                    packageDescription,
                     readStringArray(item.path("cultures")),
                     readStringArray(item.path("purposes")),
                     readStringArray(item.path("tags")),
@@ -660,6 +668,10 @@ public class AiClassificationService {
                     category.isBlank() ? CatalogStructure.OTHER : category,
                     subcategory,
                     itemType.isBlank() ? "Товар" : itemType,
+                    firstColumnValue(row.columns(), "действующее вещество", "состав"),
+                    firstColumnValue(row.columns(), "ед.изм", "ед", "unit"),
+                    "",
+                    firstColumnValue(row.columns(), "фасовка", "упаковка", "тара"),
                     cultures,
                     inferPurposes(row, category),
                     tags,
@@ -876,9 +888,13 @@ public class AiClassificationService {
                       "normalizedName": "чистое название товара",
                       "description": "краткое описание для каталога",
                       "brand": "бренд или линейка",
-                      "category": "Семена|Пестициды|Агрохимикаты|Хим Мелиоранты|Препараты для закрытого грунта|ПАВы|Пеногасители|Спецпрепараты|Прочее",
+                      "category": "Семена|Пестициды|Агрохимикаты|Хим Мелиоранты|Препараты для закрытого грунта|ПАВы|Пеногасители|Спецпрепараты",
                       "subcategory": "подкатегория",
                       "itemType": "тип карточки",
+                      "activeIngredient": "действующее вещество",
+                      "unitName": "л|кг|шт|т|п.е.|г|мл",
+                      "packageType": "тип упаковки",
+                      "packageDescription": "фасовка или упаковка",
                       "cultures": ["пшеница"],
                       "purposes": ["защита"],
                       "tags": ["листовая подкормка", "озимая"],
@@ -900,10 +916,11 @@ public class AiClassificationService {
                 - Для прилипателей, pH-контроля и технологических добавок category = ПАВы.
                 - Для пеногасителей category = Пеногасители.
                 - Для мелиорантов category = Хим Мелиоранты; если встречается Кальциприлл, subcategory = Кальциприлл.
-                - Используй значение поля "Раздел" как главный контекст категории и назначения.
+                - Во входных строках есть только название и описание товара. Опирайся только на них и на список известных культур.
                 - normalizedName должен браться из колонки "Позиция" без служебного мусора.
                 - description собирай предметно: что это за продукт + ключевой состав или норма расхода.
-                - Не оставляй category = Прочее, если по "Позиции", "Составу", "Норме расхода" или "Разделу" можно понять тип товара.
+                - Если из названия или описания можно понять действующее вещество, фасовку, единицу или тип упаковки, заполни activeIngredient, unitName, packageType, packageDescription.
+                - Не возвращай неопределенную категорию, если по "Позиции", "Составу", "Норме расхода" или "Разделу" можно понять тип товара.
                 - Количество объектов в products должно строго совпадать с количеством строк.
                 """);
         if (!knownCultures.isEmpty()) {
@@ -1093,6 +1110,10 @@ public class AiClassificationService {
             String category,
             String subcategory,
             String itemType,
+            String activeIngredient,
+            String unitName,
+            String packageType,
+            String packageDescription,
             List<String> cultures,
             List<String> purposes,
             List<String> tags,

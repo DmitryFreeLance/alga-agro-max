@@ -417,7 +417,10 @@ public class ExcelImportService {
     private Map<String, Long> countByCategory(List<StagedImportProduct> stagedProducts) {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (StagedImportProduct item : stagedProducts) {
-            String key = item.category() == null || item.category().isBlank() ? "Прочее" : item.category();
+            String key = CatalogStructure.normalizeSectionName(item.category());
+            if (key.isBlank() || CatalogStructure.OTHER.equalsIgnoreCase(key)) {
+                key = CatalogStructure.PESTICIDES;
+            }
             counts.put(key, counts.getOrDefault(key, 0L) + 1);
         }
         return counts;

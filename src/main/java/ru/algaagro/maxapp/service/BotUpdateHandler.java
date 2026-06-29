@@ -459,6 +459,8 @@ public class BotUpdateHandler {
             case "post:media:done" -> askPostText(user, callbackId);
             case "post:publish" -> publishPost(user, callbackId);
             case "post:cancel", "flow:cancel" -> cancelFlow(user, callbackId);
+            case "research:continue" -> continueProductsResearch(user, callbackId);
+            case "research:stop" -> stopProductsResearch(user, callbackId);
             case "admin:buttons" -> showButtons(user, callbackId);
             case "buttons:add" -> notifyButtonCreationDisabled(user, callbackId);
             default -> {
@@ -587,12 +589,12 @@ public class BotUpdateHandler {
 
     private void startProductsResearch(AppUser user) {
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "🔎 Запускаю AI-пересмотр всего каталога. Товары будут отправлены в ИИ партиями, а отчет по распределению придет отдельными сообщениями.",
+                "🔎 Запускаю AI-пересмотр всего каталога. После каждой партии пришлю отчет и кнопки «Продолжить» / «Остановить».",
                 null,
                 "html");
-        productResearchService.researchUncategorizedProductsAsync(
+        productResearchService.startResearchAsync(
                 user.getMaxUserId(),
-                progress -> maxApiClient.sendToUser(user.getMaxUserId(), progress, null, "html"),
+                report -> maxApiClient.sendToUser(user.getMaxUserId(), report.text(), keyboardFactory.researchKeyboard(report.hasMore()), "html"),
                 summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
                 error -> maxApiClient.sendToUser(
                         user.getMaxUserId(),
@@ -600,6 +602,30 @@ public class BotUpdateHandler {
                         keyboardFactory.adminMenu(),
                         "html")
         );
+    }
+
+    private void continueProductsResearch(AppUser user, String callbackId) {
+        productResearchService.continueResearchAsync(
+                user.getMaxUserId(),
+                report -> maxApiClient.sendToUser(user.getMaxUserId(), report.text(), keyboardFactory.researchKeyboard(report.hasMore()), "html"),
+                summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
+                error -> maxApiClient.sendToUser(
+                        user.getMaxUserId(),
+                        "⚠️ Не удалось продолжить research.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
+                        keyboardFactory.adminMenu(),
+                        "html")
+        );
+        if (callbackId != null) {
+            maxApiClient.answerCallback(callbackId, "Запускаю следующую партию");
+        }
+    }
+
+    private void stopProductsResearch(AppUser user, String callbackId) {
+        String message = productResearchService.stopResearch(user.getMaxUserId());
+        maxApiClient.sendToUser(user.getMaxUserId(), "⏹ " + message, keyboardFactory.adminMenu(), "html");
+        if (callbackId != null) {
+            maxApiClient.answerCallback(callbackId, "Research остановлен");
+        }
     }
 
     private void confirmImportPreview(AppUser user, BotSession session) {
@@ -823,7 +849,7 @@ public class BotUpdateHandler {
 
                 Мы предлагаем:
                 🌾 Семена — озимые и яровые культуры
-                🛡 СЗР — гербициды, фунгициды, инсектициды
+                🛡 Пестициды — защита растений по строгой структуре каталога
                 🧪 Агрохимикаты и мелиоранты
 
                 Выберите нужный раздел 👇

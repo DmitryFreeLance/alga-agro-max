@@ -13,6 +13,16 @@ public final class CatalogStructure {
     public static final String DEFOAMERS = "Пеногасители";
     public static final String SPECIAL = "Спецпрепараты";
     public static final String OTHER = "Прочее";
+    public static final List<String> SECTIONS = List.of(
+            SEEDS,
+            PESTICIDES,
+            AGROCHEMICALS,
+            MELIORANTS,
+            CLOSED_GROUND,
+            PAVS,
+            DEFOAMERS,
+            SPECIAL
+    );
 
     public static final List<String> PESTICIDE_SUBCATEGORIES = List.of(
             "Фунгициды",

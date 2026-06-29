@@ -37,6 +37,7 @@ import ru.algaagro.maxapp.model.CatalogOrderItem;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogOrderRepository;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -768,7 +769,7 @@ public class BitrixSyncService {
                 blankToNull(propertyValue(productNode, context, PROPERTY_CATEGORY)),
                 local.getCategory(),
                 inferCategoryFromName(local.getName()),
-                "Прочее"
+                CatalogStructure.PESTICIDES
         ));
         local.setSubcategory(blankToNull(propertyValue(productNode, context, PROPERTY_SUBCATEGORY)));
         local.setItemType(blankToNull(propertyValue(productNode, context, PROPERTY_ITEM_TYPE)));
@@ -1101,17 +1102,7 @@ public class BitrixSyncService {
     }
 
     private String inferCategoryFromName(String name) {
-        String normalized = TextUtils.normalizeToken(name);
-        if (normalized.contains("сем")) {
-            return "Семена";
-        }
-        if (normalized.contains("гербиц") || normalized.contains("фунгиц") || normalized.contains("инсектиц") || normalized.contains("пестиц")) {
-            return "Пестициды";
-        }
-        if (normalized.contains("удобр") || normalized.contains("агропит") || normalized.contains("npk") || normalized.contains("азот") || normalized.contains("бор")) {
-            return "Агропитание";
-        }
-        return "Прочее";
+        return CatalogStructure.inferSection(TextUtils.normalizeToken(name), "");
     }
 
     private String firstNonBlank(String... values) {

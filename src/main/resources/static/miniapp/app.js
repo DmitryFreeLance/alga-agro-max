@@ -1037,7 +1037,7 @@ function renderAdminCatalog() {
         ? state.admin.products.filter(item => getProductSectionName(item) === activeSectionName)
         : state.admin.products;
     const visibleCount = sectionProducts.filter(item => item.active).length;
-    const sectionVisual = activeSection?.visual || getSectionVisual(activeSectionName || "Прочее");
+    const sectionVisual = activeSection?.visual || getSectionVisual(activeSectionName || FIXED_SECTION_DEFINITIONS[0]?.name || "");
     return `
         <div class="admin-catalog-layout">
             <div class="admin-card admin-card-spacious">
@@ -3132,7 +3132,7 @@ function getSectionDisplayName(name) {
     if (definition) {
         return definition.name;
     }
-    return name || "Прочее";
+    return name || FIXED_SECTION_DEFINITIONS[0]?.name || "";
 }
 
 function getSectionDescription(name) {
@@ -3241,8 +3241,12 @@ function getProductLeafSectionName(product) {
 
 function getProductSectionName(product) {
     const category = String(product?.category || "").trim();
+    const directSection = getSectionDefinition(category);
+    if (directSection) {
+        return directSection.name;
+    }
     const subcategory = String(product?.subcategory || product?.itemType || "").trim();
-    const context = [category, subcategory, product?.name, product?.activeIngredient, ...(product?.cultures || [])].join(" ");
+    const context = [category, subcategory, product?.name, product?.activeIngredient].join(" ");
     if (isSeedsSectionName(context)) {
         return "Семена";
     }
@@ -3753,13 +3757,13 @@ function normalizeFilterLabel(value) {
     if (normalized.includes("моллюскоцид")) return "Моллюскоциды";
     if (normalized.includes("зооцид")) return "Зооциды";
     if (normalized.includes("протрав")) return "Протравители";
-    if (normalized.includes("роденти")) return "Родентициды";
-    if (normalized.includes("репелент")) return "Репеленты";
+    if (normalized.includes("роденти")) return "Зооциды";
+    if (normalized.includes("репелент")) return "Зооциды";
     if (normalized.includes("регулятор рост")) return "Регуляторы роста растений";
     if (normalized.includes("инокулянт")) return "Инокулянты";
     if (normalized.includes("прилипател")) return "Прилипатели";
     if (normalized.includes("биостимулятор")) return "Биостимуляторы";
-    if (normalized.includes("красител")) return "Красители семян";
+    if (normalized.includes("красител")) return "Протравители";
     if (normalized.includes("адъюв") || normalized.includes("адьюв") || normalized.includes("пав")) return "ПАВы";
     if (normalized.includes("микроудобр")) return "Микроудобрения";
     if (normalized.includes("удобр")) return "Удобрения";
