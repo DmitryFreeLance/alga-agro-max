@@ -58,6 +58,8 @@ app:
   bitrix:
     webhook-base-url: ${BITRIX_WEBHOOK_BASE_URL:}
     sync-enabled: ${BITRIX_SYNC_ENABLED:true}
+    inbound-sync-enabled: ${BITRIX_INBOUND_SYNC_ENABLED:false}
+    startup-replace-remote-catalog: ${BITRIX_STARTUP_REPLACE_REMOTE_CATALOG:true}
     catalog-id: ${BITRIX_CATALOG_ID:}
     base-price-type-id: ${BITRIX_BASE_PRICE_TYPE_ID:}
     currency-id: ${BITRIX_CURRENCY_ID:RUB}

@@ -129,7 +129,13 @@ public class BitrixSyncService {
             return;
         }
         try {
-            syncFromBitrix();
+            if (appProperties.getBitrix().isStartupReplaceRemoteCatalog()) {
+                replaceRemoteCatalogFromLocal();
+            } else if (appProperties.getBitrix().isInboundSyncEnabled()) {
+                syncFromBitrix();
+            } else {
+                log.info("Initial Bitrix24 inbound sync skipped: inbound sync disabled");
+            }
         } catch (RuntimeException e) {
             log.warn("Initial Bitrix24 sync failed: {}", e.getMessage());
         } finally {
@@ -142,7 +148,7 @@ public class BitrixSyncService {
             fixedDelayString = "${app.bitrix.poll-interval-ms:180000}"
     )
     public void scheduledPull() {
-        if (!enabled() || !syncInProgress.compareAndSet(false, true)) {
+        if (!enabled() || !appProperties.getBitrix().isInboundSyncEnabled() || !syncInProgress.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -228,6 +234,56 @@ public class BitrixSyncService {
             }
         }
         log.info("Bitrix24 outbound sync completed: synced={}, failed={}", synced, failed);
+    }
+
+    @Transactional
+    public void replaceRemoteCatalogFromLocal() {
+        if (!enabled()) {
+            return;
+        }
+        PortalContext context = ensurePortalContext();
+        List<Long> remoteIds = listRemoteProductIds(context);
+        int deleted = 0;
+        int deleteFailed = 0;
+        for (Long remoteId : remoteIds) {
+            try {
+                call("catalog.product.delete", Map.of("id", remoteId));
+                deleted++;
+            } catch (RuntimeException e) {
+                deleteFailed++;
+                log.warn("Bitrix24 remote delete skipped product id={}: {}", remoteId, e.getMessage());
+            }
+        }
+
+        List<CatalogProduct> localProducts = catalogProductRepository.findAll();
+        for (CatalogProduct product : localProducts) {
+            product.setBitrixProductId(null);
+            product.setBitrixPriceId(null);
+            product.setBitrixSyncHash(null);
+            product.setBitrixSyncedAt(null);
+        }
+        catalogProductRepository.saveAll(localProducts);
+
+        int uploaded = 0;
+        int uploadFailed = 0;
+        for (CatalogProduct product : localProducts) {
+            if (!product.isActive()) {
+                continue;
+            }
+            try {
+                syncLocalProduct(product.getId());
+                uploaded++;
+            } catch (RuntimeException e) {
+                uploadFailed++;
+                log.warn("Bitrix24 remote upload skipped product id={}, name={}: {}",
+                        product.getId(),
+                        TextUtils.trimTo(product.getName(), 80),
+                        e.getMessage());
+            }
+        }
+
+        log.info("Bitrix24 startup replace completed: remoteDeleted={}, remoteDeleteFailed={}, uploaded={}, uploadFailed={}",
+                deleted, deleteFailed, uploaded, uploadFailed);
     }
 
     @Transactional
@@ -365,6 +421,50 @@ public class BitrixSyncService {
         } else {
             log.warn("Bitrix24 inbound sync finished without full catalog scan, skipped local deactivation. scanned={}", remoteIds.size());
         }
+    }
+
+    private List<Long> listRemoteProductIds(PortalContext context) {
+        List<Long> remoteIds = new ArrayList<>();
+        Set<Long> seenPageFirstIds = new LinkedHashSet<>();
+        int start = 0;
+        int pageSize = 50;
+        while (true) {
+            JsonNode result = call("catalog.product.list", Map.of(
+                    "select", List.of("id"),
+                    "filter", Map.of("iblockId", context.iblockId()),
+                    "order", Map.of("id", "asc"),
+                    "start", start
+            ));
+            JsonNode productsNode = result.path("products");
+            if (!productsNode.isArray() || productsNode.isEmpty()) {
+                break;
+            }
+            long firstId = productsNode.get(0).path("id").asLong(0L);
+            if (firstId > 0 && !seenPageFirstIds.add(firstId)) {
+                log.warn("Bitrix24 remote list detected repeated page while clearing catalog, start={}, firstId={}", start, firstId);
+                break;
+            }
+            productsNode.forEach(node -> {
+                long id = node.path("id").asLong(0L);
+                if (id > 0) {
+                    remoteIds.add(id);
+                }
+            });
+            JsonNode nextNode = result.get("next");
+            if (nextNode != null && nextNode.canConvertToInt()) {
+                int next = nextNode.asInt();
+                if (next <= start) {
+                    break;
+                }
+                start = next;
+                continue;
+            }
+            if (productsNode.size() < pageSize) {
+                break;
+            }
+            start += productsNode.size();
+        }
+        return remoteIds;
     }
 
     private PortalContext ensurePortalContext() {

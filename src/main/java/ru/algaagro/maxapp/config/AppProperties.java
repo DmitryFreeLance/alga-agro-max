@@ -239,6 +239,8 @@ public class AppProperties {
     public static class BitrixProperties {
         private String webhookBaseUrl;
         private boolean syncEnabled = true;
+        private boolean inboundSyncEnabled = false;
+        private boolean startupReplaceRemoteCatalog = true;
         private Integer catalogId;
         private Integer basePriceTypeId;
         private String currencyId = "RUB";
@@ -263,6 +265,22 @@ public class AppProperties {
 
         public void setSyncEnabled(boolean syncEnabled) {
             this.syncEnabled = syncEnabled;
+        }
+
+        public boolean isInboundSyncEnabled() {
+            return inboundSyncEnabled;
+        }
+
+        public void setInboundSyncEnabled(boolean inboundSyncEnabled) {
+            this.inboundSyncEnabled = inboundSyncEnabled;
+        }
+
+        public boolean isStartupReplaceRemoteCatalog() {
+            return startupReplaceRemoteCatalog;
+        }
+
+        public void setStartupReplaceRemoteCatalog(boolean startupReplaceRemoteCatalog) {
+            this.startupReplaceRemoteCatalog = startupReplaceRemoteCatalog;
         }
 
         public Integer getCatalogId() {
