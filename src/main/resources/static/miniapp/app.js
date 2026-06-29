@@ -503,18 +503,32 @@ function renderSectionPage() {
     const filtered = applyCatalogFilters(products);
     return `
         <div class="stack">
-            <div class="quick-filters-row">
-                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="subcategory">${escapeHtml(getSubcategoryFilterTitle(state.catalog.section))}</button>
-                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="manufacturer">Производитель</button>
-                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="culture">Культура</button>
+            ${renderSectionTabs()}
+            <div class="catalog-section-layout">
+                ${renderInlineFiltersSidebar()}
+                <div class="catalog-results-panel">
+                    <div class="toolbar-row catalog-toolbar-row">
+                        <div class="catalog-results-meta">Товаров: ${filtered.length}</div>
+                        <select class="toolbar-select" data-field="catalog-sort">
+                            ${renderSortOptions()}
+                        </select>
+                    </div>
+                    ${renderProductsGrid(filtered)}
+                </div>
             </div>
-            <div class="toolbar-row">
-                <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
-                <select class="toolbar-select" data-field="catalog-sort">
-                    ${renderSortOptions()}
-                </select>
-            </div>
-            ${renderProductsGrid(filtered)}
+        </div>
+    `;
+}
+
+function renderSectionTabs() {
+    const currentSection = state.catalog.section;
+    return `
+        <div class="quick-filters-row section-tabs-row">
+            ${getCatalogSections().map(section => `
+                <button type="button" class="quick-filter-btn section-tab-btn ${section.name === currentSection ? "active" : ""}" data-action="open-section" data-section="${escapeAttr(section.name)}">
+                    ${escapeHtml(getSectionDisplayName(section.name))}
+                </button>
+            `).join("")}
         </div>
     `;
 }
@@ -642,7 +656,7 @@ function renderProductCard(product) {
     const favorite = isFavorite(product.id);
     const cartItem = getCartItem(product.id);
     const price = renderProductPrice(product);
-    const categoryLabel = getProductLeafSectionName(product);
+    const subtitle = getProductCardSubtitle(product);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -651,7 +665,7 @@ function renderProductCard(product) {
             </div>
             <div class="product-card-body">
                 <p class="product-card-title">${escapeHtml(product.name)}</p>
-                <p class="product-card-subtitle">${escapeHtml(product.brand || categoryLabel || "")}</p>
+                <p class="product-card-subtitle">${escapeHtml(subtitle)}</p>
                 <div class="price-line">
                     ${price}
                     ${product.price == null
@@ -663,6 +677,33 @@ function renderProductCard(product) {
             </div>
         </article>
     `;
+}
+
+function getProductCardSubtitle(product) {
+    if (normalize(product?.category) === normalize("Пестициды")) {
+        return formatCompactPackageDisplay(product) || product.brand || getProductLeafSectionName(product) || "";
+    }
+    return product.brand || getProductLeafSectionName(product) || "";
+}
+
+function formatCompactPackageDisplay(product) {
+    const config = inferAdminOrderConfig(product);
+    const volume = String(config.packageVolume || "").trim();
+    const units = Number(config.unitsPerPackage || 1);
+    const normalizedUnit = normalize(config.unitName || "");
+    if (!volume) {
+        return String(product?.packageDescription || product?.packageType || product?.unitName || "").trim();
+    }
+    if ((normalizedUnit === "л" || normalizedUnit.includes("лит") || normalizedUnit === "кг" || normalizedUnit.includes("кил")) && units > 1) {
+        return `${formatAdminNumber(volume)}x${formatAdminNumber(units)}`;
+    }
+    if (normalizedUnit === "л" || normalizedUnit.includes("лит")) {
+        return `${formatAdminNumber(volume)}л`;
+    }
+    if (normalizedUnit === "кг" || normalizedUnit.includes("кил")) {
+        return `${formatAdminNumber(volume)}кг`;
+    }
+    return String(product?.packageDescription || "").trim();
 }
 
 function renderProductPrice(product) {
@@ -1447,7 +1488,7 @@ function renderProductModal() {
                             ` : ""}
                             <div class="product-spec-item">
                                 <span>Упаковка</span>
-                                <strong>${escapeHtml(product.packageDescription || product.packageType || product.unitName || "Не указана")}</strong>
+                                    <strong>${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Не указана")}</strong>
                             </div>
                         </div>
                         ${subcategoryName ? `<div class="product-brand">${escapeHtml(subcategoryName)}</div>` : ""}
@@ -1458,7 +1499,7 @@ function renderProductModal() {
                         <strong class="${product.oldPrice ? "price-current-discount" : ""}">${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
                     </div>
                     <div class="packaging-chips">
-                        <span class="packaging-chip">${escapeHtml(product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
+                        <span class="packaging-chip">${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
                     </div>
                     ${product.description ? `<p class="detail-paragraph">${escapeHtml(product.description)}</p>` : ""}
                     ${canBuy ? `
@@ -1477,6 +1518,39 @@ function renderProductModal() {
 
 function renderFiltersDrawer() {
     if (!state.catalog.filtersOpen) return "";
+    return `
+        <div class="drawer">
+            <div class="drawer-backdrop" data-action="close-filters"></div>
+            <div class="drawer-sheet">
+                <div class="drawer-top">
+                    <div class="modal-title">Фильтры</div>
+                    <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
+                </div>
+                ${renderCatalogFiltersPanel({ inline: false })}
+                <div class="drawer-actions">
+                    <button class="ghost-btn" data-action="close-filters">Сбросить</button>
+                    <button class="primary-btn" data-action="apply-filters">Применить</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderInlineFiltersSidebar() {
+    return `
+        <aside class="catalog-filters-sidebar">
+            <div class="catalog-filters-card">
+                <div class="catalog-filters-head">
+                    <div class="catalog-filters-title">Фильтры</div>
+                    <button class="catalog-reset-link" data-action="reset-inline-filters">Сбросить</button>
+                </div>
+                ${renderCatalogFiltersPanel({ inline: true })}
+            </div>
+        </aside>
+    `;
+}
+
+function renderCatalogFiltersPanel({ inline = false } = {}) {
     const draft = state.catalog.draft || cloneFilters(state.catalog.applied);
     const panels = state.catalog.filterPanels || emptyFilterPanels();
     const sectionProducts = getDraftSectionProducts(draft);
@@ -1488,57 +1562,65 @@ function renderFiltersDrawer() {
         .filter(name => !cultureKeys.has(normalize(name)));
     const subcategoryTitle = getSubcategoryFilterTitle(effectiveSection);
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
+    const isPesticidesSection = normalize(effectiveSection) === normalize("Пестициды");
+    const activeIngredients = uniqueValues(sectionProducts.map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean));
     const seedFaoRanges = SEED_FAO_RANGES.map(item => item.label);
     const seedMaturityGroups = SEED_MATURITY_GROUPS;
     const seedTechnologies = SEED_TREATMENT_TECHNOLOGIES;
+    const wrapperClass = inline ? "catalog-filters-panel inline" : "catalog-filters-panel";
     return `
-        <div class="drawer">
-            <div class="drawer-backdrop" data-action="close-filters"></div>
-            <div class="drawer-sheet">
-                <div class="drawer-top">
-                    <div class="modal-title">Фильтры</div>
-                    <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
-                </div>
-                <div class="drawer-section" data-filter-anchor="sections">
-                    <h4>Раздел</h4>
-                    <div class="filter-chips-row">
-                        ${getCatalogSections().map(section => `
-                            <button class="filter-chip ${draft.sections.includes(section.name) ? "active" : ""}" data-action="toggle-filter-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
+        <div class="${wrapperClass}">
+            <div class="drawer-section" data-filter-anchor="culture">
+                <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
+                    <span>Культура</span>
+                    <span class="drawer-section-arrow">${panels.culture ? "▾" : "▸"}</span>
+                </button>
+                ${panels.culture ? `
+                    <div class="checkbox-list">
+                        ${cultures.map(name => `
+                            <label class="checkbox-row">
+                                <input type="checkbox" data-field="filter-culture" value="${escapeAttr(name)}" ${draft.cultures.includes(name) ? "checked" : ""}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
                         `).join("")}
                     </div>
-                </div>
-                <div class="drawer-section" data-filter-anchor="culture">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
-                        <span>Культура</span>
-                        <span class="drawer-section-arrow">${panels.culture ? "▾" : "▸"}</span>
+                ` : ""}
+            </div>
+            <div class="drawer-section" data-filter-anchor="manufacturer">
+                <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="manufacturer">
+                    <span>Производитель</span>
+                    <span class="drawer-section-arrow">${panels.manufacturer ? "▾" : "▸"}</span>
+                </button>
+                ${panels.manufacturer ? `
+                    <div class="checkbox-list">
+                        ${manufacturers.map(name => `
+                            <label class="checkbox-row">
+                                <input type="checkbox" data-field="filter-manufacturer" value="${escapeAttr(name)}" ${draft.manufacturers.includes(name) ? "checked" : ""}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
+                        `).join("")}
+                    </div>
+                ` : ""}
+            </div>
+            ${isPesticidesSection ? `
+                <div class="drawer-section" data-filter-anchor="active-ingredient">
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="activeIngredient">
+                        <span>Действующее вещество</span>
+                        <span class="drawer-section-arrow">${panels.activeIngredient ? "▾" : "▸"}</span>
                     </button>
-                    ${panels.culture ? `
+                    ${panels.activeIngredient ? `
                         <div class="checkbox-list">
-                            ${cultures.map(name => `
+                            ${activeIngredients.map(name => `
                                 <label class="checkbox-row">
-                                    <input type="checkbox" data-field="filter-culture" value="${escapeAttr(name)}" ${draft.cultures.includes(name) ? "checked" : ""}>
+                                    <input type="checkbox" data-field="filter-active-ingredient" value="${escapeAttr(name)}" ${draft.activeIngredients.includes(name) ? "checked" : ""}>
                                     <span>${escapeHtml(name)}</span>
                                 </label>
                             `).join("")}
                         </div>
                     ` : ""}
                 </div>
-                <div class="drawer-section" data-filter-anchor="manufacturer">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="manufacturer">
-                        <span>Производитель</span>
-                        <span class="drawer-section-arrow">${panels.manufacturer ? "▾" : "▸"}</span>
-                    </button>
-                    ${panels.manufacturer ? `
-                        <div class="checkbox-list">
-                            ${manufacturers.map(name => `
-                                <label class="checkbox-row">
-                                    <input type="checkbox" data-field="filter-manufacturer" value="${escapeAttr(name)}" ${draft.manufacturers.includes(name) ? "checked" : ""}>
-                                    <span>${escapeHtml(name)}</span>
-                                </label>
-                            `).join("")}
-                        </div>
-                    ` : ""}
-                </div>
+            ` : ""}
+            ${subcategoryTitle !== "Культура" ? `
                 <div class="drawer-section" data-filter-anchor="subcategory">
                     <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
                         <span>${escapeHtml(subcategoryTitle)}</span>
@@ -1555,73 +1637,69 @@ function renderFiltersDrawer() {
                         </div>
                     ` : ""}
                 </div>
-                ${isSeedsSection ? `
-                    <div class="drawer-section" data-filter-anchor="fao">
-                        <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="fao">
-                            <span>ФАО</span>
-                            <span class="drawer-section-arrow">${panels.fao ? "▾" : "▸"}</span>
-                        </button>
-                        ${panels.fao ? `
-                            <div class="checkbox-list">
-                                ${seedFaoRanges.map(name => `
-                                    <label class="checkbox-row">
-                                        <input type="checkbox" data-field="filter-seed-fao" value="${escapeAttr(name)}" ${draft.seedFaoRanges.includes(name) ? "checked" : ""}>
-                                        <span>${escapeHtml(name)}</span>
-                                    </label>
-                                `).join("")}
-                            </div>
-                        ` : ""}
-                    </div>
-                    <div class="drawer-section" data-filter-anchor="maturity">
-                        <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="maturity">
-                            <span>Группа спелости</span>
-                            <span class="drawer-section-arrow">${panels.maturity ? "▾" : "▸"}</span>
-                        </button>
-                        ${panels.maturity ? `
-                            <div class="checkbox-list">
-                                ${seedMaturityGroups.map(name => `
-                                    <label class="checkbox-row">
-                                        <input type="checkbox" data-field="filter-seed-maturity" value="${escapeAttr(name)}" ${draft.seedMaturityGroups.includes(name) ? "checked" : ""}>
-                                        <span>${escapeHtml(name)}</span>
-                                    </label>
-                                `).join("")}
-                            </div>
-                        ` : ""}
-                    </div>
-                    <div class="drawer-section" data-filter-anchor="technology">
-                        <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="technology">
-                            <span>Технология обработки</span>
-                            <span class="drawer-section-arrow">${panels.technology ? "▾" : "▸"}</span>
-                        </button>
-                        ${panels.technology ? `
-                            <div class="checkbox-list">
-                                ${seedTechnologies.map(name => `
-                                    <label class="checkbox-row">
-                                        <input type="checkbox" data-field="filter-seed-technology" value="${escapeAttr(name)}" ${draft.seedTreatmentTechnologies.includes(name) ? "checked" : ""}>
-                                        <span>${escapeHtml(name)}</span>
-                                    </label>
-                                `).join("")}
-                            </div>
-                        ` : ""}
-                    </div>
-                ` : ""}
-                <div class="drawer-section" data-filter-anchor="more">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
-                        <span>Цена</span>
-                        <span class="drawer-section-arrow">${panels.more ? "▾" : "▸"}</span>
+            ` : ""}
+            ${isSeedsSection ? `
+                <div class="drawer-section" data-filter-anchor="fao">
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="fao">
+                        <span>ФАО</span>
+                        <span class="drawer-section-arrow">${panels.fao ? "▾" : "▸"}</span>
                     </button>
-                    ${panels.more ? `
-                        <div class="price-range">
-                            <input type="number" data-field="filter-price-min" value="${escapeAttr(draft.priceMin)}" placeholder="от">
-                            <span>—</span>
-                            <input type="number" data-field="filter-price-max" value="${escapeAttr(draft.priceMax)}" placeholder="до">
+                    ${panels.fao ? `
+                        <div class="checkbox-list">
+                            ${seedFaoRanges.map(name => `
+                                <label class="checkbox-row">
+                                    <input type="checkbox" data-field="filter-seed-fao" value="${escapeAttr(name)}" ${draft.seedFaoRanges.includes(name) ? "checked" : ""}>
+                                    <span>${escapeHtml(name)}</span>
+                                </label>
+                            `).join("")}
                         </div>
                     ` : ""}
                 </div>
-                <div class="drawer-actions">
-                    <button class="ghost-btn" data-action="close-filters">Сбросить</button>
-                    <button class="primary-btn" data-action="apply-filters">Применить</button>
+                <div class="drawer-section" data-filter-anchor="maturity">
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="maturity">
+                        <span>Группа спелости</span>
+                        <span class="drawer-section-arrow">${panels.maturity ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.maturity ? `
+                        <div class="checkbox-list">
+                            ${seedMaturityGroups.map(name => `
+                                <label class="checkbox-row">
+                                    <input type="checkbox" data-field="filter-seed-maturity" value="${escapeAttr(name)}" ${draft.seedMaturityGroups.includes(name) ? "checked" : ""}>
+                                    <span>${escapeHtml(name)}</span>
+                                </label>
+                            `).join("")}
+                        </div>
+                    ` : ""}
                 </div>
+                <div class="drawer-section" data-filter-anchor="technology">
+                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="technology">
+                        <span>Технология обработки</span>
+                        <span class="drawer-section-arrow">${panels.technology ? "▾" : "▸"}</span>
+                    </button>
+                    ${panels.technology ? `
+                        <div class="checkbox-list">
+                            ${seedTechnologies.map(name => `
+                                <label class="checkbox-row">
+                                    <input type="checkbox" data-field="filter-seed-technology" value="${escapeAttr(name)}" ${draft.seedTreatmentTechnologies.includes(name) ? "checked" : ""}>
+                                    <span>${escapeHtml(name)}</span>
+                                </label>
+                            `).join("")}
+                        </div>
+                    ` : ""}
+                </div>
+            ` : ""}
+            <div class="drawer-section" data-filter-anchor="more">
+                <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
+                    <span>Цена</span>
+                    <span class="drawer-section-arrow">${panels.more ? "▾" : "▸"}</span>
+                </button>
+                ${panels.more ? `
+                    <div class="price-range">
+                        <input type="number" data-field="filter-price-min" value="${escapeAttr(draft.priceMin)}" placeholder="от">
+                        <span>—</span>
+                        <input type="number" data-field="filter-price-max" value="${escapeAttr(draft.priceMax)}" placeholder="до">
+                    </div>
+                ` : ""}
             </div>
         </div>
     `;
@@ -1764,6 +1842,9 @@ function renderAdminProductModal() {
     const unitsPerPackageOptions = getAdminFieldOptions("unitsPerPackage");
     const orderMode = getAdminOrderMode(product);
     const orderConfig = inferAdminOrderConfig(product);
+    const packageDescriptionValue = selectedCategory === "Пестициды"
+        ? (formatCompactPackageDisplay(product) || product?.packageDescription || "")
+        : (product?.packageDescription || "");
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-product"></div>
@@ -1803,7 +1884,7 @@ function renderAdminProductModal() {
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
                             <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="0.001" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
-                            <div class="admin-field"><label>Фасовка</label><input name="packageDescription" list="admin-package-description-options" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(product?.packageDescription || "")}" placeholder="Коробка 2 × 10 л">${renderAdminSuggestionBox("admin-product-package-description")}</div>
+                            <div class="admin-field"><label>Фасовка</label><input name="packageDescription" list="admin-package-description-options" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "25x4" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
                         </div>
                     </div>
                     <div class="admin-form-section admin-form-section-order">
@@ -2131,6 +2212,8 @@ function handleClick(event) {
         state.catalog.section = button.dataset.section;
         state.catalog.applied = emptyFilters();
         state.catalog.draft = cloneFilters(state.catalog.applied);
+        state.catalog.filterPanels = defaultFilterPanels();
+        state.catalog.filterFocus = "";
         render();
         return;
     }
@@ -2249,6 +2332,7 @@ function handleClick(event) {
         return;
     }
     if (action === "open-filters") {
+        ensureCatalogDraft();
         state.catalog.filtersOpen = true;
         state.catalog.filterFocus = "";
         state.catalog.filterPanels = defaultFilterPanels();
@@ -2257,14 +2341,14 @@ function handleClick(event) {
         return;
     }
     if (action === "open-filter-focus") {
-        state.catalog.filtersOpen = true;
+        ensureCatalogDraft();
         state.catalog.filterFocus = button.dataset.focus || "";
         state.catalog.filterPanels = {
-            ...defaultFilterPanels(),
+            ...(state.catalog.filterPanels || defaultFilterPanels()),
             [state.catalog.filterFocus || "more"]: true,
         };
-        state.catalog.draft = cloneFilters(state.catalog.applied);
         render();
+        applyPendingFilterFocus();
         return;
     }
     if (action === "toggle-filter-panel") {
@@ -2285,6 +2369,13 @@ function handleClick(event) {
     }
     if (action === "reset-filters") {
         state.catalog.draft = emptyFilters();
+        state.catalog.applied = emptyFilters();
+        render();
+        return;
+    }
+    if (action === "reset-inline-filters") {
+        state.catalog.draft = emptyFilters();
+        state.catalog.applied = emptyFilters();
         render();
         return;
     }
@@ -2452,11 +2543,15 @@ function handleInput(event) {
         return;
     }
     if (field === "filter-price-min") {
+        ensureCatalogDraft();
         state.catalog.draft.priceMin = event.target.value;
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-price-max") {
+        ensureCatalogDraft();
         state.catalog.draft.priceMax = event.target.value;
+        syncAppliedFiltersFromDraft();
         return;
     }
 }
@@ -2496,27 +2591,45 @@ function handleChange(event) {
         return;
     }
     if (field === "filter-manufacturer") {
+        ensureCatalogDraft();
         toggleDraftFilterArray("manufacturers", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-culture") {
+        ensureCatalogDraft();
         toggleDraftFilterArray("cultures", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
+        return;
+    }
+    if (field === "filter-active-ingredient") {
+        ensureCatalogDraft();
+        toggleDraftFilterArray("activeIngredients", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-subcategory") {
+        ensureCatalogDraft();
         toggleDraftFilterArray("subcategories", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-seed-fao") {
+        ensureCatalogDraft();
         toggleDraftFilterArray("seedFaoRanges", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-seed-maturity") {
+        ensureCatalogDraft();
         toggleDraftFilterArray("seedMaturityGroups", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-seed-technology") {
+        ensureCatalogDraft();
         toggleDraftFilterArray("seedTreatmentTechnologies", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "admin-product-status") {
@@ -2757,10 +2870,14 @@ async function saveAdminProduct(formData) {
     if (orderMode === "liters" || orderMode === "kg") {
         if (unitsPerPackage != null && unitsPerPackage > 1 && packageVolume != null && packageVolume > 0) {
             packageType = "коробка";
-            packageDescription = packageDescription || `Коробка ${formatAdminNumber(unitsPerPackage)} × ${formatAdminNumber(packageVolume)} ${unitName}`;
+            packageDescription = packageDescription || (category === "Пестициды"
+                ? `${formatAdminNumber(packageVolume)}x${formatAdminNumber(unitsPerPackage)}`
+                : `Коробка ${formatAdminNumber(unitsPerPackage)} × ${formatAdminNumber(packageVolume)} ${unitName}`);
         } else if (packageVolume != null && packageVolume > 0) {
             packageType = "упаковка";
-            packageDescription = packageDescription || `${formatAdminNumber(packageVolume)} ${unitName}`;
+            packageDescription = packageDescription || (category === "Пестициды"
+                ? `${formatAdminNumber(packageVolume)}${unitName}`
+                : `${formatAdminNumber(packageVolume)} ${unitName}`);
         } else {
             packageDescription = packageDescription || unitName;
         }
@@ -3050,6 +3167,12 @@ function applyCatalogFilters(products) {
     }
     if (applied.manufacturers.length) {
         filtered = filtered.filter(product => applied.manufacturers.includes(product.brand));
+    }
+    if (applied.activeIngredients.length) {
+        filtered = filtered.filter(product => {
+            const value = String(product.activeIngredient || product.filterMap?.activeIngredient || "").trim();
+            return value && applied.activeIngredients.includes(value);
+        });
     }
     if (applied.subcategories.length) {
         filtered = filtered.filter(product => {
@@ -3523,6 +3646,7 @@ function emptyFilters() {
         sections: [],
         cultures: [],
         manufacturers: [],
+        activeIngredients: [],
         subcategories: [],
         seedFaoRanges: [],
         seedMaturityGroups: [],
@@ -3533,11 +3657,11 @@ function emptyFilters() {
 }
 
 function emptyFilterPanels() {
-    return { sections: false, culture: false, manufacturer: false, subcategory: false, fao: false, maturity: false, technology: false, more: false };
+    return { sections: false, culture: false, manufacturer: false, activeIngredient: false, subcategory: false, fao: false, maturity: false, technology: false, more: false };
 }
 
 function defaultFilterPanels() {
-    return { sections: true, culture: false, manufacturer: false, subcategory: false, fao: false, maturity: false, technology: false, more: false };
+    return { sections: true, culture: true, manufacturer: true, activeIngredient: true, subcategory: true, fao: false, maturity: false, technology: false, more: true };
 }
 
 function cloneFilters(filters) {
@@ -3545,6 +3669,7 @@ function cloneFilters(filters) {
         sections: [...(filters.sections || [])],
         cultures: [...(filters.cultures || [])],
         manufacturers: [...(filters.manufacturers || [])],
+        activeIngredients: [...(filters.activeIngredients || [])],
         subcategories: [...(filters.subcategories || [])],
         seedFaoRanges: [...(filters.seedFaoRanges || [])],
         seedMaturityGroups: [...(filters.seedMaturityGroups || [])],
@@ -3573,6 +3698,7 @@ function trimDraftFiltersToAvailable() {
     const sectionProducts = getDraftSectionProducts(draft);
     const manufacturers = new Set(uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean)));
     const cultures = new Set(uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean)));
+    const activeIngredients = new Set(uniqueValues(sectionProducts.map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean)));
     const cultureKeys = new Set([...cultures].map(normalize));
     const effectiveSection = draft.sections[0] || state.catalog.section || "";
     const subcategories = new Set(
@@ -3582,6 +3708,7 @@ function trimDraftFiltersToAvailable() {
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
     draft.manufacturers = draft.manufacturers.filter(item => manufacturers.has(item));
     draft.cultures = draft.cultures.filter(item => cultures.has(item));
+    draft.activeIngredients = draft.activeIngredients.filter(item => activeIngredients.has(item));
     draft.subcategories = draft.subcategories.filter(item => subcategories.has(item));
     if (isSeedsSection) {
         const faoRanges = new Set(SEED_FAO_RANGES.map(item => item.label));
@@ -3595,6 +3722,18 @@ function trimDraftFiltersToAvailable() {
     draft.seedFaoRanges = [];
     draft.seedMaturityGroups = [];
     draft.seedTreatmentTechnologies = [];
+}
+
+function ensureCatalogDraft() {
+    if (!state.catalog.draft) {
+        state.catalog.draft = cloneFilters(state.catalog.applied || emptyFilters());
+    }
+}
+
+function syncAppliedFiltersFromDraft() {
+    trimDraftFiltersToAvailable();
+    state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
+    renderPreservingFocus();
 }
 
 function toggleDraftFilterArray(key, value, checked) {
