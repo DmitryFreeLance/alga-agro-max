@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -86,6 +87,7 @@ public class BitrixSyncService {
     private final JsonHelper jsonHelper;
     private final CatalogProductRepository catalogProductRepository;
     private final CatalogOrderRepository catalogOrderRepository;
+    private final ObjectProvider<ProductResearchService> productResearchServiceProvider;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .build();
@@ -97,12 +99,14 @@ public class BitrixSyncService {
             AppProperties appProperties,
             JsonHelper jsonHelper,
             CatalogProductRepository catalogProductRepository,
-            CatalogOrderRepository catalogOrderRepository
+            CatalogOrderRepository catalogOrderRepository,
+            ObjectProvider<ProductResearchService> productResearchServiceProvider
     ) {
         this.appProperties = appProperties;
         this.jsonHelper = jsonHelper;
         this.catalogProductRepository = catalogProductRepository;
         this.catalogOrderRepository = catalogOrderRepository;
+        this.productResearchServiceProvider = productResearchServiceProvider;
     }
 
     public boolean enabled() {
@@ -142,6 +146,11 @@ public class BitrixSyncService {
             return;
         }
         try {
+            ProductResearchService productResearchService = productResearchServiceProvider.getIfAvailable();
+            if (productResearchService != null && productResearchService.isResearchInProgress()) {
+                log.info("Bitrix24 scheduled sync skipped because research is in progress");
+                return;
+            }
             syncFromBitrix();
         } catch (RuntimeException e) {
             log.warn("Bitrix24 scheduled sync failed: {}", e.getMessage());

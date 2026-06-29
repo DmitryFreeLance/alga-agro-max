@@ -2795,13 +2795,15 @@ async function saveAdminProduct(formData) {
     };
     const url = id ? `/api/admin/products/${id}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
     const method = id ? "PUT" : "POST";
+    state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    showNotice(id ? "Сохранение товара запущено..." : "Добавление товара запущено...");
+    render();
     await fetchJson(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
     });
     await refreshCatalogData();
-    state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
     showNotice(id ? "Товар сохранен." : "Товар добавлен.");
     render();
 }
@@ -2847,9 +2849,14 @@ function buildAdminProductPayload(product, overrides = {}) {
 }
 
 async function deleteAdminProduct(productId) {
+    const wasEditingCurrent = state.admin.productEditor.open && state.admin.productEditor.productId === productId;
+    if (wasEditingCurrent) {
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    }
+    showNotice("Удаление товара запущено...");
+    render();
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
     await refreshCatalogData();
-    state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
     showNotice("Товар удален.");
     render();
 }
@@ -2860,15 +2867,18 @@ async function toggleAdminProductVisibility(productId) {
         return;
     }
     const nextActive = !product.active;
+    const wasEditingCurrent = state.admin.productEditor.open && state.admin.productEditor.productId === productId;
+    if (wasEditingCurrent) {
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    }
+    showNotice(nextActive ? "Публикация товара обновляется..." : "Скрытие товара запущено...");
+    render();
     await fetchJson(`/api/admin/products/${productId}?maxUserId=${state.maxUserId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildAdminProductPayload(product, { active: nextActive })),
     });
     await refreshCatalogData();
-    if (state.admin.productEditor.open && state.admin.productEditor.productId === productId) {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
-    }
     showNotice(nextActive ? "Товар снова показан." : "Товар скрыт.");
     render();
 }

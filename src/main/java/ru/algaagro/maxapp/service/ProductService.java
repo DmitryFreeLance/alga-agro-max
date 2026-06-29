@@ -196,10 +196,18 @@ public class ProductService {
         Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
         OrderRules inferred = inferOrderRules(product.getName(), product.getUnitName(), product.getDescription(), rawData, filterMap);
         String unitName = firstNonBlank(product.getUnitName(), inferred.unitName(), "шт");
-        BigDecimal minOrderQuantity = firstPositive(product.getMinOrderQuantity(), inferred.minOrderQuantity(), DEFAULT_ORDER_QUANTITY);
-        BigDecimal orderStep = firstPositive(product.getOrderStep(), inferred.orderStep(), minOrderQuantity, DEFAULT_ORDER_QUANTITY);
-        String packageType = firstNonBlank(product.getPackageType(), inferred.packageType());
-        String packageDescription = firstNonBlank(product.getPackageDescription(), inferred.packageDescription());
+        BigDecimal inferredMin = sanitizeOrderRuleQuantity(inferred.minOrderQuantity(), unitName, inferred.packageDescription());
+        BigDecimal inferredStep = sanitizeOrderRuleQuantity(inferred.orderStep(), unitName, inferred.packageDescription());
+        String inferredPackageType = sanitizePackageType(inferred.packageType(), inferred.packageDescription());
+        String inferredPackageDescription = sanitizePackageDescription(inferred.packageDescription());
+        BigDecimal explicitMin = sanitizeOrderRuleQuantity(product.getMinOrderQuantity(), unitName, product.getPackageDescription());
+        BigDecimal explicitStep = sanitizeOrderRuleQuantity(product.getOrderStep(), unitName, product.getPackageDescription());
+        String explicitPackageType = sanitizePackageType(product.getPackageType(), product.getPackageDescription());
+        String explicitPackageDescription = sanitizePackageDescription(product.getPackageDescription());
+        BigDecimal minOrderQuantity = firstPositive(explicitMin, inferredMin, DEFAULT_ORDER_QUANTITY);
+        BigDecimal orderStep = firstPositive(explicitStep, inferredStep, minOrderQuantity, DEFAULT_ORDER_QUANTITY);
+        String packageType = firstNonBlank(explicitPackageType, inferredPackageType);
+        String packageDescription = firstNonBlank(explicitPackageDescription, inferredPackageDescription);
         return new OrderRules(unitName, minOrderQuantity, orderStep, packageType, packageDescription);
     }
 
@@ -711,11 +719,58 @@ public class ProductService {
 
     private String buildOrderRulesText(String name, String description, Map<String, ?> rawData, Map<String, ?> filterMap) {
         StringBuilder builder = new StringBuilder();
+        appendOrderSource(builder, sanitizePackageDescription(readStringValue(rawData, "Фасовка", "Упаковка", "Тара", "Тип упаковки", "packageDescription", "packageType")));
+        appendOrderSource(builder, sanitizePackageDescription(readStringValue(filterMap, "packageDescription", "packageType")));
         appendOrderSource(builder, name);
-        appendOrderSource(builder, description);
-        appendOrderSource(builder, flattenValue(rawData));
-        appendOrderSource(builder, flattenValue(filterMap));
         return builder.toString();
+    }
+
+    private BigDecimal sanitizeOrderRuleQuantity(BigDecimal value, String unitName, String packageDescription) {
+        BigDecimal safe = sanitizePositive(value);
+        if (safe == null) {
+            return null;
+        }
+        String normalizedUnit = TextUtils.normalizeToken(unitName);
+        String normalizedPackage = TextUtils.normalizeToken(packageDescription);
+        if ((normalizedUnit.equals("л") || normalizedUnit.startsWith("лит") || normalizedUnit.equals("кг") || normalizedUnit.startsWith("кил"))
+                && safe.compareTo(new BigDecimal("500")) > 0) {
+            return null;
+        }
+        if (normalizedPackage.contains("короб") && normalizedPackage.contains("канистр") && safe.compareTo(new BigDecimal("200")) > 0) {
+            return null;
+        }
+        return safe;
+    }
+
+    private String sanitizePackageType(String packageType, String packageDescription) {
+        String safeDescription = sanitizePackageDescription(packageDescription);
+        if (safeDescription == null) {
+            return null;
+        }
+        String normalized = TextUtils.normalizeToken(packageType);
+        if (normalized.contains("неопредел")) {
+            return null;
+        }
+        return blankToNull(packageType);
+    }
+
+    private String sanitizePackageDescription(String packageDescription) {
+        String safe = blankToNull(packageDescription);
+        if (safe == null) {
+            return null;
+        }
+        String normalized = TextUtils.normalizeToken(safe);
+        if (normalized.contains("неопредел")) {
+            return null;
+        }
+        Matcher matcher = CANISTER_COUNT_PATTERN.matcher(safe);
+        if (matcher.find()) {
+            BigDecimal count = parseFlexibleDecimal(matcher.group(1));
+            if (count != null && count.compareTo(new BigDecimal("50")) > 0) {
+                return null;
+            }
+        }
+        return safe;
     }
 
     private void appendOrderSource(StringBuilder builder, String value) {

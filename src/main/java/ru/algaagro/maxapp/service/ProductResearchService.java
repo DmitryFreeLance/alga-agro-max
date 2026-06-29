@@ -111,6 +111,10 @@ public class ProductResearchService {
         return "Research остановлен. Проверено " + session.processed + " из " + session.targets.size() + " товаров.";
     }
 
+    public boolean isResearchInProgress() {
+        return !sessions.isEmpty();
+    }
+
     private void processNextBatch(
             ResearchSession session,
             Consumer<BatchReport> onBatchReady,
