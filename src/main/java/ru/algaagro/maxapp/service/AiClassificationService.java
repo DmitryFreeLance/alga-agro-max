@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.config.AppProperties;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -415,7 +416,7 @@ public class AiClassificationService {
                       "name": "название товара",
                       "section": "раздел или группа",
                       "brand": "производитель или бренд",
-                      "categoryHint": "Семена|Пестициды|Агропитание|Адъюванты|Прочее",
+                      "categoryHint": "Семена|Пестициды|Агрохимикаты|Хим Мелиоранты|Препараты для закрытого грунта|ПАВы|Пеногасители|Спецпрепараты|Прочее",
                       "subcategoryHint": "подкатегория",
                       "cultures": ["Пшеница"],
                       "description": "краткое описание",
@@ -435,7 +436,7 @@ public class AiClassificationService {
                 - Количество rows должно отражать все найденные товары в документе.
                 - Если товар встречается в нескольких вариантах упаковки, можно вернуть несколько rows.
                 - Для семян указывай культуру и сезон, если они видны из документа.
-                - Для СЗР и агропитания указывай раздел, состав, норму расхода и культуры, если они читаются.
+                - Для пестицидов, агрохимикатов, ПАВов, пеногасителей и мелиорантов указывай раздел, состав, норму расхода и культуры, если они читаются.
                 - Не придумывай данные, которых нет. Если поля нет, оставь пустую строку или пустой массив.
                 - В name пиши чистое товарное наименование.
                 - Исходный файл: %s
@@ -609,12 +610,13 @@ public class AiClassificationService {
             String subcategory = item.path("subcategory").asText("");
             String itemType = item.path("itemType").asText("");
             String description = item.path("description").asText("");
-            if (category.isBlank() || "Прочее".equalsIgnoreCase(category)) {
+            ExcelImportService.ImportRow row = chunk.get(results.size());
+            String context = row.section() + " " + row.nameGuess() + " " + row.columns();
+            category = CatalogStructure.normalizeSectionName(category);
+            if (category.isBlank() || CatalogStructure.OTHER.equalsIgnoreCase(category)) {
                 category = inferCategory(chunk.get(results.size()));
             }
-            if (subcategory.isBlank()) {
-                subcategory = inferSubcategory(chunk.get(results.size()));
-            }
+            subcategory = firstNonBlank(subcategory, CatalogStructure.inferSubcategory(category, context), inferSubcategory(chunk.get(results.size())));
             if (itemType.isBlank() || "Прочее".equalsIgnoreCase(itemType)) {
                 itemType = !subcategory.isBlank() ? subcategory : category;
             }
@@ -626,7 +628,7 @@ public class AiClassificationService {
                     item.path("normalizedName").asText(),
                     description,
                     item.path("brand").asText(""),
-                    category.isBlank() ? "Прочее" : category,
+                    category.isBlank() ? CatalogStructure.OTHER : category,
                     subcategory,
                     itemType.isBlank() ? "Товар" : itemType,
                     readStringArray(item.path("cultures")),
@@ -645,7 +647,7 @@ public class AiClassificationService {
         List<ClassificationResult> results = new ArrayList<>();
         for (ExcelImportService.ImportRow row : chunk) {
             String category = inferCategory(row);
-            String subcategory = inferSubcategory(row);
+            String subcategory = firstNonBlank(CatalogStructure.inferSubcategory(category, row.section() + " " + row.nameGuess() + " " + row.columns()), inferSubcategory(row));
             String itemType = !subcategory.isBlank() ? subcategory : category;
             List<String> cultures = inferCultures(row);
             List<String> tags = inferTags(row);
@@ -655,7 +657,7 @@ public class AiClassificationService {
                     heuristicName(row),
                     buildFallbackDescription(row),
                     inferBrand(row),
-                    category.isBlank() ? "Прочее" : category,
+                    category.isBlank() ? CatalogStructure.OTHER : category,
                     subcategory,
                     itemType.isBlank() ? "Товар" : itemType,
                     cultures,
@@ -874,7 +876,7 @@ public class AiClassificationService {
                       "normalizedName": "чистое название товара",
                       "description": "краткое описание для каталога",
                       "brand": "бренд или линейка",
-                      "category": "Семена|Пестициды|Агропитание|Адъюванты|Прочее",
+                      "category": "Семена|Пестициды|Агрохимикаты|Хим Мелиоранты|Препараты для закрытого грунта|ПАВы|Пеногасители|Спецпрепараты|Прочее",
                       "subcategory": "подкатегория",
                       "itemType": "тип карточки",
                       "cultures": ["пшеница"],
@@ -892,8 +894,12 @@ public class AiClassificationService {
                 - Определи культуры, для которых товар применяется или к которым относится.
                 - Если это семена, культура должна быть основной культурой товара.
                 - Если это пестицид или удобрение, включай все подходящие культуры, если они явно следуют из названия или описания.
-                - Для жидких комплексов, биостимуляторов, корректоров дефицита, NPK, борных, цинковых, кальциевых, серных, магниевых продуктов чаще всего category = Агропитание.
-                - Для прилипателей, pH-контроля, пеногасителей, очистителей, стикеров и технологических добавок category = Адъюванты.
+                - Разрешены только разделы каталога: Семена, Пестициды, Агрохимикаты, Хим Мелиоранты, Препараты для закрытого грунта, ПАВы, Пеногасители, Спецпрепараты.
+                - Для пестицидов разрешены только подкатегории: Фунгициды, Гербициды, Инсектициды, Десиканты, Нематоциды, Регуляторы роста растений, Бактерициды, Акарициды, Моллюскоциды, Зооциды, Протравители.
+                - Для жидких комплексов, биостимуляторов, корректоров дефицита, NPK, борных, цинковых, кальциевых, серных, магниевых продуктов чаще всего category = Агрохимикаты.
+                - Для прилипателей, pH-контроля и технологических добавок category = ПАВы.
+                - Для пеногасителей category = Пеногасители.
+                - Для мелиорантов category = Хим Мелиоранты; если встречается Кальциприлл, subcategory = Кальциприлл.
                 - Используй значение поля "Раздел" как главный контекст категории и назначения.
                 - normalizedName должен браться из колонки "Позиция" без служебного мусора.
                 - description собирай предметно: что это за продукт + ключевой состав или норма расхода.
@@ -916,52 +922,12 @@ public class AiClassificationService {
 
     private String inferCategory(ExcelImportService.ImportRow row) {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
-        if (context.contains("пшениц") || context.contains("ячмен") || context.contains("горох")
-                || context.contains("соя") || context.contains("гречих") || context.contains("рапс") || context.contains("кукуруз")
-                || context.contains("рожь") || context.contains("тритикал")) {
-            if (context.contains("озим") || context.contains("яров") || context.contains("семен") || context.contains("сорт")) {
-                return "Семена";
-            }
-        }
-        if (context.contains("адъюв") || context.contains("технологич") || context.contains("прилип") || context.contains("ph контроль") || context.contains("стик") || context.contains("клинер")) {
-            return "Адъюванты";
-        }
-        if (context.contains("сем") || context.contains("npk") || context.contains("бор") || context.contains("цинк") || context.contains("кальц") || context.contains("магний")
-                || context.contains("сер") || context.contains("молибден") || context.contains("листов") || context.contains("подкорм") || context.contains("биостим")
-                || context.contains("дефицит") || context.contains("аминокислот")) {
-            return "Агропитание";
-        }
-        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти")
-                || context.contains("протрав") || context.contains("десикант") || context.contains("роденти")
-                || context.contains("репелент") || context.contains("регулятор рост") || context.contains("красител")
-                || context.contains("специальн") && context.contains("назначен")) {
-            return "Пестициды";
-        }
-        return "Прочее";
+        return CatalogStructure.inferSection(context, inferSubcategory(row));
     }
 
     private String inferSubcategory(ExcelImportService.ImportRow row) {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
-        if (context.contains("озим")) return "Озимые";
-        if (context.contains("яров")) return "Яровые";
-        if (context.contains("гербиц")) return "Гербициды";
-        if (context.contains("фунгиц")) return "Фунгициды";
-        if (context.contains("инсекти")) return "Инсектициды";
-        if (context.contains("десикант")) return "Десиканты";
-        if (context.contains("протрав")) return "Протравители";
-        if (context.contains("роденти")) return "Родентициды";
-        if (context.contains("репелент")) return "Репеленты";
-        if (context.contains("регулятор рост")) return "Регуляторы роста растений";
-        if (context.contains("красител") && context.contains("сем")) return "Красители семян";
-        if (context.contains("специальн") && context.contains("назначен")) return "Препараты специального назначения";
-        if (context.contains("обработк") && context.contains("сем")) return "Биостимуляторы";
-        if (context.contains("антистресс")) return "Антистрессанты";
-        if (context.contains("npk")) return "NPK-комплексы";
-        if (context.contains("дефицит")) return "Корректоры дефицита";
-        if (context.contains("адъюв") || context.contains("технологич")) return "Технологические добавки";
-        if (context.contains("стик") || context.contains("прилип")) return "Прилипатели";
-        if (context.contains("ph контроль")) return "pH-контроль";
-        return "";
+        return CatalogStructure.inferSubcategory(CatalogStructure.inferSection(context, ""), context);
     }
 
     private String buildFallbackDescription(ExcelImportService.ImportRow row) {
@@ -1042,7 +1008,7 @@ public class AiClassificationService {
         if ("Пестициды".equalsIgnoreCase(category)) {
             return List.of("защита");
         }
-        if ("Агропитание".equalsIgnoreCase(category)) {
+        if (CatalogStructure.AGROCHEMICALS.equalsIgnoreCase(category)) {
             return List.of("питание");
         }
         return List.of();

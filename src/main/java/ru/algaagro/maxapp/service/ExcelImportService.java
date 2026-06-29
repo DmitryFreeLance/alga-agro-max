@@ -51,6 +51,7 @@ import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.model.ImportJob;
 import ru.algaagro.maxapp.model.ImportStatus;
 import ru.algaagro.maxapp.repository.ImportJobRepository;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -2085,45 +2086,27 @@ public class ExcelImportService {
     }
 
     private String resolveCategory(AiClassificationService.ClassificationResult result, ImportRow row) {
-        if (result.category() != null && !result.category().isBlank() && !"Прочее".equalsIgnoreCase(result.category())) {
-            return result.category();
-        }
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
-        if (context.contains("адъюв") || context.contains("технологич") || context.contains("стик") || context.contains("клинер") || context.contains("контроль")) {
-            return "Адъюванты";
+        String category = CatalogStructure.normalizeSectionName(result.category());
+        if (!category.isBlank() && !CatalogStructure.OTHER.equalsIgnoreCase(category)) {
+            return category;
         }
-        if (context.contains("бор") || context.contains("цинк") || context.contains("магний") || context.contains("кальц")
-                || context.contains("npk") || context.contains("подкорм") || context.contains("биостим") || context.contains("аминокислот")
-                || context.contains("корректор") || context.contains("дефицит")) {
-            return "Агропитание";
-        }
-        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти")
-                || context.contains("протрав") || context.contains("десикант") || context.contains("роденти")
-                || context.contains("репелент") || context.contains("регулятор рост") || context.contains("красител")) {
-            return "Пестициды";
-        }
-        return result.category() == null || result.category().isBlank() ? "Прочее" : result.category();
+        return CatalogStructure.inferSection(context, resolveSubcategory(result, row));
     }
 
     private String resolveSubcategory(AiClassificationService.ClassificationResult result, ImportRow row) {
-        if (result.subcategory() != null && !result.subcategory().isBlank()) {
-            return result.subcategory();
+        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        String category = CatalogStructure.normalizeSectionName(result.category());
+        String direct = result.subcategory() == null || result.subcategory().isBlank() ? context : result.subcategory();
+        String normalized = CatalogStructure.inferSubcategory(category, direct);
+        if (!normalized.isBlank()) {
+            return normalized;
         }
-        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess());
-        if (context.contains("гербиц")) return "Гербициды";
-        if (context.contains("фунгиц")) return "Фунгициды";
-        if (context.contains("инсекти")) return "Инсектициды";
-        if (context.contains("десикант")) return "Десиканты";
-        if (context.contains("протрав")) return "Протравители";
-        if (context.contains("роденти")) return "Родентициды";
-        if (context.contains("репелент")) return "Репеленты";
-        if (context.contains("регулятор рост")) return "Регуляторы роста растений";
-        if (context.contains("обработк") && context.contains("сем")) return "Биостимуляторы";
-        if (context.contains("антистресс")) return "Антистрессанты";
-        if (context.contains("npk")) return "NPK-комплексы";
-        if (context.contains("дефицит")) return "Корректоры дефицита";
-        if (context.contains("адъюв")) return "Адъюванты";
-        return "";
+        normalized = CatalogStructure.inferSubcategory(CatalogStructure.inferSection(context, result.subcategory()), context);
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        return result.subcategory() == null ? "" : result.subcategory().trim();
     }
 
     private String resolveItemType(AiClassificationService.ClassificationResult result, String category, String subcategory, ImportRow row) {

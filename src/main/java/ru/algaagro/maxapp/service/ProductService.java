@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -468,15 +469,17 @@ public class ProductService {
     }
 
     private void applyPayload(CatalogProduct product, AdminProductPayload payload) {
+        String normalizedCategory = normalizeAdminCategory(payload.category(), payload.subcategory(), payload.name(), payload.description());
+        String normalizedSubcategory = normalizeAdminSubcategory(normalizedCategory, payload.subcategory(), payload.name(), payload.description());
         product.setExternalId(payload.externalId());
         product.setSourceFile(payload.sourceFile());
         product.setSku(payload.sku());
         product.setName(payload.name());
         product.setDescription(payload.description());
         product.setBrand(payload.brand());
-        product.setCategory(payload.category());
-        product.setSubcategory(payload.subcategory());
-        product.setItemType(payload.itemType());
+        product.setCategory(normalizedCategory);
+        product.setSubcategory(normalizedSubcategory);
+        product.setItemType(blankToNull(firstNonBlank(normalizedSubcategory, normalizedCategory, payload.itemType())));
         product.setUnitName(payload.unitName());
         product.setPackageType(blankToNull(payload.packageType()));
         product.setPackageDescription(blankToNull(payload.packageDescription()));
@@ -496,6 +499,23 @@ public class ProductService {
         product.setTagsIndex(TextUtils.toIndex(tags));
         product.setFilterMapJson(jsonHelper.writeValue(payload.filterMap() == null ? Map.of() : payload.filterMap()));
         product.setRawDataJson(jsonHelper.writeValue(payload.rawData() == null ? Map.of() : payload.rawData()));
+    }
+
+    private String normalizeAdminCategory(String category, String subcategory, String name, String description) {
+        String normalized = CatalogStructure.normalizeSectionName(category);
+        if (!normalized.isBlank() && !CatalogStructure.OTHER.equalsIgnoreCase(normalized)) {
+            return normalized;
+        }
+        return CatalogStructure.inferSection(String.join(" ", Objects.toString(category, ""), Objects.toString(subcategory, ""), Objects.toString(name, ""), Objects.toString(description, "")), subcategory);
+    }
+
+    private String normalizeAdminSubcategory(String category, String subcategory, String name, String description) {
+        String normalized = CatalogStructure.inferSubcategory(category, firstNonBlank(subcategory, name, description));
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        normalized = CatalogStructure.inferSubcategory(category, String.join(" ", Objects.toString(subcategory, ""), Objects.toString(name, ""), Objects.toString(description, "")));
+        return blankToNull(firstNonBlank(normalized, subcategory));
     }
 
     private String buildSearchText(CatalogProduct product) {

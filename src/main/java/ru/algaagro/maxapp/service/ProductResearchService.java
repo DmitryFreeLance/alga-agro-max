@@ -18,6 +18,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -266,103 +267,51 @@ public class ProductResearchService {
     }
 
     private Resolution resolveSection(CatalogProduct product, AiClassificationService.ClassificationResult result, ExcelImportService.ImportRow row) {
-        String category = normalizeCategory(result.category());
-        String subcategory = normalizeCategory(firstNonBlank(result.subcategory(), inferSubcategory(row)));
+        String context = row.section() + " " + row.nameGuess() + " " + row.columns();
+        String category = CatalogStructure.normalizeSectionName(result.category());
+        String subcategory = firstNonBlank(
+                CatalogStructure.inferSubcategory(category, firstNonBlank(result.subcategory(), context)),
+                CatalogStructure.inferSubcategory(CatalogStructure.inferSection(context, result.subcategory()), context),
+                result.subcategory(),
+                inferSubcategory(row)
+        );
         String itemType = normalizeCategory(firstNonBlank(result.itemType(), subcategory, category));
 
-        if (isGenericPesticides(category) && isSpecificSection(subcategory)) {
-            category = subcategory;
-        } else if (isSpecificSection(category)) {
-            subcategory = firstNonBlank(subcategory, category);
-            itemType = firstNonBlank(itemType, subcategory, category);
-        } else if (isGenericPesticides(category)) {
-            category = "СЗР";
-        } else if (category.isBlank() || "Прочее".equalsIgnoreCase(category)) {
+        if (category.isBlank() || CatalogStructure.OTHER.equalsIgnoreCase(category)) {
             category = inferCategory(row, subcategory);
         }
 
-        if (subcategory.isBlank() && isSpecificSection(category)) {
-            subcategory = category;
-        }
+        subcategory = firstNonBlank(subcategory, CatalogStructure.inferSubcategory(category, context));
         if (itemType.isBlank() || "Прочее".equalsIgnoreCase(itemType)) {
             itemType = firstNonBlank(subcategory, category, "Товар");
         }
         return new Resolution(
-                category.isBlank() ? "Прочее" : category,
+                category.isBlank() ? CatalogStructure.OTHER : category,
                 blankToNull(subcategory),
                 itemType
         );
     }
 
     private String inferCategory(ExcelImportService.ImportRow row, String subcategory) {
-        if (isSpecificSection(subcategory)) {
-            return subcategory;
-        }
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
-        if (context.contains("адъюв") || context.contains("адьюв") || context.contains("прилип") || context.contains("стик")) {
-            return "Адъюванты";
-        }
-        if (context.contains("бор") || context.contains("цинк") || context.contains("магний") || context.contains("кальц")
-                || context.contains("npk") || context.contains("подкорм") || context.contains("биостим")
-                || context.contains("аминокислот") || context.contains("удобр") || context.contains("агрохим")) {
-            return "Агропитание";
-        }
-        if (context.contains("озим") || context.contains("яров") || context.contains("гибрид") || context.contains("семен")) {
-            return "Семена";
-        }
-        if (context.contains("мелиор") || context.contains("извест")) {
-            return "Мелиоранты";
-        }
-        if (context.contains("гербиц") || context.contains("фунгиц") || context.contains("инсекти")
-                || context.contains("десикант") || context.contains("протрав")
-                || context.contains("роденти") || context.contains("репелент")
-                || context.contains("регулятор рост") || context.contains("красител")) {
-            return firstNonBlank(subcategory, "СЗР");
-        }
-        return "Прочее";
+        return CatalogStructure.inferSection(context, subcategory);
     }
 
     private String inferSubcategory(ExcelImportService.ImportRow row) {
         String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
-        if (context.contains("гербиц")) return "Гербициды";
-        if (context.contains("фунгиц")) return "Фунгициды";
-        if (context.contains("инсекти")) return "Инсектициды";
-        if (context.contains("десикант")) return "Десиканты";
-        if (context.contains("протрав")) return "Протравители";
-        if (context.contains("роденти")) return "Родентициды";
-        if (context.contains("репелент")) return "Репеленты";
-        if (context.contains("регулятор рост")) return "Регуляторы роста растений";
-        if (context.contains("красител")) return "Красители семян";
-        return "";
+        return CatalogStructure.inferSubcategory(CatalogStructure.inferSection(context, ""), context);
     }
 
     private boolean isSpecificSection(String value) {
-        String normalized = TextUtils.normalizeToken(value);
-        return normalized.contains("гербиц")
-                || normalized.contains("фунгиц")
-                || normalized.contains("инсекти")
-                || normalized.contains("десикант")
-                || normalized.contains("протрав")
-                || normalized.contains("роденти")
-                || normalized.contains("репелент")
-                || normalized.contains("регулятор рост")
-                || normalized.contains("красител");
+        return !CatalogStructure.normalizePesticideSubcategory(value).isBlank();
     }
 
     private boolean isGenericPesticides(String value) {
-        String normalized = TextUtils.normalizeToken(value);
-        return normalized.contains("пестиц") || normalized.equals("сзр");
+        return CatalogStructure.PESTICIDES.equalsIgnoreCase(CatalogStructure.normalizeSectionName(value));
     }
 
     private String normalizeCategory(String value) {
-        String normalized = blankToNull(value);
-        if (normalized == null) {
-            return "";
-        }
-        if ("Пестициды".equalsIgnoreCase(normalized)) {
-            return "СЗР";
-        }
-        return normalized;
+        return firstNonBlank(CatalogStructure.normalizeSectionName(value), blankToNull(value), "");
     }
 
     private String displaySection(String value) {
