@@ -1439,10 +1439,6 @@ function renderProductModal() {
                         <div class="eyebrow">${escapeHtml(sectionName || product.category || "Каталог")}</div>
                         <h3>${escapeHtml(product.name)}</h3>
                         <div class="product-spec-list">
-                            <div class="product-spec-item">
-                                <span>Название препарата</span>
-                                <strong>${escapeHtml(product.name)}</strong>
-                            </div>
                             ${product.activeIngredient ? `
                                 <div class="product-spec-item">
                                     <span>ДВ</span>
