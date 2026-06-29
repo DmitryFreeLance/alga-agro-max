@@ -737,7 +737,7 @@ function renderAdminPage() {
                         ${renderAdminMenuButton("broadcasts", "✦", "Рассылка", null)}
                     </div>
                     <button class="admin-exit-btn" data-action="admin-exit">← Клиентский каталог</button>
-                    <div class="admin-sidebar-footer">АЛГА-АГРО · 2026</div>
+                    <div class="admin-sidebar-footer">Алга Агро Групп · 2026</div>
                 </aside>
                 <div class="admin-main">
                     <header class="admin-header">
