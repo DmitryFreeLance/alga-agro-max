@@ -54,13 +54,18 @@ public class ProductResearchService {
         this.bitrixSyncServiceProvider = bitrixSyncServiceProvider;
     }
 
-    public CompletableFuture<Void> researchUncategorizedProductsAsync(Long initiatedBy, Consumer<String> onSuccess, Consumer<String> onFailure) {
+    public CompletableFuture<Void> researchUncategorizedProductsAsync(
+            Long initiatedBy,
+            Consumer<String> onProgress,
+            Consumer<String> onSuccess,
+            Consumer<String> onFailure
+    ) {
         if (!researchInProgress.compareAndSet(false, true)) {
             onFailure.accept("Research уже выполняется. Дождитесь завершения текущего запуска.");
             return CompletableFuture.completedFuture(null);
         }
         return CompletableFuture
-                .supplyAsync(() -> researchUncategorizedProducts(initiatedBy), importExecutorService)
+                .supplyAsync(() -> researchUncategorizedProducts(initiatedBy, onProgress), importExecutorService)
                 .thenAccept(onSuccess)
                 .exceptionally(error -> {
                     Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -71,16 +76,15 @@ public class ProductResearchService {
                 .whenComplete((unused, error) -> researchInProgress.set(false));
     }
 
-    private String researchUncategorizedProducts(Long initiatedBy) {
+    private String researchUncategorizedProducts(Long initiatedBy, Consumer<String> onProgress) {
         waitForBitrixSyncIfNeeded();
         List<CatalogProduct> activeProducts = catalogProductRepository.findAllByActiveTrue();
         List<CatalogProduct> targets = activeProducts.stream()
-                .filter(this::needsResearch)
                 .sorted((left, right) -> String.valueOf(left.getName()).compareToIgnoreCase(String.valueOf(right.getName())))
                 .toList();
         log.info("Research started by {}. targets={}", initiatedBy, targets.size());
         if (targets.isEmpty()) {
-            return "🔎 В разделе <b>«Прочее»</b> не найдено активных товаров для пересмотра.";
+            return "🔎 В каталоге не найдено активных товаров для пересмотра.";
         }
 
         List<ExcelImportService.ImportRow> rows = new ArrayList<>();
@@ -100,6 +104,7 @@ public class ProductResearchService {
         int failed = 0;
         Map<String, Integer> bySection = new LinkedHashMap<>();
         List<String> failedProducts = new ArrayList<>();
+        List<String> resolvedProducts = new ArrayList<>();
         for (int i = 0; i < targets.size(); i++) {
             CatalogProduct product = targets.get(i);
             AiClassificationService.ClassificationResult result = classified.get(i);
@@ -114,6 +119,10 @@ public class ProductResearchService {
             if (!changed) {
                 unchanged++;
                 bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
+                resolvedProducts.add("• " + firstNonBlank(product.getName(), "ID " + product.getId())
+                        + " → " + resolution.category()
+                        + (resolution.subcategory() == null || resolution.subcategory().isBlank() ? "" : " / " + resolution.subcategory())
+                        + " [без изменений]");
                 continue;
             }
 
@@ -145,17 +154,24 @@ public class ProductResearchService {
                 productService.updateProduct(product, payload, false);
                 updated++;
                 bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
+                resolvedProducts.add("• " + firstNonBlank(product.getName(), "ID " + product.getId())
+                        + " → " + resolution.category()
+                        + (resolution.subcategory() == null || resolution.subcategory().isBlank() ? "" : " / " + resolution.subcategory())
+                        + " [обновлено]");
             } catch (Exception e) {
                 failed++;
                 failedProducts.add(firstNonBlank(product.getName(), "ID " + product.getId()));
                 log.warn("Research update failed for product {} (id={}): {}", product.getName(), product.getId(), e.getMessage());
+                resolvedProducts.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → ошибка обновления");
             }
         }
+
+        emitProgressReports(onProgress, resolvedProducts, targets.size());
 
         StringBuilder summary = new StringBuilder();
         summary.append("🧠 <b>Research завершен</b>\n\n");
         summary.append("• Инициатор: <b>").append(initiatedBy == null ? "admin" : initiatedBy).append("</b>\n");
-        summary.append("• Проверено товаров из «Прочее»: <b>").append(targets.size()).append("</b>\n");
+        summary.append("• Проверено товаров: <b>").append(targets.size()).append("</b>\n");
         summary.append("• Обновлено: <b>").append(updated).append("</b>\n");
         summary.append("• Без изменений: <b>").append(unchanged).append("</b>\n");
         summary.append("• Ошибок обновления: <b>").append(failed).append("</b>\n");
@@ -173,7 +189,7 @@ public class ProductResearchService {
                     .append(failedProducts.size() > 8 ? " и еще " + (failedProducts.size() - 8) : "")
                     .append("</b>\n");
         }
-        summary.append("\nЕсли часть позиций все еще осталась в «Прочее», значит по текущим данным ИИ не смог уверенно определить тип товара.");
+        summary.append("\nПодробная раскладка по товарам отправлена отдельными сообщениями в ходе research.");
         return summary.toString();
     }
 
@@ -220,9 +236,24 @@ public class ProductResearchService {
         return results;
     }
 
-    private boolean needsResearch(CatalogProduct product) {
-        String category = TextUtils.normalizeToken(product.getCategory());
-        return category.isBlank() || "прочее".equals(category);
+    private void emitProgressReports(Consumer<String> onProgress, List<String> resolvedProducts, int total) {
+        if (onProgress == null || resolvedProducts.isEmpty()) {
+            return;
+        }
+        int batchSize = 25;
+        int sent = 0;
+        int part = 1;
+        for (int start = 0; start < resolvedProducts.size(); start += batchSize) {
+            int end = Math.min(resolvedProducts.size(), start + batchSize);
+            sent = end;
+            StringBuilder report = new StringBuilder();
+            report.append("🧾 <b>Research-отчет</b> · часть ").append(part++).append("\n");
+            report.append("Проверено: <b>").append(sent).append("</b> из <b>").append(total).append("</b>\n\n");
+            for (String line : resolvedProducts.subList(start, end)) {
+                report.append(line).append("\n");
+            }
+            onProgress.accept(report.toString().trim());
+        }
     }
 
     private ExcelImportService.ImportRow toImportRow(CatalogProduct product) {

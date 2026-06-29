@@ -501,26 +501,12 @@ function renderSectionCard(section) {
 function renderSectionPage() {
     const products = getSectionProducts(state.catalog.section);
     const filtered = applyCatalogFilters(products);
-    const isSeedsSection = normalize(state.catalog.section) === normalize("Семена");
     return `
         <div class="stack">
-            <button class="back-button" data-action="back">‹ Назад</button>
-            <div class="page-head">
-                <h2 class="page-title">${escapeHtml(getSectionDisplayName(state.catalog.section))}</h2>
-                <p>${filtered.length} товаров</p>
-            </div>
             <div class="quick-filters-row">
-                ${isSeedsSection
-                    ? `
-                        <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="fao">ФАО</button>
-                        <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="maturity">Группа спелости</button>
-                        <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="technology">Технология обработки</button>
-                    `
-                    : `
-                        <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="subcategory">${escapeHtml(getSubcategoryFilterTitle(state.catalog.section))}</button>
-                        <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="manufacturer">Производитель</button>
-                        <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="culture">Культура</button>
-                    `}
+                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="subcategory">${escapeHtml(getSubcategoryFilterTitle(state.catalog.section))}</button>
+                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="manufacturer">Производитель</button>
+                <button type="button" class="quick-filter-btn" data-action="open-filter-focus" data-focus="culture">Культура</button>
             </div>
             <div class="toolbar-row">
                 <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
@@ -3121,16 +3107,7 @@ function compareNames(left, right) {
 }
 
 function getProductVisual(product) {
-    return getSectionVisual(getVisualSectionName(product));
-}
-
-function getVisualSectionName(product) {
-    const leafSection = getProductLeafSectionName(product);
-    const normalizedLeaf = normalize(leafSection);
-    if (!normalizedLeaf || normalizedLeaf === "товар" || normalizedLeaf.includes("проч")) {
-        return getProductSectionName(product);
-    }
-    return leafSection;
+    return getSectionVisual(getProductSectionName(product));
 }
 
 function getSectionVisual(name) {

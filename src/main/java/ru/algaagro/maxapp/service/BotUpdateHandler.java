@@ -587,11 +587,12 @@ public class BotUpdateHandler {
 
     private void startProductsResearch(AppUser user) {
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "🔎 Запускаю AI-пересмотр товаров из раздела «Прочее». Это может занять некоторое время.",
+                "🔎 Запускаю AI-пересмотр всего каталога. Товары будут отправлены в ИИ партиями, а отчет по распределению придет отдельными сообщениями.",
                 null,
                 "html");
         productResearchService.researchUncategorizedProductsAsync(
                 user.getMaxUserId(),
+                progress -> maxApiClient.sendToUser(user.getMaxUserId(), progress, null, "html"),
                 summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
                 error -> maxApiClient.sendToUser(
                         user.getMaxUserId(),

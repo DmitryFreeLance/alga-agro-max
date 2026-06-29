@@ -65,7 +65,7 @@ img {
 
 .mobile-app {
     min-height: 100vh;
-    padding-bottom: 90px;
+    padding-bottom: 112px;
 }
 
 .topbar {
@@ -140,6 +140,10 @@ img {
 
 .page {
     padding: 14px 12px 0;
+}
+
+.page.stack {
+    padding-bottom: 20px;
 }
 
 .stack {
@@ -2244,7 +2248,7 @@ button[disabled] {
     }
 
     .mobile-app {
-        padding-bottom: 24px;
+        padding-bottom: 36px;
     }
 
     .topbar {
