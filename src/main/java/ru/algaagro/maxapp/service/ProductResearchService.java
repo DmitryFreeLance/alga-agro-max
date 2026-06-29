@@ -122,119 +122,117 @@ public class ProductResearchService {
             return;
         }
         try {
-            if (session.stopped) {
-                sessions.remove(session.initiatedBy);
-                onCompleted.accept("Research остановлен.");
-                return;
-            }
-            if (session.processed >= session.targets.size()) {
-                sessions.remove(session.initiatedBy);
-                onCompleted.accept(buildFinalSummary(session));
-                return;
-            }
-
-            int start = session.processed;
-            int end = Math.min(session.targets.size(), start + RESEARCH_AI_BATCH_SIZE);
-            List<CatalogProduct> batchProducts = session.targets.subList(start, end);
-            List<ExcelImportService.ImportRow> rows = batchProducts.stream().map(this::toImportRow).toList();
-            log.info("Research AI batch started. userId={}, start={}, end={}, size={}", session.initiatedBy, start + 1, end, rows.size());
-
-            List<AiClassificationService.ClassificationResult> classified;
-            try {
-                classified = aiClassificationService.classify(rows, session.knownCultures);
-            } catch (Exception error) {
-                log.warn("Research AI batch failed. userId={}, start={}, end={}, reason={}", session.initiatedBy, start + 1, end, error.getMessage());
-                classified = aiClassificationService.classifyHeuristically(rows);
-            }
-
-            List<String> lines = new ArrayList<>();
-            for (int i = 0; i < batchProducts.size(); i++) {
-                CatalogProduct product = batchProducts.get(i);
-                AiClassificationService.ClassificationResult result = classified.get(i);
-                Resolution resolution = resolveSection(product, result, rows.get(i));
-                Map<String, Object> existingFilterMap = new LinkedHashMap<>(jsonHelper.readMap(product.getFilterMapJson()));
-                Map<String, Object> existingRawData = new LinkedHashMap<>(jsonHelper.readMap(product.getRawDataJson()));
-                String normalizedName = firstNonBlank(result.normalizedName(), product.getName());
-                String description = firstNonBlank(result.description(), product.getDescription());
-                String brand = firstNonBlank(result.brand(), product.getBrand());
-                String unitName = firstNonBlank(result.unitName(), product.getUnitName());
-                String packageType = firstNonBlank(result.packageType(), product.getPackageType());
-                String packageDescription = firstNonBlank(result.packageDescription(), product.getPackageDescription());
-                List<String> cultures = preferAiList(result.cultures(), productService.getStringList(product.getCulturesJson()));
-                List<String> purposes = preferAiList(result.purposes(), productService.getStringList(product.getPurposesJson()));
-                List<String> tags = preferAiList(result.tags(), productService.getStringList(product.getTagsJson()));
-                Map<String, Object> filterMap = mergeResearchFilterMap(existingFilterMap, result);
-                Map<String, Object> rawData = mergeResearchRawData(existingRawData, result, unitName, packageDescription);
-                boolean changed = !Objects.equals(blankToNull(product.getName()), blankToNull(normalizedName))
-                        || !Objects.equals(blankToNull(product.getCategory()), blankToNull(resolution.category()))
-                        || !Objects.equals(blankToNull(product.getSubcategory()), blankToNull(resolution.subcategory()))
-                        || !Objects.equals(blankToNull(product.getItemType()), blankToNull(resolution.itemType()))
-                        || !Objects.equals(blankToNull(product.getDescription()), blankToNull(description))
-                        || !Objects.equals(blankToNull(product.getBrand()), blankToNull(brand))
-                        || !Objects.equals(blankToNull(product.getUnitName()), blankToNull(unitName))
-                        || !Objects.equals(blankToNull(product.getPackageType()), blankToNull(packageType))
-                        || !Objects.equals(blankToNull(product.getPackageDescription()), blankToNull(packageDescription))
-                        || !Objects.equals(productService.getStringList(product.getCulturesJson()), cultures)
-                        || !Objects.equals(productService.getStringList(product.getPurposesJson()), purposes)
-                        || !Objects.equals(productService.getStringList(product.getTagsJson()), tags)
-                        || !Objects.equals(existingFilterMap, filterMap)
-                        || !Objects.equals(existingRawData, rawData);
-                String targetPath = resolution.category()
-                        + (resolution.subcategory() == null || resolution.subcategory().isBlank() ? "" : " / " + resolution.subcategory());
-
-                if (!changed) {
-                    session.unchanged++;
-                    session.bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
-                    lines.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → " + targetPath + " [без изменений]");
-                    continue;
+            while (true) {
+                if (session.stopped) {
+                    sessions.remove(session.initiatedBy);
+                    onCompleted.accept("Research остановлен.");
+                    return;
+                }
+                if (session.processed >= session.targets.size()) {
+                    sessions.remove(session.initiatedBy);
+                    onCompleted.accept(buildFinalSummary(session));
+                    return;
                 }
 
-                ProductService.AdminProductPayload payload = new ProductService.AdminProductPayload(
-                        product.getExternalId(),
-                        product.getSourceFile(),
-                        product.getSku(),
-                        normalizedName,
-                        description,
-                        brand,
-                        resolution.category(),
-                        resolution.subcategory(),
-                        resolution.itemType(),
-                        unitName,
-                        product.getPrice(),
-                        product.getStockQuantity(),
-                        packageType,
-                        packageDescription,
-                        product.getMinOrderQuantity(),
-                        product.getOrderStep(),
-                        cultures,
-                        purposes,
-                        tags,
-                        filterMap,
-                        rawData,
-                        product.isActive()
-                );
+                int start = session.processed;
+                int end = Math.min(session.targets.size(), start + RESEARCH_AI_BATCH_SIZE);
+                List<CatalogProduct> batchProducts = session.targets.subList(start, end);
+                List<ExcelImportService.ImportRow> rows = batchProducts.stream().map(this::toImportRow).toList();
+                log.info("Research AI batch started. userId={}, start={}, end={}, size={}", session.initiatedBy, start + 1, end, rows.size());
+
+                List<AiClassificationService.ClassificationResult> classified;
                 try {
-                    productService.updateProduct(product, payload, false);
-                    session.updated++;
-                    session.bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
-                    lines.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → " + targetPath + " [обновлено]");
-                } catch (Exception e) {
-                    session.failed++;
-                    session.failedProducts.add(firstNonBlank(product.getName(), "ID " + product.getId()));
-                    log.warn("Research update failed for product {} (id={}): {}", product.getName(), product.getId(), e.getMessage());
-                    lines.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → ошибка обновления");
+                    classified = aiClassificationService.classify(rows, session.knownCultures);
+                } catch (Exception error) {
+                    log.warn("Research AI batch failed. userId={}, start={}, end={}, reason={}", session.initiatedBy, start + 1, end, error.getMessage());
+                    classified = aiClassificationService.classifyHeuristically(rows);
                 }
-            }
 
-            session.processed = end;
-            boolean hasMore = end < session.targets.size() && !session.stopped;
-            onBatchReady.accept(new BatchReport(
-                    buildBatchReportText(session, start + 1, end, lines, hasMore),
-                    hasMore
-            ));
-            if (!hasMore) {
-                sessions.remove(session.initiatedBy);
-                onCompleted.accept(buildFinalSummary(session));
+                List<String> lines = new ArrayList<>();
+                for (int i = 0; i < batchProducts.size(); i++) {
+                    CatalogProduct product = batchProducts.get(i);
+                    AiClassificationService.ClassificationResult result = classified.get(i);
+                    Resolution resolution = resolveSection(product, result, rows.get(i));
+                    Map<String, Object> existingFilterMap = new LinkedHashMap<>(jsonHelper.readMap(product.getFilterMapJson()));
+                    Map<String, Object> existingRawData = new LinkedHashMap<>(jsonHelper.readMap(product.getRawDataJson()));
+                    String normalizedName = firstNonBlank(result.normalizedName(), product.getName());
+                    String description = firstNonBlank(result.description(), product.getDescription());
+                    String brand = firstNonBlank(result.brand(), product.getBrand());
+                    String unitName = firstNonBlank(result.unitName(), product.getUnitName());
+                    String packageType = firstNonBlank(result.packageType(), product.getPackageType());
+                    String packageDescription = firstNonBlank(result.packageDescription(), product.getPackageDescription());
+                    List<String> cultures = preferAiList(result.cultures(), productService.getStringList(product.getCulturesJson()));
+                    List<String> purposes = preferAiList(result.purposes(), productService.getStringList(product.getPurposesJson()));
+                    List<String> tags = preferAiList(result.tags(), productService.getStringList(product.getTagsJson()));
+                    Map<String, Object> filterMap = mergeResearchFilterMap(existingFilterMap, result);
+                    Map<String, Object> rawData = mergeResearchRawData(existingRawData, result, unitName, packageDescription);
+                    boolean changed = !Objects.equals(blankToNull(product.getName()), blankToNull(normalizedName))
+                            || !Objects.equals(blankToNull(product.getCategory()), blankToNull(resolution.category()))
+                            || !Objects.equals(blankToNull(product.getSubcategory()), blankToNull(resolution.subcategory()))
+                            || !Objects.equals(blankToNull(product.getItemType()), blankToNull(resolution.itemType()))
+                            || !Objects.equals(blankToNull(product.getDescription()), blankToNull(description))
+                            || !Objects.equals(blankToNull(product.getBrand()), blankToNull(brand))
+                            || !Objects.equals(blankToNull(product.getUnitName()), blankToNull(unitName))
+                            || !Objects.equals(blankToNull(product.getPackageType()), blankToNull(packageType))
+                            || !Objects.equals(blankToNull(product.getPackageDescription()), blankToNull(packageDescription))
+                            || !Objects.equals(productService.getStringList(product.getCulturesJson()), cultures)
+                            || !Objects.equals(productService.getStringList(product.getPurposesJson()), purposes)
+                            || !Objects.equals(productService.getStringList(product.getTagsJson()), tags)
+                            || !Objects.equals(existingFilterMap, filterMap)
+                            || !Objects.equals(existingRawData, rawData);
+                    String targetPath = resolution.category()
+                            + (resolution.subcategory() == null || resolution.subcategory().isBlank() ? "" : " / " + resolution.subcategory());
+
+                    if (!changed) {
+                        session.unchanged++;
+                        session.bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
+                        lines.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → " + targetPath + " [без изменений]");
+                        continue;
+                    }
+
+                    ProductService.AdminProductPayload payload = new ProductService.AdminProductPayload(
+                            product.getExternalId(),
+                            product.getSourceFile(),
+                            product.getSku(),
+                            normalizedName,
+                            description,
+                            brand,
+                            resolution.category(),
+                            resolution.subcategory(),
+                            resolution.itemType(),
+                            unitName,
+                            product.getPrice(),
+                            product.getStockQuantity(),
+                            packageType,
+                            packageDescription,
+                            product.getMinOrderQuantity(),
+                            product.getOrderStep(),
+                            cultures,
+                            purposes,
+                            tags,
+                            filterMap,
+                            rawData,
+                            product.isActive()
+                    );
+                    try {
+                        productService.updateProduct(product, payload, false);
+                        session.updated++;
+                        session.bySection.merge(displaySection(resolution.category()), 1, Integer::sum);
+                        lines.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → " + targetPath + " [обновлено]");
+                    } catch (Exception e) {
+                        session.failed++;
+                        session.failedProducts.add(firstNonBlank(product.getName(), "ID " + product.getId()));
+                        log.warn("Research update failed for product {} (id={}): {}", product.getName(), product.getId(), e.getMessage());
+                        lines.add("• " + firstNonBlank(product.getName(), "ID " + product.getId()) + " → ошибка обновления");
+                    }
+                }
+
+                session.processed = end;
+                boolean hasMore = end < session.targets.size() && !session.stopped;
+                onBatchReady.accept(new BatchReport(
+                        buildBatchReportText(session, start + 1, end, lines, hasMore),
+                        hasMore
+                ));
             }
         } catch (Exception e) {
             sessions.remove(session.initiatedBy);
