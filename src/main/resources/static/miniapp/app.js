@@ -145,6 +145,16 @@ const SEED_TREATMENT_TECHNOLOGIES = [
     "Технология экспресс (ExpressSun)",
     "Технология Clearfield («чистое поле»)",
 ];
+const SEED_REPRODUCTION_ORDER = [
+    "ОС",
+    "ЭС",
+    "РС",
+    "РС1",
+    "РС2",
+    "РС3",
+    "РС4",
+    "РСт",
+];
 
 const state = {
     maxUserId: resolveMaxUserId(),
@@ -1890,6 +1900,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const seedFaoRanges = SEED_FAO_RANGES.map(item => item.label);
     const seedMaturityGroups = SEED_MATURITY_GROUPS;
     const seedTechnologies = SEED_TREATMENT_TECHNOLOGIES;
+    const seedReproductionValues = isSeedsSection ? getSeedReproductionOptions(sectionProducts) : [];
     const wrapperClass = inline ? "catalog-filters-panel inline" : "catalog-filters-panel";
     return `
         <div class="${wrapperClass}">
@@ -2032,6 +2043,24 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                         </div>
                     ` : ""}
                 </div>
+                ${seedReproductionValues.length ? `
+                    <div class="drawer-section" data-filter-anchor="reproduction">
+                        <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="reproduction">
+                            <span>Репродукция</span>
+                            <span class="drawer-section-arrow">${panels.reproduction ? "▾" : "▸"}</span>
+                        </button>
+                        ${panels.reproduction ? `
+                            <div class="checkbox-list">
+                                ${seedReproductionValues.map(name => `
+                                    <label class="checkbox-row">
+                                        <input type="checkbox" data-field="filter-seed-reproduction" value="${escapeAttr(name)}" ${draft.seedReproductionValues.includes(name) ? "checked" : ""}>
+                                        <span>${escapeHtml(name)}</span>
+                                    </label>
+                                `).join("")}
+                            </div>
+                        ` : ""}
+                    </div>
+                ` : ""}
             ` : ""}
             <div class="drawer-section" data-filter-anchor="more">
                 <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
@@ -2371,9 +2400,10 @@ function renderAdminProductModal() {
                             <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                         </div>
                         ${isSeedsCategory ? `
-                            <div class="admin-form-row admin-form-row-3">
+                            <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                                 <div class="admin-field"><label>ФАО</label><input name="seedFao" value="${escapeAttr(product?.seedFao || "")}" placeholder="150"></div>
                                 <div class="admin-field"><label>Штук в мешке</label><input name="seedsPerBag" value="${escapeAttr(product?.seedsPerBag || "")}" placeholder="80000"></div>
+                                <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" value="${escapeAttr(product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "")}" placeholder="ЭС, РС1"></div>
                                 <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>
                             </div>
                         ` : ""}
@@ -3187,6 +3217,12 @@ function handleChange(event) {
         syncAppliedFiltersFromDraft();
         return;
     }
+    if (field === "filter-seed-reproduction") {
+        ensureCatalogDraft();
+        toggleDraftFilterArray("seedReproductionValues", event.target.value, event.target.checked);
+        syncAppliedFiltersFromDraft();
+        return;
+    }
     if (field === "admin-product-status") {
         state.admin.catalogStatus = event.target.value;
         render();
@@ -3416,6 +3452,7 @@ async function saveAdminProduct(formData) {
     const forGreenhouse = formData.get("forGreenhouse") === "on";
     const seedFao = String(formData.get("seedFao") || "").trim();
     const seedsPerBag = String(formData.get("seedsPerBag") || "").trim();
+    const seedReproduction = String(formData.get("seedReproduction") || "").trim();
     const cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
     if (forGreenhouse) {
         category = "Препараты для закрытого грунта";
@@ -3473,6 +3510,7 @@ async function saveAdminProduct(formData) {
             forGreenhouse,
             seedFao,
             seedsPerBag,
+            seedReproduction,
             cultivationTechnology,
         },
         active: String(formData.get("active")) !== "false",
@@ -3528,6 +3566,7 @@ function buildAdminProductPayload(product, overrides = {}) {
             forGreenhouse: Boolean(product.forGreenhouse ?? product.filterMap?.forGreenhouse),
             seedFao: product.seedFao || product.filterMap?.seedFao || "",
             seedsPerBag: product.seedsPerBag || product.filterMap?.seedsPerBag || "",
+            seedReproduction: product.seedReproduction || product.filterMap?.seedReproduction || product.filterMap?.reproduction || "",
             cultivationTechnology: product.cultivationTechnology || product.filterMap?.cultivationTechnology || "",
         },
         rawData: product.rawData || {},
@@ -3766,6 +3805,12 @@ function applyCatalogFilters(products) {
             return value && applied.seedTreatmentTechnologies.includes(value);
         });
     }
+    if (applied.seedReproductionValues.length) {
+        filtered = filtered.filter(product => {
+            const values = getSeedReproductionValues(product);
+            return values.some(value => applied.seedReproductionValues.includes(value));
+        });
+    }
     if (applied.priceMin) {
         filtered = filtered.filter(product => product.price != null && Number(product.price) >= Number(applied.priceMin));
     }
@@ -3939,8 +3984,12 @@ function getProductLeafSectionName(product) {
 function getProductSectionName(product) {
     const category = String(product?.category || "").trim();
     const context = getProductContext(product);
-    if (product?.forGreenhouse) {
+    if (product?.forGreenhouse || product?.filterMap?.forGreenhouse) {
         return "Препараты для закрытого грунта";
+    }
+    const directSection = getSectionDefinition(category);
+    if (directSection?.name === "Препараты для закрытого грунта") {
+        return directSection.name;
     }
     if (isSeedsSectionName(context)) {
         return "Семена";
@@ -3949,7 +3998,6 @@ function getProductSectionName(product) {
     if (pesticideCategory) {
         return "Пестициды";
     }
-    const directSection = getSectionDefinition(category);
     if (directSection && directSection.name !== "Препараты для закрытого грунта") {
         return directSection.name;
     }
@@ -4224,17 +4272,18 @@ function emptyFilters() {
         seedFaoRanges: [],
         seedMaturityGroups: [],
         seedTreatmentTechnologies: [],
+        seedReproductionValues: [],
         priceMin: "",
         priceMax: "",
     };
 }
 
 function emptyFilterPanels() {
-    return { sections: false, culture: false, manufacturer: false, pesticideTarget: false, activeIngredient: false, subcategory: false, fao: false, maturity: false, technology: false, more: false };
+    return { sections: false, culture: false, manufacturer: false, pesticideTarget: false, activeIngredient: false, subcategory: false, fao: false, maturity: false, technology: false, reproduction: false, more: false };
 }
 
 function defaultFilterPanels() {
-    return { sections: true, culture: true, manufacturer: true, pesticideTarget: false, activeIngredient: true, subcategory: true, fao: false, maturity: false, technology: false, more: true };
+    return { sections: true, culture: true, manufacturer: true, pesticideTarget: false, activeIngredient: true, subcategory: true, fao: false, maturity: false, technology: false, reproduction: false, more: true };
 }
 
 function cloneFilters(filters) {
@@ -4248,6 +4297,7 @@ function cloneFilters(filters) {
         seedFaoRanges: [...(filters.seedFaoRanges || [])],
         seedMaturityGroups: [...(filters.seedMaturityGroups || [])],
         seedTreatmentTechnologies: [...(filters.seedTreatmentTechnologies || [])],
+        seedReproductionValues: [...(filters.seedReproductionValues || [])],
         priceMin: filters.priceMin || "",
         priceMax: filters.priceMax || "",
     };
@@ -4288,14 +4338,17 @@ function trimDraftFiltersToAvailable() {
         const faoRanges = new Set(SEED_FAO_RANGES.map(item => item.label));
         const maturityGroups = new Set(SEED_MATURITY_GROUPS);
         const technologies = new Set(SEED_TREATMENT_TECHNOLOGIES);
+        const reproductions = new Set(getSeedReproductionOptions(sectionProducts));
         draft.seedFaoRanges = (draft.seedFaoRanges || []).filter(item => faoRanges.has(item));
         draft.seedMaturityGroups = (draft.seedMaturityGroups || []).filter(item => maturityGroups.has(item));
         draft.seedTreatmentTechnologies = (draft.seedTreatmentTechnologies || []).filter(item => technologies.has(item));
+        draft.seedReproductionValues = (draft.seedReproductionValues || []).filter(item => reproductions.has(item));
         return;
     }
     draft.seedFaoRanges = [];
     draft.seedMaturityGroups = [];
     draft.seedTreatmentTechnologies = [];
+    draft.seedReproductionValues = [];
 }
 
 function getAvailablePesticideTargetFilterValues(products) {
@@ -4456,6 +4509,64 @@ function getSeedTreatmentTechnology(product) {
     return "";
 }
 
+function normalizeSeedReproductionValue(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+        return "";
+    }
+    let normalized = raw
+        .toUpperCase()
+        .replace(/PC/g, "РС")
+        .replace(/RS/g, "РС")
+        .replace(/\//g, "")
+        .replace(/\s+/g, "");
+    normalized = normalized.replace(/РСT/g, "РСт");
+    if (normalized === "РС0") {
+        normalized = "РС";
+    }
+    return /^(ОС|ЭС|РС|РС\d|РСт)$/.test(normalized) ? normalized : "";
+}
+
+function sortSeedReproductionValues(values) {
+    const order = new Map(SEED_REPRODUCTION_ORDER.map((value, index) => [value, index]));
+    return [...values].sort((left, right) => {
+        const leftOrder = order.has(left) ? order.get(left) : Number.MAX_SAFE_INTEGER;
+        const rightOrder = order.has(right) ? order.get(right) : Number.MAX_SAFE_INTEGER;
+        if (leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+        }
+        return String(left).localeCompare(String(right), "ru", { sensitivity: "base" });
+    });
+}
+
+function getSeedReproductionValues(product) {
+    const values = new Set();
+    const sources = [
+        getProductFilterRawValue(product, ["reproduction", "seedReproduction", "Репродукция", "репродукция", "Класс семян", "класс семян"]),
+        product?.description,
+        product?.name,
+        getProductSeedSearchText(product),
+    ];
+    sources.forEach(source => {
+        const text = String(source || "");
+        if (!text) {
+            return;
+        }
+        const matches = text.match(/(?:^|[^А-ЯA-Z])(ОС|ЭС|РС(?:\s*\/?\s*\d)?|RS(?:\s*\/?\s*\d)?|PC(?:\s*\/?\s*\d)?|РСт)(?=$|[^А-ЯA-Z0-9])/gimu) || [];
+        matches.forEach(match => {
+            const cleaned = normalizeSeedReproductionValue(match.replace(/^[^А-ЯA-Z]+/u, ""));
+            if (cleaned) {
+                values.add(cleaned);
+            }
+        });
+    });
+    return sortSeedReproductionValues([...values]);
+}
+
+function getSeedReproductionOptions(products) {
+    return sortSeedReproductionValues(uniqueValues(products.flatMap(item => getSeedReproductionValues(item)).filter(Boolean)));
+}
+
 function getProductById(productId) {
     return state.products.find(product => product.id === productId) || null;
 }
@@ -4548,15 +4659,19 @@ function extractActiveIngredientTerms(product) {
     const parts = cleaned
         .split(/\s*\+\s*|\s*\/\s*|\s*;\s*|\s*,\s*(?=[a-zа-яё])/i)
         .map(part => simplifyActiveIngredientTerm(part))
-        .filter(Boolean);
+        .filter(part => part && part.length > 4);
     return uniqueValues(parts);
 }
 
 function simplifyActiveIngredientTerm(value) {
-    let term = normalize(value)
+    let term = String(value || "")
+        .replace(/[),.;:+\s]+$/g, "")
+        .trim();
+    term = normalize(term)
         .replace(/\b\d+(?:[.,]\d+)?\b/g, " ")
         .replace(/\b(?:калийная|натриевая|аммонийная|изопропиламинная)\s+соль\b/g, " ")
         .replace(/\b(?:антидот|добавки|добавка|смачиватели?)\b/g, " ")
+        .replace(/[),.;:+\s]+$/g, "")
         .replace(/\s+/g, " ")
         .trim();
     if (!term) {
@@ -4570,6 +4685,10 @@ function simplifyActiveIngredientTerm(value) {
         term = tokens.slice(0, 2).join(" ");
     } else {
         term = tokens[0];
+    }
+    term = term.replace(/[),.;:+\s]+$/g, "").trim();
+    if (term.length <= 4) {
+        return "";
     }
     return term;
 }
