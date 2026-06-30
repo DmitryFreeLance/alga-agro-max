@@ -391,6 +391,13 @@ function renderTopbar() {
         return "";
     }
     const activeTitle = getTopbarTitle();
+    const sectionSelected = state.nav === "catalog" && state.catalog.section;
+    const topbarAction = shouldShowBackButton() && !sectionSelected
+        ? `<button class="topbar-action" data-action="back">←</button>`
+        : `<button class="topbar-action" data-action="open-manager">⋯</button>`;
+    const pageHeadBackButton = sectionSelected
+        ? `<button class="page-head-back-button" data-action="back">← Назад</button>`
+        : "";
     return `
         <header class="topbar">
             <div class="topbar-row">
@@ -399,12 +406,10 @@ function renderTopbar() {
                     <h1>${escapeHtml(state.meta?.company || "ООО «Алга Агро Групп»")}</h1>
                     <p>Только вперёд!</p>
                 </div>
-                ${shouldShowBackButton()
-                    ? `<button class="topbar-action" data-action="back">←</button>`
-                    : `<button class="topbar-action" data-action="open-manager">⋯</button>`}
+                ${topbarAction}
             </div>
             ${activeTitle.subtitle
-                ? `<div class="page-head" style="margin-top:14px;"><h2>${escapeHtml(activeTitle.title)}</h2><p>${escapeHtml(activeTitle.subtitle)}</p></div>`
+                ? `<div class="page-head" style="margin-top:14px;"><h2>${escapeHtml(activeTitle.title)}</h2><p>${escapeHtml(activeTitle.subtitle)}</p>${pageHeadBackButton}</div>`
                 : ""}
         </header>
     `;
@@ -1553,6 +1558,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const panels = state.catalog.filterPanels || emptyFilterPanels();
     const sectionProducts = getDraftSectionProducts(draft);
     const effectiveSection = draft.sections[0] || state.catalog.section || "";
+    const sectionLocked = Boolean(state.catalog.section);
     const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
     const manufacturerSearch = normalize(state.catalog.manufacturerSearch);
     const visibleManufacturers = manufacturers.filter(name => !manufacturerSearch || normalize(name).includes(manufacturerSearch));
@@ -1564,7 +1570,6 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
     const isPesticidesSection = normalize(effectiveSection) === normalize("Пестициды");
     const showCultureSection = isSeedsSection;
-    const activeIngredients = uniqueValues(sectionProducts.map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean));
     const categoryTree = getCategoryTree(sectionProducts, effectiveSection);
     const seedFaoRanges = SEED_FAO_RANGES.map(item => item.label);
     const seedMaturityGroups = SEED_MATURITY_GROUPS;
@@ -1572,6 +1577,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const wrapperClass = inline ? "catalog-filters-panel inline" : "catalog-filters-panel";
     return `
         <div class="${wrapperClass}">
+            ${sectionLocked ? "" : `
             <div class="drawer-section" data-filter-anchor="sections">
                 <h4>Раздел</h4>
                 <div class="filter-chips-row filter-chips-row-sections">
@@ -1580,6 +1586,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     `).join("")}
                 </div>
             </div>
+            `}
             ${showCultureSection && cultures.length ? `
             <div class="drawer-section" data-filter-anchor="culture">
                 <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
@@ -1618,24 +1625,6 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     </div>
                 ` : ""}
             </div>
-            ${isPesticidesSection ? `
-                <div class="drawer-section" data-filter-anchor="active-ingredient">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="activeIngredient">
-                        <span>Действующее вещество</span>
-                        <span class="drawer-section-arrow">${panels.activeIngredient ? "▾" : "▸"}</span>
-                    </button>
-                    ${panels.activeIngredient ? `
-                        <div class="checkbox-list">
-                            ${activeIngredients.map(name => `
-                                <label class="checkbox-row">
-                                    <input type="checkbox" data-field="filter-active-ingredient" value="${escapeAttr(name)}" ${draft.activeIngredients.includes(name) ? "checked" : ""}>
-                                    <span>${escapeHtml(name)}</span>
-                                </label>
-                            `).join("")}
-                        </div>
-                    ` : ""}
-                </div>
-            ` : ""}
             ${subcategoryTitle !== "Культура" ? `
                 <div class="drawer-section" data-filter-anchor="subcategory">
                     <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
@@ -1720,6 +1709,9 @@ function countProductsByManufacturer(products, manufacturer) {
 }
 
 function getCategoryTree(products, sectionName) {
+    if (normalize(sectionName) === normalize("Пестициды")) {
+        return getPesticideCategoryTree(products);
+    }
     const groups = new Map();
     products.forEach(product => {
         const values = getFilterSubcategoryValues(product, sectionName);
@@ -1754,8 +1746,84 @@ function getCategoryTree(products, sectionName) {
         }));
 }
 
+function getPesticideCategoryTree(products) {
+    const groups = new Map();
+    products.forEach(product => {
+        const categoryLabel = getPesticideTreeGroup(product);
+        const cultures = uniqueValues((product.cultures || []).filter(Boolean));
+        const targets = getPesticideTargetLabels(product);
+        const key = normalize(categoryLabel);
+        if (!groups.has(key)) {
+            groups.set(key, { label: categoryLabel, cultures: new Map(), targets: new Map() });
+        }
+        const group = groups.get(key);
+        if (cultures.length) {
+            cultures.forEach(culture => {
+                const cultureKey = normalize(culture);
+                if (!group.cultures.has(cultureKey)) {
+                    group.cultures.set(cultureKey, { label: culture, targets: new Map() });
+                }
+                const cultureNode = group.cultures.get(cultureKey);
+                targets.forEach(target => cultureNode.targets.set(normalize(target), target));
+            });
+        } else {
+            targets.forEach(target => group.targets.set(normalize(target), target));
+        }
+    });
+    return [...groups.values()].map(group => ({
+        label: group.label,
+        value: group.label,
+        field: "filter-subcategory",
+        children: [
+            ...uniqueValues([...group.cultures.values()].map(item => item.label)).map(culture => {
+                const cultureNode = group.cultures.get(normalize(culture));
+                return {
+                    label: culture,
+                    value: culture,
+                    field: "filter-culture",
+                    children: uniqueValues([...cultureNode.targets.values()]).map(target => ({
+                        label: target,
+                        value: target,
+                        field: "filter-pesticide-target",
+                        children: [],
+                    })),
+                };
+            }),
+            ...uniqueValues([...group.targets.values()]).map(target => ({
+                label: target,
+                value: target,
+                field: "filter-pesticide-target",
+                children: [],
+            })),
+        ],
+    })).sort((left, right) => left.label.localeCompare(right.label, "ru", { sensitivity: "base" }));
+}
+
+function getPesticideTreeGroup(product) {
+    const subcategory = String(product?.subcategory || product?.itemType || "").trim();
+    const normalizedSubcategory = normalize(subcategory);
+    const composition = normalize(product?.activeIngredient || product?.filterMap?.activeIngredient || "");
+    if (normalizedSubcategory.includes("протрав")) {
+        return "Протравители";
+    }
+    if (normalizedSubcategory.includes("регулятор рост")) {
+        return "Регуляторы роста";
+    }
+    if (normalizedSubcategory.includes("фунгиц")) {
+        if (/(манкоцеб|метирам|сера|дитианон|хлороталонил|медь)/.test(composition)) {
+            return "Контактные";
+        }
+        return "Системные";
+    }
+    return subcategory || "СЗР";
+}
+
 function renderCategoryTreeNode(node, draft, depth = 0) {
-    const values = node.field === "filter-culture" ? draft.cultures : draft.subcategories;
+    const values = node.field === "filter-culture"
+        ? draft.cultures
+        : node.field === "filter-pesticide-target"
+            ? draft.pesticideTargets
+            : draft.subcategories;
     const checked = values.includes(node.value);
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
     return `
@@ -2690,9 +2758,9 @@ function handleChange(event) {
         syncAppliedFiltersFromDraft();
         return;
     }
-    if (field === "filter-active-ingredient") {
+    if (field === "filter-pesticide-target") {
         ensureCatalogDraft();
-        toggleDraftFilterArray("activeIngredients", event.target.value, event.target.checked);
+        toggleDraftFilterArray("pesticideTargets", event.target.value, event.target.checked);
         syncAppliedFiltersFromDraft();
         return;
     }
@@ -3256,10 +3324,10 @@ function applyCatalogFilters(products) {
     if (applied.manufacturers.length) {
         filtered = filtered.filter(product => applied.manufacturers.includes(product.brand));
     }
-    if (applied.activeIngredients.length) {
+    if (applied.pesticideTargets.length) {
         filtered = filtered.filter(product => {
-            const value = String(product.activeIngredient || product.filterMap?.activeIngredient || "").trim();
-            return value && applied.activeIngredients.includes(value);
+            const values = getPesticideTargetLabels(product);
+            return values.some(value => applied.pesticideTargets.includes(value));
         });
     }
     if (applied.subcategories.length) {
@@ -3734,7 +3802,7 @@ function emptyFilters() {
         sections: [],
         cultures: [],
         manufacturers: [],
-        activeIngredients: [],
+        pesticideTargets: [],
         subcategories: [],
         seedFaoRanges: [],
         seedMaturityGroups: [],
@@ -3745,11 +3813,11 @@ function emptyFilters() {
 }
 
 function emptyFilterPanels() {
-    return { sections: false, culture: false, manufacturer: false, activeIngredient: false, subcategory: false, fao: false, maturity: false, technology: false, more: false };
+    return { sections: false, culture: false, manufacturer: false, pesticideTarget: false, subcategory: false, fao: false, maturity: false, technology: false, more: false };
 }
 
 function defaultFilterPanels() {
-    return { sections: true, culture: true, manufacturer: true, activeIngredient: true, subcategory: true, fao: false, maturity: false, technology: false, more: true };
+    return { sections: true, culture: true, manufacturer: true, pesticideTarget: true, subcategory: true, fao: false, maturity: false, technology: false, more: true };
 }
 
 function cloneFilters(filters) {
@@ -3757,7 +3825,7 @@ function cloneFilters(filters) {
         sections: [...(filters.sections || [])],
         cultures: [...(filters.cultures || [])],
         manufacturers: [...(filters.manufacturers || [])],
-        activeIngredients: [...(filters.activeIngredients || [])],
+        pesticideTargets: [...(filters.pesticideTargets || [])],
         subcategories: [...(filters.subcategories || [])],
         seedFaoRanges: [...(filters.seedFaoRanges || [])],
         seedMaturityGroups: [...(filters.seedMaturityGroups || [])],
@@ -3786,7 +3854,7 @@ function trimDraftFiltersToAvailable() {
     const sectionProducts = getDraftSectionProducts(draft);
     const manufacturers = new Set(uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean)));
     const cultures = new Set(uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean)));
-    const activeIngredients = new Set(uniqueValues(sectionProducts.map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean)));
+    const pesticideTargets = new Set(uniqueValues(sectionProducts.flatMap(item => getPesticideTargetLabels(item)).filter(Boolean)));
     const cultureKeys = new Set([...cultures].map(normalize));
     const effectiveSection = draft.sections[0] || state.catalog.section || "";
     const subcategories = new Set(
@@ -3796,7 +3864,7 @@ function trimDraftFiltersToAvailable() {
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
     draft.manufacturers = draft.manufacturers.filter(item => manufacturers.has(item));
     draft.cultures = draft.cultures.filter(item => cultures.has(item));
-    draft.activeIngredients = draft.activeIngredients.filter(item => activeIngredients.has(item));
+    draft.pesticideTargets = draft.pesticideTargets.filter(item => pesticideTargets.has(item));
     draft.subcategories = draft.subcategories.filter(item => subcategories.has(item));
     if (isSeedsSection) {
         const faoRanges = new Set(SEED_FAO_RANGES.map(item => item.label));
@@ -3974,6 +4042,10 @@ function applyPendingFilterFocus() {
 function getFilterSubcategoryValues(product, sectionName) {
     const effectiveSection = sectionName || getProductSectionName(product);
     return uniqueValues([mapProductToSectionSubcategory(product, effectiveSection)].filter(Boolean));
+}
+
+function getPesticideTargetLabels(product) {
+    return uniqueValues(toStringArray(product?.filterMap?.targetLabels || product?.rawData?.targetLabels));
 }
 
 function normalizeFilterLabel(value) {
