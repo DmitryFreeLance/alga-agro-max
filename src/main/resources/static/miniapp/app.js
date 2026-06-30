@@ -175,6 +175,7 @@ const state = {
         filtersOpen: false,
         filterFocus: "",
         filterPanels: emptyFilterPanels(),
+        manufacturerSearch: "",
         draft: null,
         applied: emptyFilters(),
     },
@@ -503,19 +504,14 @@ function renderSectionPage() {
     const filtered = applyCatalogFilters(products);
     return `
         <div class="stack">
-            ${renderSectionTabs()}
-            <div class="catalog-section-layout">
-                ${renderInlineFiltersSidebar()}
-                <div class="catalog-results-panel">
-                    <div class="toolbar-row catalog-toolbar-row">
-                        <div class="catalog-results-meta">Товаров: ${filtered.length}</div>
-                        <select class="toolbar-select" data-field="catalog-sort">
-                            ${renderSortOptions()}
-                        </select>
-                    </div>
-                    ${renderProductsGrid(filtered)}
-                </div>
+            <div class="toolbar-row catalog-toolbar-compact">
+                <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
+                <select class="toolbar-select" data-field="catalog-sort">
+                    ${renderSortOptions()}
+                </select>
             </div>
+            <div class="search-muted">${filtered.length} товаров</div>
+            ${renderProductsGrid(filtered)}
         </div>
     `;
 }
@@ -1459,11 +1455,8 @@ function renderProductModal() {
         <div class="modal">
             <div class="modal-backdrop" data-action="close-product"></div>
             <div class="modal-sheet">
-                <div class="modal-head">
-                    <div class="modal-title-wrap">
-                        <div class="modal-title">${escapeHtml(product.name)}</div>
-                        <div class="modal-subtitle">${escapeHtml(modalSubtitle)}</div>
-                    </div>
+                <div class="modal-head modal-head-product">
+                    <button class="product-back-link" data-action="close-product">‹ Назад</button>
                     <button class="modal-close" data-action="close-product">×</button>
                 </div>
                 <div class="product-gallery">
@@ -1476,34 +1469,39 @@ function renderProductModal() {
                     ${galleryItems.length > 1 ? `<div class="gallery-dots">${galleryItems.map((_, index) => `<span class="gallery-dot ${index === state.productModal.imageIndex ? "active" : ""}"></span>`).join("")}</div>` : ""}
                 </div>
                 <div class="product-detail-body">
+                    <div class="product-badge-row">
+                        <span class="product-section-pill">${escapeHtml(subcategoryName || sectionName || product.category || "Каталог")}</span>
+                    </div>
                     <div>
-                        <div class="eyebrow">${escapeHtml(sectionName || product.category || "Каталог")}</div>
                         <h3>${escapeHtml(product.name)}</h3>
-                        <div class="product-spec-list">
-                            ${product.activeIngredient ? `
-                                <div class="product-spec-item">
-                                    <span>ДВ</span>
-                                    <strong>${escapeHtml(product.activeIngredient)}</strong>
-                                </div>
-                            ` : ""}
-                            <div class="product-spec-item">
-                                <span>Упаковка</span>
-                                    <strong>${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Не указана")}</strong>
-                            </div>
-                        </div>
-                        ${subcategoryName ? `<div class="product-brand">${escapeHtml(subcategoryName)}</div>` : ""}
                         <div class="product-brand">${escapeHtml(product.brand || "")}</div>
                     </div>
                     <div class="detail-price">
                         ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
                         <strong class="${product.oldPrice ? "price-current-discount" : ""}">${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
                     </div>
-                    <div class="packaging-chips">
-                        <span class="packaging-chip">${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
+                    <div class="product-spec-list product-spec-list-card">
+                        <div class="product-spec-item">
+                            <span>Упаковка / объем</span>
+                            <div class="packaging-chips">
+                                <span class="packaging-chip">${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
+                            </div>
+                        </div>
+                        ${product.description ? `
+                            <div class="product-spec-item">
+                                <span>Описание</span>
+                                <strong class="product-copy-block">${escapeHtml(product.description)}</strong>
+                            </div>
+                        ` : ""}
+                        ${product.activeIngredient ? `
+                            <div class="product-spec-item">
+                                <span>Действующее вещество</span>
+                                <strong class="product-copy-block">${escapeHtml(product.activeIngredient)}</strong>
+                            </div>
+                        ` : ""}
                     </div>
-                    ${product.description ? `<p class="detail-paragraph">${escapeHtml(product.description)}</p>` : ""}
                     ${canBuy ? `
-                        <div class="detail-footer">
+                        <div class="detail-footer detail-footer-sticky">
                             ${renderStepper(product.id, currentQty, "modal")}
                             <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}">
                                 ${getCartItem(product.id) ? "✓ В корзине" : "В корзину"}
@@ -1524,11 +1522,11 @@ function renderFiltersDrawer() {
             <div class="drawer-sheet">
                 <div class="drawer-top">
                     <div class="modal-title">Фильтры</div>
-                    <button class="secondary-btn" data-action="reset-filters">Сбросить всё</button>
+                    <button class="drawer-reset-link" data-action="reset-filters">Сбросить всё</button>
                 </div>
                 ${renderCatalogFiltersPanel({ inline: false })}
                 <div class="drawer-actions">
-                    <button class="ghost-btn" data-action="close-filters">Сбросить</button>
+                    <button class="ghost-btn" data-action="reset-filters">Сбросить</button>
                     <button class="primary-btn" data-action="apply-filters">Применить</button>
                 </div>
             </div>
@@ -1556,6 +1554,8 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const sectionProducts = getDraftSectionProducts(draft);
     const effectiveSection = draft.sections[0] || state.catalog.section || "";
     const manufacturers = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
+    const manufacturerSearch = normalize(state.catalog.manufacturerSearch);
+    const visibleManufacturers = manufacturers.filter(name => !manufacturerSearch || normalize(name).includes(manufacturerSearch));
     const cultures = uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean));
     const cultureKeys = new Set(cultures.map(normalize));
     const subcategories = uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, effectiveSection)).filter(Boolean))
@@ -1563,13 +1563,24 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const subcategoryTitle = getSubcategoryFilterTitle(effectiveSection);
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
     const isPesticidesSection = normalize(effectiveSection) === normalize("Пестициды");
+    const showCultureSection = isSeedsSection;
     const activeIngredients = uniqueValues(sectionProducts.map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean));
+    const categoryTree = getCategoryTree(sectionProducts, effectiveSection);
     const seedFaoRanges = SEED_FAO_RANGES.map(item => item.label);
     const seedMaturityGroups = SEED_MATURITY_GROUPS;
     const seedTechnologies = SEED_TREATMENT_TECHNOLOGIES;
     const wrapperClass = inline ? "catalog-filters-panel inline" : "catalog-filters-panel";
     return `
         <div class="${wrapperClass}">
+            <div class="drawer-section" data-filter-anchor="sections">
+                <h4>Раздел</h4>
+                <div class="filter-chips-row filter-chips-row-sections">
+                    ${getCatalogSections().map(section => `
+                        <button type="button" class="filter-chip ${effectiveSection === section.name ? "active" : ""}" data-action="switch-draft-section" data-section="${escapeAttr(section.name)}">${escapeHtml(getSectionDisplayName(section.name))}</button>
+                    `).join("")}
+                </div>
+            </div>
+            ${showCultureSection && cultures.length ? `
             <div class="drawer-section" data-filter-anchor="culture">
                 <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
                     <span>Культура</span>
@@ -1586,17 +1597,22 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     </div>
                 ` : ""}
             </div>
+            ` : ""}
             <div class="drawer-section" data-filter-anchor="manufacturer">
                 <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="manufacturer">
                     <span>Производитель</span>
                     <span class="drawer-section-arrow">${panels.manufacturer ? "▾" : "▸"}</span>
                 </button>
                 ${panels.manufacturer ? `
-                    <div class="checkbox-list">
-                        ${manufacturers.map(name => `
+                    <div class="filter-search-box">
+                        <input type="search" data-field="filter-manufacturer-search" placeholder="Поиск" value="${escapeAttr(state.catalog.manufacturerSearch)}">
+                    </div>
+                    <div class="checkbox-list checkbox-list-counts">
+                        ${visibleManufacturers.map(name => `
                             <label class="checkbox-row">
                                 <input type="checkbox" data-field="filter-manufacturer" value="${escapeAttr(name)}" ${draft.manufacturers.includes(name) ? "checked" : ""}>
                                 <span>${escapeHtml(name)}</span>
+                                <small>${countProductsByManufacturer(sectionProducts, name)}</small>
                             </label>
                         `).join("")}
                     </div>
@@ -1623,18 +1639,11 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
             ${subcategoryTitle !== "Культура" ? `
                 <div class="drawer-section" data-filter-anchor="subcategory">
                     <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
-                        <span>${escapeHtml(subcategoryTitle)}</span>
+                        <span>Категория</span>
                         <span class="drawer-section-arrow">${panels.subcategory ? "▾" : "▸"}</span>
                     </button>
                     ${panels.subcategory ? `
-                        <div class="checkbox-list">
-                            ${subcategories.map(name => `
-                                <label class="checkbox-row">
-                                    <input type="checkbox" data-field="filter-subcategory" value="${escapeAttr(name)}" ${draft.subcategories.includes(name) ? "checked" : ""}>
-                                    <span>${escapeHtml(name)}</span>
-                                </label>
-                            `).join("")}
-                        </div>
+                        <div class="tree-list">${categoryTree.length ? categoryTree.map(node => renderCategoryTreeNode(node, draft)).join("") : `<div class="filter-empty">Категории не найдены</div>`}</div>
                     ` : ""}
                 </div>
             ` : ""}
@@ -1701,6 +1710,62 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     </div>
                 ` : ""}
             </div>
+        </div>
+    `;
+}
+
+function countProductsByManufacturer(products, manufacturer) {
+    const target = normalize(manufacturer);
+    return products.filter(item => normalize(item.brand) === target).length;
+}
+
+function getCategoryTree(products, sectionName) {
+    const groups = new Map();
+    products.forEach(product => {
+        const values = getFilterSubcategoryValues(product, sectionName);
+        const cultures = uniqueValues((product.cultures || []).filter(Boolean));
+        values.forEach(value => {
+            const key = normalize(value);
+            if (!groups.has(key)) {
+                groups.set(key, { label: value, values: new Set(), cultures: new Map() });
+            }
+            const group = groups.get(key);
+            group.values.add(value);
+            cultures.forEach(culture => group.cultures.set(normalize(culture), culture));
+        });
+    });
+    const items = [...groups.values()].map(group => ({
+        label: uniqueValues([...group.values])[0] || group.label,
+        value: uniqueValues([...group.values])[0] || group.label,
+        children: uniqueValues([...group.cultures.values()]).map(culture => ({
+            label: culture,
+            value: culture,
+            field: "filter-culture",
+            children: [],
+        })),
+    }));
+    return sortValuesByConfiguredOrder(sectionName, items.map(item => item.label))
+        .map(label => items.find(item => item.label === label))
+        .filter(Boolean)
+        .map(item => ({
+            ...item,
+            field: "filter-subcategory",
+            children: item.children,
+        }));
+}
+
+function renderCategoryTreeNode(node, draft, depth = 0) {
+    const values = node.field === "filter-culture" ? draft.cultures : draft.subcategories;
+    const checked = values.includes(node.value);
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    return `
+        <div class="tree-node depth-${depth}">
+            <label class="tree-row">
+                <span class="tree-indent">${hasChildren ? "▸" : "•"}</span>
+                <input type="checkbox" data-field="${node.field}" value="${escapeAttr(node.value)}" ${checked ? "checked" : ""}>
+                <span>${escapeHtml(node.label)}</span>
+            </label>
+            ${hasChildren ? `<div class="tree-children">${node.children.map(child => renderCategoryTreeNode(child, draft, depth + 1)).join("")}</div>` : ""}
         </div>
     `;
 }
@@ -2368,22 +2433,40 @@ function handleClick(event) {
         return;
     }
     if (action === "reset-filters") {
+        state.catalog.manufacturerSearch = "";
         state.catalog.draft = emptyFilters();
         state.catalog.applied = emptyFilters();
+        if (state.catalog.section) {
+            state.catalog.draft.sections = [state.catalog.section];
+        }
         render();
         return;
     }
     if (action === "reset-inline-filters") {
+        state.catalog.manufacturerSearch = "";
         state.catalog.draft = emptyFilters();
         state.catalog.applied = emptyFilters();
         render();
         return;
     }
     if (action === "apply-filters") {
-        state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
+        const nextFilters = cloneFilters(state.catalog.draft || emptyFilters());
+        const nextSection = nextFilters.sections[0] || state.catalog.section || "";
+        state.catalog.applied = nextFilters;
+        state.catalog.section = nextSection;
         state.catalog.filtersOpen = false;
         state.catalog.filterFocus = "";
         state.catalog.filterPanels = defaultFilterPanels();
+        render();
+        return;
+    }
+    if (action === "switch-draft-section") {
+        ensureCatalogDraft();
+        const section = button.dataset.section || "";
+        state.catalog.draft = emptyFilters();
+        state.catalog.draft.sections = section ? [section] : [];
+        state.catalog.manufacturerSearch = "";
+        trimDraftFiltersToAvailable();
         render();
         return;
     }
@@ -2504,6 +2587,11 @@ function handleInput(event) {
     }
     if (field === "catalog-query") {
         state.catalog.query = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "filter-manufacturer-search") {
+        state.catalog.manufacturerSearch = event.target.value;
         renderPreservingFocus();
         return;
     }
@@ -3732,7 +3820,9 @@ function ensureCatalogDraft() {
 
 function syncAppliedFiltersFromDraft() {
     trimDraftFiltersToAvailable();
-    state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
+    if (!state.catalog.filtersOpen) {
+        state.catalog.applied = cloneFilters(state.catalog.draft || emptyFilters());
+    }
     renderPreservingFocus();
 }
 
