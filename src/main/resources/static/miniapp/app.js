@@ -174,6 +174,7 @@ const state = {
         sort: "default",
         filtersOpen: false,
         filterFocus: "",
+        filterScrollTop: 0,
         filterPanels: emptyFilterPanels(),
         manufacturerSearch: "",
         draft: null,
@@ -331,6 +332,10 @@ async function loadAdminData() {
 }
 
 function render() {
+    const existingDrawer = root.querySelector(".drawer-sheet");
+    if (existingDrawer) {
+        state.catalog.filterScrollTop = existingDrawer.scrollTop;
+    }
     if (isAdminWorkspaceActive()) {
         root.innerHTML = `
             <div class="admin-app">
@@ -358,6 +363,12 @@ function render() {
             ${renderNotice()}
         </div>
     `;
+    if (state.catalog.filtersOpen) {
+        const nextDrawer = root.querySelector(".drawer-sheet");
+        if (nextDrawer && state.catalog.filterScrollTop > 0) {
+            nextDrawer.scrollTop = state.catalog.filterScrollTop;
+        }
+    }
     applyPendingFilterFocus();
 }
 
@@ -373,7 +384,16 @@ function renderPreservingFocus() {
     const field = active?.dataset?.field;
     const selectionStart = typeof active?.selectionStart === "number" ? active.selectionStart : null;
     const selectionEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
+    const drawerScrollTop = root.querySelector(".drawer-sheet")?.scrollTop ?? 0;
+    const pageScrollTop = window.scrollY;
     render();
+    if (state.catalog.filtersOpen) {
+        const nextDrawer = root.querySelector(".drawer-sheet");
+        if (nextDrawer) {
+            nextDrawer.scrollTop = drawerScrollTop || state.catalog.filterScrollTop || 0;
+        }
+        window.scrollTo(0, pageScrollTop);
+    }
     if (!field) {
         return;
     }
@@ -1498,7 +1518,7 @@ function renderProductModal() {
                                 <strong class="product-copy-block">${escapeHtml(product.description)}</strong>
                             </div>
                         ` : ""}
-                        ${product.activeIngredient ? `
+                        ${shouldShowProductActiveIngredient(product) ? `
                             <div class="product-spec-item">
                                 <span>Действующее вещество</span>
                                 <strong class="product-copy-block">${escapeHtml(product.activeIngredient)}</strong>
@@ -3951,6 +3971,13 @@ function buildPesticideTargetFilterValue(target, culture = "") {
     const safeTarget = String(target || "").trim();
     const safeCulture = String(culture || "").trim();
     return safeCulture ? `${safeCulture}|||${safeTarget}` : safeTarget;
+}
+
+function shouldShowProductActiveIngredient(product) {
+    if (!product?.activeIngredient) {
+        return false;
+    }
+    return normalize(getProductSectionName(product)) !== normalize("Семена");
 }
 
 function parsePesticideTargetFilterValue(value) {
