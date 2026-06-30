@@ -1,6 +1,5 @@
 package ru.algaagro.maxapp.config;
 
-import java.time.Duration;
 import org.springframework.core.io.Resource;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.CacheControl;
@@ -15,11 +14,11 @@ public class WebResourceConfig implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/miniapp/assets/**")
                 .addResourceLocations("classpath:/static/miniapp/assets/")
-                .setCacheControl(CacheControl.maxAge(Duration.ofDays(30)).cachePublic());
+                .setCacheControl(CacheControl.noCache().cachePrivate().mustRevalidate());
 
         registry.addResourceHandler("/miniapp/*.js", "/miniapp/*.css")
                 .addResourceLocations("classpath:/static/miniapp/")
-                .setCacheControl(CacheControl.maxAge(Duration.ofHours(6)).cachePublic())
+                .setCacheControl(CacheControl.noCache().cachePrivate().mustRevalidate())
                 .resourceChain(false)
                 .addResolver(new PathResourceResolver() {
                     @Override
