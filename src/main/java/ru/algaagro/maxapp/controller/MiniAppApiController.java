@@ -642,16 +642,16 @@ public class MiniAppApiController {
     private String buildSectionDescription(String sectionName) {
         String normalized = CatalogStructure.normalizeSectionName(sectionName);
         if (CatalogStructure.SEEDS.equals(normalized)) {
-            return "Зерновые, масличные, бобовые";
+            return "Полевые культуры, травы и травосмеси";
         }
         if (CatalogStructure.PESTICIDES.equals(normalized)) {
             return "Средства защиты растений";
         }
         if (CatalogStructure.AGROCHEMICALS.equals(normalized)) {
-            return "Удобрения и стимуляторы";
+            return "Питание растений и агрохимические решения";
         }
         if (CatalogStructure.MELIORANTS.equals(normalized)) {
-            return "Известкование почв";
+            return "Материалы для улучшения свойств почвы";
         }
         if (CatalogStructure.CLOSED_GROUND.equals(normalized)) {
             return "Решения для закрытого грунта";

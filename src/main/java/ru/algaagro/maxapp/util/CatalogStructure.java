@@ -7,12 +7,13 @@ public final class CatalogStructure {
     public static final String SEEDS = "Семена";
     public static final String PESTICIDES = "Пестициды";
     public static final String AGROCHEMICALS = "Агрохимикаты";
-    public static final String MELIORANTS = "Хим Мелиоранты";
+    public static final String MELIORANTS = "Мелиоранты";
     public static final String CLOSED_GROUND = "Препараты для закрытого грунта";
     public static final String PAVS = "ПАВы";
     public static final String DEFOAMERS = "Пеногасители";
     public static final String SPECIAL = "Спецпрепараты";
     public static final String OTHER = "Прочее";
+
     public static final List<String> SECTIONS = List.of(
             SEEDS,
             PESTICIDES,
@@ -24,18 +25,45 @@ public final class CatalogStructure {
             SPECIAL
     );
 
+    public static final List<String> SEED_SUBCATEGORIES = List.of(
+            "Подсолнечник",
+            "Кукуруза",
+            "Рапс",
+            "Горох",
+            "Соя",
+            "Озимая пшеница",
+            "Яровая пшеница",
+            "Яровой ячмень",
+            "Озимая рожь",
+            "Озимый тритикале",
+            "Яровой тритикале",
+            "Гречиха",
+            "Овес",
+            "Бобовые травы",
+            "Люцерна",
+            "Травосмеси",
+            "Масличные травы",
+            "Злаковые травы"
+    );
+
     public static final List<String> PESTICIDE_SUBCATEGORIES = List.of(
             "Фунгициды",
             "Гербициды",
             "Инсектициды",
             "Десиканты",
             "Нематоциды",
-            "Регуляторы роста растений",
+            "Регуляторы роста",
             "Бактерициды",
             "Акарициды",
             "Моллюскоциды",
             "Зооциды",
-            "Протравители"
+            "Альгициды"
+    );
+
+    public static final List<String> SPECIAL_SUBCATEGORIES = List.of(
+            "Амбарные вредители",
+            "От крыс и мышей",
+            "Обработка складских помещений"
     );
 
     private CatalogStructure() {
@@ -66,7 +94,9 @@ public final class CatalogStructure {
         if (normalized.contains("подсолнеч") || normalized.contains("кукуруз") || normalized.contains("рапс")
                 || normalized.contains("горох") || normalized.contains("соя") || normalized.contains("пшениц")
                 || normalized.contains("ячмен") || normalized.contains("гречих") || normalized.contains("овес")
-                || normalized.contains("люцерн") || normalized.contains("семен") || normalized.contains("гибрид")) {
+                || normalized.contains("люцерн") || normalized.contains("клевер") || normalized.contains("вика")
+                || normalized.contains("райграс") || normalized.contains("овсяниц") || normalized.contains("фестулолиум")
+                || normalized.contains("тимофеевк") || normalized.contains("семен") || normalized.contains("гибрид")) {
             return SEEDS;
         }
         if (normalized.contains("кальциприлл") || normalized.contains("мелиор") || normalized.contains("извест")) {
@@ -79,7 +109,9 @@ public final class CatalogStructure {
             return DEFOAMERS;
         }
         if (normalized.contains("пав") || normalized.contains("адъюв") || normalized.contains("адьюв")
-                || normalized.contains("прилип") || normalized.contains("смачив") || normalized.contains("сурфакт")) {
+                || normalized.contains("прилип") || normalized.contains("смачив") || normalized.contains("сурфакт")
+                || normalized.contains("этоксилат") || normalized.contains("трисилоксан")
+                || normalized.contains("метилирован") || normalized.contains("масл")) {
             return PAVS;
         }
         if (normalized.contains("роденти") || normalized.contains("репелент") || normalized.contains("амбарн")
@@ -96,7 +128,8 @@ public final class CatalogStructure {
                 || normalized.contains("десикант") || normalized.contains("нематоцид")
                 || normalized.contains("бактерицид") || normalized.contains("акарицид")
                 || normalized.contains("моллюскоцид") || normalized.contains("зооцид")
-                || normalized.contains("протрав") || normalized.contains("регулятор рост")) {
+                || normalized.contains("протрав") || normalized.contains("регулятор рост")
+                || normalized.contains("альгицид")) {
             return PESTICIDES;
         }
         return OTHER;
@@ -105,32 +138,20 @@ public final class CatalogStructure {
     public static String inferSubcategory(String section, String context) {
         String normalizedSection = normalizeSectionName(section);
         String normalizedContext = TextUtils.normalizeToken(context);
+        if (SEEDS.equals(normalizedSection)) {
+            return normalizeSeedSubcategory(normalizedContext);
+        }
         if (PESTICIDES.equals(normalizedSection)) {
             return normalizePesticideSubcategory(normalizedContext);
         }
         if (MELIORANTS.equals(normalizedSection)) {
-            return normalizedContext.contains("кальциприлл") ? "Кальциприлл" : "Химические мелиоранты";
-        }
-        if (PAVS.equals(normalizedSection)) {
-            return PAVS;
-        }
-        if (DEFOAMERS.equals(normalizedSection)) {
-            return DEFOAMERS;
-        }
-        if (CLOSED_GROUND.equals(normalizedSection)) {
-            return CLOSED_GROUND;
+            return normalizedContext.contains("кальциприлл") ? "Кальциприлл" : "";
         }
         if (SPECIAL.equals(normalizedSection)) {
             if (normalizedContext.contains("амбарн")) return "Амбарные вредители";
             if (normalizedContext.contains("крыс") || normalizedContext.contains("мыш") || normalizedContext.contains("роденти")) return "От крыс и мышей";
             if (normalizedContext.contains("склад") || normalizedContext.contains("помещ")) return "Обработка складских помещений";
-            return "Спецпрепараты";
-        }
-        if (AGROCHEMICALS.equals(normalizedSection)) {
-            if (normalizedContext.contains("микроудобр")) return "Микроудобрения";
-            if (normalizedContext.contains("биостим")) return "Биостимуляторы";
-            if (normalizedContext.contains("инокулянт")) return "Инокулянты";
-            return "Удобрения";
+            return "";
         }
         return "";
     }
@@ -141,13 +162,49 @@ public final class CatalogStructure {
         if (normalized.contains("гербиц")) return "Гербициды";
         if (normalized.contains("инсекти")) return "Инсектициды";
         if (normalized.contains("десикант")) return "Десиканты";
+        if (normalized.contains("дикват")) return "Десиканты";
         if (normalized.contains("нематоцид")) return "Нематоциды";
-        if (normalized.contains("регулятор рост")) return "Регуляторы роста растений";
+        if (normalized.contains("регулятор рост")) return "Регуляторы роста";
         if (normalized.contains("бактерицид")) return "Бактерициды";
         if (normalized.contains("акарицид")) return "Акарициды";
         if (normalized.contains("моллюскоцид")) return "Моллюскоциды";
-        if (normalized.contains("зооцид") || normalized.contains("зооцид")) return "Зооциды";
-        if (normalized.contains("протрав")) return "Протравители";
+        if (normalized.contains("зооцид")) return "Зооциды";
+        if (normalized.contains("альгицид")) return "Альгициды";
+        if (normalized.contains("протрав")) {
+            if (normalized.contains("имидаклоприд") || normalized.contains("клотианидин") || normalized.contains("тиаметоксам")) {
+                return "Инсектициды";
+            }
+            return "Фунгициды";
+        }
+        return "";
+    }
+
+    public static String normalizeSeedSubcategory(String value) {
+        String normalized = TextUtils.normalizeToken(value);
+        if (normalized.contains("подсолнеч")) return "Подсолнечник";
+        if (normalized.contains("кукуруз")) return "Кукуруза";
+        if (normalized.contains("рапс")) return "Рапс";
+        if (normalized.contains("горох")) return "Горох";
+        if (normalized.contains("соя")) return "Соя";
+        if (normalized.contains("озим") && normalized.contains("пшениц")) return "Озимая пшеница";
+        if (normalized.contains("яров") && normalized.contains("пшениц")) return "Яровая пшеница";
+        if (normalized.contains("ячмен")) return "Яровой ячмень";
+        if (normalized.contains("озим") && normalized.contains("рож")) return "Озимая рожь";
+        if (normalized.contains("озим") && normalized.contains("тритикал")) return "Озимый тритикале";
+        if (normalized.contains("яров") && normalized.contains("тритикал")) return "Яровой тритикале";
+        if (normalized.contains("гречих")) return "Гречиха";
+        if (normalized.contains("овес")) return "Овес";
+        if (normalized.contains("люцерн")) return "Люцерна";
+        if (normalized.contains("клевер") || normalized.contains("вика") || normalized.contains("лядвен")) return "Бобовые травы";
+        if (normalized.contains("лен") || normalized.contains("рыжик")) return "Масличные травы";
+        if (normalized.contains("райграс") || normalized.contains("овсяниц") || normalized.contains("тимофеевк")
+                || normalized.contains("фестулолиум") || normalized.contains("ежа")) {
+            return "Злаковые травы";
+        }
+        if (normalized.contains("травосм") || normalized.contains("комби") || normalized.contains("смесь")
+                || normalized.contains("%") || normalized.contains("/")) {
+            return "Травосмеси";
+        }
         return "";
     }
 }

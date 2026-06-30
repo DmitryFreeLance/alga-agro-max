@@ -353,6 +353,25 @@ public class ProductService {
                 Objects.toString(rawData.getOrDefault("Действующее вещество", ""), ""),
                 Objects.toString(rawData.getOrDefault("действующее вещество", ""), "")
         ));
+        dto.put("forGreenhouse", isProductForGreenhouse(filterMap, rawData));
+        dto.put("seedFao", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("seedFao", ""), ""),
+                Objects.toString(filterMap.getOrDefault("fao", ""), ""),
+                Objects.toString(rawData.getOrDefault("ФАО", ""), ""),
+                Objects.toString(rawData.getOrDefault("FAO", ""), "")
+        ));
+        dto.put("seedsPerBag", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("seedsPerBag", ""), ""),
+                Objects.toString(filterMap.getOrDefault("bagSeedCount", ""), ""),
+                Objects.toString(rawData.getOrDefault("Семян в мешке", ""), ""),
+                Objects.toString(rawData.getOrDefault("Количество семян в мешке", ""), "")
+        ));
+        dto.put("cultivationTechnology", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("cultivationTechnology", ""), ""),
+                Objects.toString(filterMap.getOrDefault("seedTechnology", ""), ""),
+                Objects.toString(rawData.getOrDefault("Технология возделывания", ""), ""),
+                Objects.toString(rawData.getOrDefault("Технология обработки", ""), "")
+        ));
         return dto;
     }
 
@@ -477,7 +496,14 @@ public class ProductService {
     }
 
     private void applyPayload(CatalogProduct product, AdminProductPayload payload) {
-        String normalizedCategory = normalizeAdminCategory(payload.category(), payload.subcategory(), payload.name(), payload.description());
+        String normalizedCategory = normalizeAdminCategory(
+                payload.category(),
+                payload.subcategory(),
+                payload.name(),
+                payload.description(),
+                payload.filterMap(),
+                payload.rawData()
+        );
         String normalizedSubcategory = normalizeAdminSubcategory(normalizedCategory, payload.subcategory(), payload.name(), payload.description());
         product.setExternalId(payload.externalId());
         product.setSourceFile(payload.sourceFile());
@@ -505,11 +531,28 @@ public class ProductService {
         product.setCulturesIndex(TextUtils.toIndex(cultures));
         product.setPurposesIndex(TextUtils.toIndex(purposes));
         product.setTagsIndex(TextUtils.toIndex(tags));
-        product.setFilterMapJson(jsonHelper.writeValue(payload.filterMap() == null ? Map.of() : payload.filterMap()));
+        Map<String, Object> filterMap = payload.filterMap() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload.filterMap());
+        if (isTruthy(filterMap.get("forGreenhouse")) || isTruthy(filterMap.get("greenhouse")) || CatalogStructure.CLOSED_GROUND.equals(normalizedCategory)) {
+            filterMap.put("forGreenhouse", true);
+        }
+        if (normalizedSubcategory != null && !normalizedSubcategory.isBlank()) {
+            filterMap.put("subcategory", List.of(normalizedSubcategory));
+        }
+        product.setFilterMapJson(jsonHelper.writeValue(filterMap));
         product.setRawDataJson(jsonHelper.writeValue(payload.rawData() == null ? Map.of() : payload.rawData()));
     }
 
-    private String normalizeAdminCategory(String category, String subcategory, String name, String description) {
+    private String normalizeAdminCategory(
+            String category,
+            String subcategory,
+            String name,
+            String description,
+            Map<String, Object> filterMap,
+            Map<String, Object> rawData
+    ) {
+        if (isProductForGreenhouse(filterMap, rawData)) {
+            return CatalogStructure.CLOSED_GROUND;
+        }
         String normalized = CatalogStructure.normalizeSectionName(category);
         if (!normalized.isBlank() && !CatalogStructure.OTHER.equalsIgnoreCase(normalized)) {
             return normalized;
@@ -916,6 +959,30 @@ public class ProductService {
             return "кг";
         }
         return blankToNull(value) == null ? "шт" : value.trim();
+    }
+
+    private boolean isProductForGreenhouse(Map<String, Object> filterMap, Map<String, Object> rawData) {
+        return isTruthy(filterMap == null ? null : filterMap.get("forGreenhouse"))
+                || isTruthy(filterMap == null ? null : filterMap.get("greenhouse"))
+                || isTruthy(rawData == null ? null : rawData.get("Для теплицы"))
+                || isTruthy(rawData == null ? null : rawData.get("Теплица"));
+    }
+
+    private boolean isTruthy(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        String normalized = TextUtils.normalizeToken(Objects.toString(value, ""));
+        return normalized.equals("true")
+                || normalized.equals("1")
+                || normalized.equals("yes")
+                || normalized.equals("da")
+                || normalized.equals("y")
+                || normalized.equals("для теплицы")
+                || normalized.equals("теплица");
     }
 
     private void ensureManufacturerExists(String brand) {
