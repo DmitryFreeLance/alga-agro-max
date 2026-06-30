@@ -1529,7 +1529,9 @@ function renderFiltersDrawer() {
                     <div class="modal-title">Фильтры</div>
                     <button class="drawer-reset-link" data-action="reset-filters">Сбросить всё</button>
                 </div>
-                ${renderCatalogFiltersPanel({ inline: false })}
+                <div class="drawer-scroll">
+                    ${renderCatalogFiltersPanel({ inline: false })}
+                </div>
                 <div class="drawer-actions">
                     <button class="ghost-btn" data-action="reset-filters">Сбросить</button>
                     <button class="primary-btn" data-action="apply-filters">Применить</button>
@@ -1783,7 +1785,7 @@ function getPesticideCategoryTree(products) {
                     field: "filter-culture",
                     children: uniqueValues([...cultureNode.targets.values()]).map(target => ({
                         label: target,
-                        value: target,
+                        value: buildPesticideTargetFilterValue(target, culture),
                         field: "filter-pesticide-target",
                         children: [],
                     })),
@@ -1791,7 +1793,7 @@ function getPesticideCategoryTree(products) {
             }),
             ...uniqueValues([...group.targets.values()]).map(target => ({
                 label: target,
-                value: target,
+                value: buildPesticideTargetFilterValue(target),
                 field: "filter-pesticide-target",
                 children: [],
             })),
@@ -1826,14 +1828,15 @@ function renderCategoryTreeNode(node, draft, depth = 0) {
             : draft.subcategories;
     const checked = values.includes(node.value);
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    const expanded = hasChildren && (node.field !== "filter-culture" || checked);
     return `
         <div class="tree-node depth-${depth}">
             <label class="tree-row">
-                <span class="tree-indent">${hasChildren ? "▸" : "•"}</span>
+                <span class="tree-indent">${hasChildren ? (expanded ? "▾" : "▸") : "•"}</span>
                 <input type="checkbox" data-field="${node.field}" value="${escapeAttr(node.value)}" ${checked ? "checked" : ""}>
                 <span>${escapeHtml(node.label)}</span>
             </label>
-            ${hasChildren ? `<div class="tree-children">${node.children.map(child => renderCategoryTreeNode(child, draft, depth + 1)).join("")}</div>` : ""}
+            ${expanded ? `<div class="tree-children">${node.children.map(child => renderCategoryTreeNode(child, draft, depth + 1)).join("")}</div>` : ""}
         </div>
     `;
 }
@@ -2755,11 +2758,18 @@ function handleChange(event) {
     if (field === "filter-culture") {
         ensureCatalogDraft();
         toggleDraftFilterArray("cultures", event.target.value, event.target.checked);
+        if (!event.target.checked) {
+            removeDraftPesticideTargetsForCulture(event.target.value);
+        }
         syncAppliedFiltersFromDraft();
         return;
     }
     if (field === "filter-pesticide-target") {
         ensureCatalogDraft();
+        const pesticideTargetFilter = parsePesticideTargetFilterValue(event.target.value);
+        if (event.target.checked && pesticideTargetFilter.culture) {
+            ensureDraftFilterArrayValue("cultures", pesticideTargetFilter.culture);
+        }
         toggleDraftFilterArray("pesticideTargets", event.target.value, event.target.checked);
         syncAppliedFiltersFromDraft();
         return;
@@ -3326,8 +3336,15 @@ function applyCatalogFilters(products) {
     }
     if (applied.pesticideTargets.length) {
         filtered = filtered.filter(product => {
-            const values = getPesticideTargetLabels(product);
-            return values.some(value => applied.pesticideTargets.includes(value));
+            const targets = new Set(getPesticideTargetLabels(product).map(normalize));
+            const cultures = new Set((product.cultures || []).map(normalize));
+            return applied.pesticideTargets.some(filterValue => {
+                const parsed = parsePesticideTargetFilterValue(filterValue);
+                if (!targets.has(normalize(parsed.target))) {
+                    return false;
+                }
+                return !parsed.culture || cultures.has(normalize(parsed.culture));
+            });
         });
     }
     if (applied.subcategories.length) {
@@ -3854,7 +3871,7 @@ function trimDraftFiltersToAvailable() {
     const sectionProducts = getDraftSectionProducts(draft);
     const manufacturers = new Set(uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean)));
     const cultures = new Set(uniqueValues(sectionProducts.flatMap(item => item.cultures || []).filter(Boolean)));
-    const pesticideTargets = new Set(uniqueValues(sectionProducts.flatMap(item => getPesticideTargetLabels(item)).filter(Boolean)));
+    const pesticideTargets = new Set(getAvailablePesticideTargetFilterValues(sectionProducts));
     const cultureKeys = new Set([...cultures].map(normalize));
     const effectiveSection = draft.sections[0] || state.catalog.section || "";
     const subcategories = new Set(
@@ -3880,6 +3897,22 @@ function trimDraftFiltersToAvailable() {
     draft.seedTreatmentTechnologies = [];
 }
 
+function getAvailablePesticideTargetFilterValues(products) {
+    const values = new Set();
+    products.forEach(product => {
+        const targets = getPesticideTargetLabels(product);
+        const cultures = uniqueValues((product.cultures || []).filter(Boolean));
+        if (cultures.length) {
+            cultures.forEach(culture => {
+                targets.forEach(target => values.add(buildPesticideTargetFilterValue(target, culture)));
+            });
+            return;
+        }
+        targets.forEach(target => values.add(buildPesticideTargetFilterValue(target)));
+    });
+    return [...values];
+}
+
 function ensureCatalogDraft() {
     if (!state.catalog.draft) {
         state.catalog.draft = cloneFilters(state.catalog.applied || emptyFilters());
@@ -3897,6 +3930,40 @@ function syncAppliedFiltersFromDraft() {
 function toggleDraftFilterArray(key, value, checked) {
     const list = state.catalog.draft[key] || [];
     state.catalog.draft[key] = checked ? [...list, value] : list.filter(item => item !== value);
+}
+
+function ensureDraftFilterArrayValue(key, value) {
+    const list = state.catalog.draft[key] || [];
+    if (!list.includes(value)) {
+        state.catalog.draft[key] = [...list, value];
+    }
+}
+
+function removeDraftPesticideTargetsForCulture(culture) {
+    const normalizedCulture = normalize(culture);
+    state.catalog.draft.pesticideTargets = (state.catalog.draft.pesticideTargets || []).filter(value => {
+        const parsed = parsePesticideTargetFilterValue(value);
+        return normalize(parsed.culture) !== normalizedCulture;
+    });
+}
+
+function buildPesticideTargetFilterValue(target, culture = "") {
+    const safeTarget = String(target || "").trim();
+    const safeCulture = String(culture || "").trim();
+    return safeCulture ? `${safeCulture}|||${safeTarget}` : safeTarget;
+}
+
+function parsePesticideTargetFilterValue(value) {
+    const raw = String(value || "").trim();
+    const separator = "|||";
+    if (!raw.includes(separator)) {
+        return { culture: "", target: raw };
+    }
+    const [culture, ...targetParts] = raw.split(separator);
+    return {
+        culture: culture.trim(),
+        target: targetParts.join(separator).trim(),
+    };
 }
 
 function getProductFilterRawValue(product, keys = []) {

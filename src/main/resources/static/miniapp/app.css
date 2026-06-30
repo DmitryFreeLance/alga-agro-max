@@ -1168,8 +1168,17 @@ img {
     max-height: 86vh;
     border-radius: 24px 24px 0 0;
     padding: 14px;
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.drawer-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
     overflow-x: hidden;
+    padding-bottom: 18px;
 }
 
 .drawer-top {
@@ -1304,7 +1313,13 @@ img {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
-    margin-top: 14px;
+    margin-top: auto;
+    padding-top: 12px;
+    padding-bottom: calc(2px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(247, 251, 244, 0), #f7fbf4 28%);
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
 }
 
 .admin-layout {
