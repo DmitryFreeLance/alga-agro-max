@@ -1,0 +1,37 @@
+services:
+  alga-agro-max:
+    container_name: alga-agro-max
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_HOST_PORT:-8080}:8080"
+    volumes:
+      - /opt/alga-agro/data:/data
+    environment:
+      TZ: ${TZ:-Europe/Moscow}
+      SERVER_PORT: 8080
+      APP_DB_PATH: /data/alga-agro.db
+      APP_PUBLIC_BASE_URL: ${APP_PUBLIC_BASE_URL}
+      APP_MINI_APP_URL: ${APP_MINI_APP_URL}
+      APP_MANAGER_CONTACT_URL: ${APP_MANAGER_CONTACT_URL:-https://max.ru/id27849376}
+      APP_MANAGER_DEEP_LINK: ${APP_MANAGER_DEEP_LINK:-max://user/27849376}
+      APP_STARTUP_ADMIN_USER_IDS: ${APP_STARTUP_ADMIN_USER_IDS}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
+      MAX_POST_TARGET_CHAT_ID: ${MAX_POST_TARGET_CHAT_ID}
+      KIE_API_KEY: ${KIE_API_KEY}
+      KIE_GEMINI_API_KEY: ${KIE_GEMINI_API_KEY}
+      KIE_MODEL: ${KIE_MODEL:-gpt-5-2}
+      KIE_GEMINI_MODEL: ${KIE_GEMINI_MODEL:-gemini-3-flash}
+      KIE_GEMINI_ENDPOINT: ${KIE_GEMINI_ENDPOINT:-/gemini-3-flash/v1/chat/completions}
+      BITRIX_SYNC_ENABLED: ${BITRIX_SYNC_ENABLED:-true}
+      BITRIX_INBOUND_SYNC_ENABLED: ${BITRIX_INBOUND_SYNC_ENABLED:-false}
+      BITRIX_STARTUP_REPLACE_REMOTE_CATALOG: ${BITRIX_STARTUP_REPLACE_REMOTE_CATALOG:-true}
+      BITRIX_WEBHOOK_BASE_URL: ${BITRIX_WEBHOOK_BASE_URL:-}
+      BITRIX_CATALOG_ID: ${BITRIX_CATALOG_ID:-}
+      BITRIX_BASE_PRICE_TYPE_ID: ${BITRIX_BASE_PRICE_TYPE_ID:-}
+      BITRIX_CURRENCY_ID: ${BITRIX_CURRENCY_ID:-RUB}
+      BITRIX_POLL_INTERVAL_MS: ${BITRIX_POLL_INTERVAL_MS:-180000}
+      BITRIX_LEAD_ASSIGNED_BY_ID: ${BITRIX_LEAD_ASSIGNED_BY_ID:-}
+      BITRIX_LEAD_SOURCE_ID: ${BITRIX_LEAD_SOURCE_ID:-}
