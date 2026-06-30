@@ -430,6 +430,59 @@ img {
     background: linear-gradient(180deg, #eef8e4, #e5f2d8);
 }
 
+.section-structure-block {
+    display: grid;
+    gap: 10px;
+}
+
+.section-structure-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.section-structure-item {
+    min-width: 0;
+    min-height: 58px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(40, 115, 52, 0.12);
+    background: var(--white);
+    box-shadow: var(--shadow-soft);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+}
+
+.section-structure-item.active {
+    background: linear-gradient(180deg, #eef8e4, #e2f0d4);
+    border-color: rgba(40, 115, 52, 0.34);
+}
+
+.section-structure-name {
+    color: var(--green-800);
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.section-structure-count {
+    flex: 0 0 auto;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(40, 115, 52, 0.08);
+    color: var(--green-700);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
 .section-tab-btn.active {
     background: linear-gradient(180deg, var(--green-800), var(--green-700));
     color: var(--white);
