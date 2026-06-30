@@ -180,6 +180,7 @@ const state = {
         sort: "default",
         filtersOpen: false,
         filterFocus: "",
+        filterFocusPending: false,
         filterScrollTop: 0,
         filterPanels: emptyFilterPanels(),
         manufacturerSearch: "",
@@ -341,7 +342,7 @@ async function loadAdminData() {
 }
 
 function render() {
-    const existingDrawer = root.querySelector(".drawer-sheet");
+    const existingDrawer = getFilterScrollContainer();
     if (existingDrawer) {
         state.catalog.filterScrollTop = existingDrawer.scrollTop;
     }
@@ -373,7 +374,7 @@ function render() {
         </div>
     `;
     if (state.catalog.filtersOpen) {
-        const nextDrawer = root.querySelector(".drawer-sheet");
+        const nextDrawer = getFilterScrollContainer();
         if (nextDrawer && state.catalog.filterScrollTop > 0) {
             nextDrawer.scrollTop = state.catalog.filterScrollTop;
         }
@@ -391,13 +392,17 @@ function renderNotice() {
 function renderPreservingFocus() {
     const active = document.activeElement;
     const field = active?.dataset?.field;
+    const fieldValue = active instanceof HTMLInputElement || active instanceof HTMLSelectElement || active instanceof HTMLTextAreaElement
+        ? String(active.value || "")
+        : "";
+    const inputType = active instanceof HTMLInputElement ? active.type : "";
     const selectionStart = typeof active?.selectionStart === "number" ? active.selectionStart : null;
     const selectionEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
-    const drawerScrollTop = root.querySelector(".drawer-sheet")?.scrollTop ?? 0;
+    const drawerScrollTop = getFilterScrollContainer()?.scrollTop ?? 0;
     const pageScrollTop = window.scrollY;
     render();
     if (state.catalog.filtersOpen) {
-        const nextDrawer = root.querySelector(".drawer-sheet");
+        const nextDrawer = getFilterScrollContainer();
         if (nextDrawer) {
             nextDrawer.scrollTop = drawerScrollTop || state.catalog.filterScrollTop || 0;
         }
@@ -406,7 +411,9 @@ function renderPreservingFocus() {
     if (!field) {
         return;
     }
-    const next = root.querySelector(`[data-field="${CSS.escape(field)}"]`);
+    const next = (inputType === "checkbox" || inputType === "radio")
+        ? root.querySelector(`[data-field="${CSS.escape(field)}"][value="${escapeSelectorValue(fieldValue)}"]`)
+        : root.querySelector(`[data-field="${CSS.escape(field)}"]`);
     if (next && typeof next.focus === "function") {
         next.focus({ preventScroll: true });
         if (selectionStart !== null && selectionEnd !== null && typeof next.setSelectionRange === "function") {
@@ -1842,16 +1849,16 @@ function renderFiltersDrawer() {
             <div class="drawer-backdrop" data-action="close-filters"></div>
             <div class="drawer-sheet">
                 <div class="drawer-top">
-                    <button class="drawer-back-btn" data-action="close-filters">← Назад</button>
+                    <button type="button" class="drawer-back-btn" data-action="close-filters">← Назад</button>
                     <div class="modal-title">Фильтры</div>
-                    <button class="drawer-reset-link" data-action="reset-filters">Сбросить всё</button>
+                    <button type="button" class="drawer-reset-link" data-action="reset-filters">Сбросить всё</button>
                 </div>
                 <div class="drawer-scroll">
                     ${renderCatalogFiltersPanel({ inline: false })}
                 </div>
                 <div class="drawer-actions">
-                    <button class="ghost-btn" data-action="reset-filters">Сбросить</button>
-                    <button class="primary-btn" data-action="apply-filters">Применить</button>
+                    <button type="button" class="ghost-btn" data-action="reset-filters">Сбросить</button>
+                    <button type="button" class="primary-btn" data-action="apply-filters">Применить</button>
                 </div>
             </div>
         </div>
@@ -1916,7 +1923,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
             `}
             ${showCultureSection && cultures.length ? `
             <div class="drawer-section" data-filter-anchor="culture">
-                <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
+                <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="culture">
                     <span>Культура</span>
                     <span class="drawer-section-arrow">${panels.culture ? "▾" : "▸"}</span>
                 </button>
@@ -1938,7 +1945,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
             </div>
             ` : ""}
             <div class="drawer-section" data-filter-anchor="manufacturer">
-                <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="manufacturer">
+                <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="manufacturer">
                     <span>Производитель</span>
                     <span class="drawer-section-arrow">${panels.manufacturer ? "▾" : "▸"}</span>
                 </button>
@@ -1959,7 +1966,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
             </div>
             ${!isSeedsSection && subcategories.length ? `
                 <div class="drawer-section" data-filter-anchor="subcategory">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
+                    <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
                         <span>Категория</span>
                         <span class="drawer-section-arrow">${panels.subcategory ? "▾" : "▸"}</span>
                     </button>
@@ -1975,7 +1982,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
             ` : ""}
             ${isPesticidesSection && activeIngredients.length ? `
                 <div class="drawer-section" data-filter-anchor="active-ingredient">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="activeIngredient">
+                    <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="activeIngredient">
                         <span>Действующее вещество</span>
                         <span class="drawer-section-arrow">${panels.activeIngredient ? "▾" : "▸"}</span>
                     </button>
@@ -1996,7 +2003,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
             ` : ""}
             ${isSeedsSection ? `
                 <div class="drawer-section" data-filter-anchor="fao">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="fao">
+                    <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="fao">
                         <span>ФАО</span>
                         <span class="drawer-section-arrow">${panels.fao ? "▾" : "▸"}</span>
                     </button>
@@ -2012,7 +2019,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     ` : ""}
                 </div>
                 <div class="drawer-section" data-filter-anchor="maturity">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="maturity">
+                    <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="maturity">
                         <span>Группа спелости</span>
                         <span class="drawer-section-arrow">${panels.maturity ? "▾" : "▸"}</span>
                     </button>
@@ -2028,7 +2035,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     ` : ""}
                 </div>
                 <div class="drawer-section" data-filter-anchor="technology">
-                    <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="technology">
+                    <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="technology">
                         <span>Технология возделывания</span>
                         <span class="drawer-section-arrow">${panels.technology ? "▾" : "▸"}</span>
                     </button>
@@ -2045,7 +2052,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                 </div>
                 ${seedReproductionValues.length ? `
                     <div class="drawer-section" data-filter-anchor="reproduction">
-                        <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="reproduction">
+                        <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="reproduction">
                             <span>Репродукция</span>
                             <span class="drawer-section-arrow">${panels.reproduction ? "▾" : "▸"}</span>
                         </button>
@@ -2063,7 +2070,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                 ` : ""}
             ` : ""}
             <div class="drawer-section" data-filter-anchor="more">
-                <button class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
+                <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="more">
                     <span>Цена</span>
                     <span class="drawer-section-arrow">${panels.more ? "▾" : "▸"}</span>
                 </button>
@@ -2397,16 +2404,23 @@ function renderAdminProductModal() {
                         <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                             <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
                             <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" list="admin-active-ingredient-options" data-field="admin-product-active-ingredient" data-options-id="admin-active-ingredient-options" data-suggest-mode="single" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-active-ingredient")}</div>
-                            <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                         </div>
                         ${isSeedsCategory ? `
                             <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                                 <div class="admin-field"><label>ФАО</label><input name="seedFao" value="${escapeAttr(product?.seedFao || "")}" placeholder="150"></div>
                                 <div class="admin-field"><label>Штук в мешке</label><input name="seedsPerBag" value="${escapeAttr(product?.seedsPerBag || "")}" placeholder="80000"></div>
+                                <div class="admin-field"><label>Группа спелости</label><input name="seedMaturityGroup" value="${escapeAttr(product?.filterMap?.seedMaturityGroup || product?.filterMap?.maturityGroup || "")}" placeholder="Среднеспелые"></div>
                                 <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" value="${escapeAttr(product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "")}" placeholder="ЭС, РС1"></div>
-                                <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>
                             </div>
-                        ` : ""}
+                            <div class="admin-form-row admin-form-row-2-compact">
+                                <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>
+                                <div class="admin-field"><label>Культуры для поиска</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
+                            </div>
+                        ` : `
+                            <div class="admin-form-row admin-form-row-compact">
+                                <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
+                            </div>
+                        `}
                         <div class="admin-form-row">
                             <div class="admin-field"><label>Теги / назначение</label><input name="tags" list="admin-tag-options" data-field="admin-product-tags" data-options-id="admin-tag-options" data-suggest-mode="multi" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-tags")}</div>
                         </div>
@@ -2722,10 +2736,12 @@ function handleClick(event) {
         state.catalog.draft = cloneFilters(state.catalog.applied);
         state.catalog.filterPanels = defaultFilterPanels();
         state.catalog.filterFocus = "";
+        state.catalog.filterFocusPending = false;
         state.catalog.manufacturerSearch = "";
         state.catalog.cultureSearch = "";
         state.catalog.subcategorySearch = "";
         state.catalog.activeIngredientSearch = "";
+        state.catalog.filterScrollTop = 0;
         render();
         return;
     }
@@ -2863,6 +2879,7 @@ function handleClick(event) {
         ensureCatalogDraft();
         state.catalog.filtersOpen = true;
         state.catalog.filterFocus = "";
+        state.catalog.filterFocusPending = false;
         state.catalog.filterPanels = defaultFilterPanels();
         state.catalog.draft = cloneFilters(state.catalog.applied);
         render();
@@ -2871,12 +2888,12 @@ function handleClick(event) {
     if (action === "open-filter-focus") {
         ensureCatalogDraft();
         state.catalog.filterFocus = button.dataset.focus || "";
+        state.catalog.filterFocusPending = Boolean(state.catalog.filterFocus);
         state.catalog.filterPanels = {
             ...(state.catalog.filterPanels || defaultFilterPanels()),
             [state.catalog.filterFocus || "more"]: true,
         };
         renderPreservingFocus();
-        applyPendingFilterFocus();
         return;
     }
     if (action === "toggle-filter-panel") {
@@ -2891,6 +2908,8 @@ function handleClick(event) {
     if (action === "close-filters") {
         state.catalog.filtersOpen = false;
         state.catalog.filterFocus = "";
+        state.catalog.filterFocusPending = false;
+        state.catalog.filterScrollTop = 0;
         state.catalog.filterPanels = defaultFilterPanels();
         render();
         return;
@@ -2902,6 +2921,9 @@ function handleClick(event) {
         state.catalog.activeIngredientSearch = "";
         state.catalog.draft = emptyFilters();
         state.catalog.applied = emptyFilters();
+        state.catalog.filterFocus = "";
+        state.catalog.filterFocusPending = false;
+        state.catalog.filterScrollTop = 0;
         if (state.catalog.section) {
             state.catalog.draft.sections = [state.catalog.section];
         }
@@ -3452,6 +3474,7 @@ async function saveAdminProduct(formData) {
     const forGreenhouse = formData.get("forGreenhouse") === "on";
     const seedFao = String(formData.get("seedFao") || "").trim();
     const seedsPerBag = String(formData.get("seedsPerBag") || "").trim();
+    const seedMaturityGroup = String(formData.get("seedMaturityGroup") || "").trim();
     const seedReproduction = String(formData.get("seedReproduction") || "").trim();
     const cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
     if (forGreenhouse) {
@@ -3510,6 +3533,7 @@ async function saveAdminProduct(formData) {
             forGreenhouse,
             seedFao,
             seedsPerBag,
+            seedMaturityGroup,
             seedReproduction,
             cultivationTechnology,
         },
@@ -3566,6 +3590,7 @@ function buildAdminProductPayload(product, overrides = {}) {
             forGreenhouse: Boolean(product.forGreenhouse ?? product.filterMap?.forGreenhouse),
             seedFao: product.seedFao || product.filterMap?.seedFao || "",
             seedsPerBag: product.seedsPerBag || product.filterMap?.seedsPerBag || "",
+            seedMaturityGroup: product.seedMaturityGroup || product.filterMap?.seedMaturityGroup || product.filterMap?.maturityGroup || "",
             seedReproduction: product.seedReproduction || product.filterMap?.seedReproduction || product.filterMap?.reproduction || "",
             cultivationTechnology: product.cultivationTechnology || product.filterMap?.cultivationTechnology || "",
         },
@@ -4488,7 +4513,7 @@ function getSeedFaoRangeLabel(product) {
 }
 
 function getSeedMaturityGroup(product) {
-    const explicit = getProductFilterRawValue(product, ["Группа спелости", "группа спелости", "maturityGroup", "maturity_group", "groupMaturity"]);
+    const explicit = product?.seedMaturityGroup || getProductFilterRawValue(product, ["seedMaturityGroup", "Группа спелости", "группа спелости", "maturityGroup", "maturity_group", "groupMaturity"]);
     const haystack = normalize([explicit, product?.description, product?.name, getProductSeedSearchText(product)].join(" "));
     const matched = SEED_MATURITY_GROUPS.find(label => haystack.includes(normalize(label)));
     return matched || "";
@@ -4613,16 +4638,27 @@ function getSubcategoryFilterTitle(sectionName) {
 }
 
 function applyPendingFilterFocus() {
-    if (!state.catalog.filtersOpen || !state.catalog.filterFocus) {
+    if (!state.catalog.filtersOpen || !state.catalog.filterFocus || !state.catalog.filterFocusPending) {
         return;
     }
     const anchor = root.querySelector(`[data-filter-anchor="${CSS.escape(state.catalog.filterFocus)}"]`);
-    if (!anchor) {
+    const container = getFilterScrollContainer();
+    if (!anchor || !container) {
         return;
     }
+    state.catalog.filterFocusPending = false;
     requestAnimationFrame(() => {
-        anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+        const top = Math.max(0, anchor.offsetTop - 8);
+        container.scrollTo({ top, behavior: "auto" });
     });
+}
+
+function getFilterScrollContainer() {
+    return root.querySelector(".drawer-scroll");
+}
+
+function escapeSelectorValue(value) {
+    return CSS.escape(String(value || ""));
 }
 
 function getFilterSubcategoryValues(product, sectionName) {
