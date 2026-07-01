@@ -50,6 +50,7 @@ public final class CatalogStructure {
             "Фунгициды",
             "Гербициды",
             "Инсектициды",
+            "Защита семян",
             "Десиканты",
             "Нематоциды",
             "Регуляторы роста",
@@ -173,11 +174,8 @@ public final class CatalogStructure {
         if (normalized.contains("моллюскоцид")) return "Моллюскоциды";
         if (normalized.contains("зооцид")) return "Зооциды";
         if (normalized.contains("альгицид")) return "Альгициды";
-        if (normalized.contains("протрав")) {
-            if (normalized.contains("имидаклоприд") || normalized.contains("клотианидин") || normalized.contains("тиаметоксам")) {
-                return "Инсектициды";
-            }
-            return "Фунгициды";
+        if (normalized.contains("протрав") || normalized.contains("защита семян")) {
+            return "Защита семян";
         }
         return "";
     }

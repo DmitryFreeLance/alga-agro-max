@@ -382,6 +382,10 @@ public class BotUpdateHandler {
             return true;
         }
         if (normalized.equals("опубликовать")) {
+            if (isBroadcastPreviewFlow(session)) {
+                publishBroadcast(user, null);
+                return true;
+            }
             publishPost(user, null);
             return true;
         }

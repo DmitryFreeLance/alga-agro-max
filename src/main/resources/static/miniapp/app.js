@@ -46,6 +46,7 @@ const FIXED_SECTION_DEFINITIONS = [
             "Фунгициды",
             "Гербициды",
             "Инсектициды",
+            "Защита семян",
             "Десиканты",
             "Нематоциды",
             "Регуляторы роста",
@@ -166,6 +167,8 @@ const SEED_TREATMENT_TECHNOLOGIES = [
     "Классическая технология",
     "Технология экспресс (ExpressSun)",
     "Технология Clearfield («чистое поле»)",
+    "Технология Clearfield Plus",
+    "Технология Sulfo",
 ];
 const SEED_REPRODUCTION_ORDER = [
     "ОС",
@@ -682,6 +685,7 @@ function resolveSectionSubcategory(rawValue, sectionName) {
         if (normalized.includes("фунгиц")) return "Фунгициды";
         if (normalized.includes("гербиц")) return "Гербициды";
         if (normalized.includes("инсекти")) return "Инсектициды";
+        if (normalized.includes("протрав") || normalized.includes("защита семян")) return "Защита семян";
         if (normalized.includes("десикант") || normalized.includes("дикват")) return "Десиканты";
         if (normalized.includes("нематоцид")) return "Нематоциды";
         if (normalized.includes("бактерицид")) return "Бактерициды";
@@ -689,7 +693,6 @@ function resolveSectionSubcategory(rawValue, sectionName) {
         if (normalized.includes("моллюскоцид")) return "Моллюскоциды";
         if (normalized.includes("зооцид")) return "Зооциды";
         if (normalized.includes("альгицид")) return "Альгициды";
-        if (normalized.includes("протрав")) return "Фунгициды";
         if (normalized.includes("регулятор рост")) return "Регуляторы роста";
         return "";
     }
@@ -856,6 +859,9 @@ function getPesticideCategoryFromContext(context) {
     if (context.includes("моллюскоцид")) return "Моллюскоциды";
     if (context.includes("альгицид")) return "Альгициды";
     if (context.includes("зооцид") || context.includes("родентицид")) return "Зооциды";
+    if (context.includes("протрав") || context.includes("защита семян") || context.includes("обработка семян")) {
+        return "Защита семян";
+    }
     if (context.includes("регулятор рост") || context.includes("хлормекват") || context.includes("тринексапак") || context.includes("мепикват") || context.includes("этефон")) {
         return "Регуляторы роста";
     }
@@ -2212,9 +2218,8 @@ function getPesticideCategoryTree(products) {
 function getPesticideTreeGroup(product) {
     const subcategory = String(product?.subcategory || product?.itemType || "").trim();
     const normalizedSubcategory = normalize(subcategory);
-    const composition = normalize(product?.activeIngredient || product?.filterMap?.activeIngredient || "");
-    if (normalizedSubcategory.includes("протрав")) {
-        return /(имидаклоприд|клотианидин|тиаметоксам)/.test(composition) ? "Инсектициды" : "Фунгициды";
+    if (normalizedSubcategory.includes("протрав") || normalizedSubcategory.includes("защита семян")) {
+        return "Защита семян";
     }
     if (normalizedSubcategory.includes("регулятор рост")) {
         return "Регуляторы роста";
@@ -4673,8 +4678,14 @@ function getSeedMaturityGroup(product) {
 function getSeedTreatmentTechnology(product) {
     const explicit = product?.cultivationTechnology || getProductFilterRawValue(product, ["Технология возделывания", "Технология обработки", "технология обработки", "technology", "seedTechnology", "treatmentTechnology"]);
     const haystack = normalize([explicit, product?.description, product?.name, getProductSeedSearchText(product)].join(" "));
+    if (haystack.includes("clearfield plus")) {
+        return "Технология Clearfield Plus";
+    }
     if (haystack.includes("clearfield") || haystack.includes("чистое поле")) {
         return "Технология Clearfield («чистое поле»)";
+    }
+    if (haystack.includes("sulfo")) {
+        return "Технология Sulfo";
     }
     if (haystack.includes("expresssun") || haystack.includes("express san") || haystack.includes("expresssun") || haystack.includes("экспресс")) {
         return "Технология экспресс (ExpressSun)";
@@ -4928,7 +4939,7 @@ function normalizeFilterLabel(value) {
     if (normalized.includes("моллюскоцид")) return "Моллюскоциды";
     if (normalized.includes("зооцид")) return "Зооциды";
     if (normalized.includes("альгицид")) return "Альгициды";
-    if (normalized.includes("протрав")) return "Фунгициды";
+    if (normalized.includes("протрав") || normalized.includes("защита семян")) return "Защита семян";
     if (normalized.includes("роденти")) return "Зооциды";
     if (normalized.includes("репелент")) return "Зооциды";
     if (normalized.includes("регулятор рост")) return "Регуляторы роста";
