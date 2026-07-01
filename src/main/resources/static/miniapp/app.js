@@ -2444,23 +2444,23 @@ function renderAdminProductModal() {
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Раздел</label><select name="category" data-field="admin-product-category">${renderOptions(categories.map(item => [item, getSectionDisplayName(item)]), selectedCategory)}</select></div>
                             <div class="admin-field"><label>Подкатегория</label><select name="subcategory" ${subcategoryOptions.length ? "" : "disabled"}>${renderOptions((subcategoryOptions.length ? subcategoryOptions : [""]).map(item => [item, item || "Без подкатегории"]), selectedSubcategory || subcategoryOptions[0] || "")}</select></div>
-                            <div class="admin-field"><label>Производитель</label><input name="brand" list="admin-brand-options" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
+                            <div class="admin-field"><label>Производитель</label><input name="brand" autocomplete="off" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
                         </div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["liters", "Литры"], ["kg", "Килограммы"], ["pe", "П.е."], ["ton", "Тонны"]], orderMode)}</select></div>
-                            <div class="admin-field"><label>${escapeHtml(getAdminPackageVolumeLabel(orderMode))}</label><input name="packageVolume" type="number" min="0.001" step="0.001" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
-                            <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
+                            <div class="admin-field"><label>${escapeHtml(getAdminPackageVolumeLabel(orderMode))}</label><input name="packageVolume" type="number" min="0.001" step="0.001" autocomplete="off" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
+                            <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" autocomplete="off" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
                             <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="0.001" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
-                            <div class="admin-field"><label>Фасовка</label><input name="packageDescription" list="admin-package-description-options" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "25x4" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
+                            <div class="admin-field"><label>Фасовка</label><input name="packageDescription" autocomplete="off" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "25x4" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
                         </div>
                     </div>
                     <div class="admin-form-section admin-form-section-order">
                         <div class="admin-form-section-title">Прайс и заказ</div>
                         <div class="admin-form-row admin-form-row-3">
-                            <div class="admin-field"><label>Прайс</label><input name="price" data-field="admin-product-price" type="number" min="0" step="0.01" value="${escapeAttr(priceValue)}" placeholder="2239"></div>
-                            <div class="admin-field"><label>Скидка, %</label><input name="discountPercent" data-field="admin-product-discount" type="number" min="0" max="100" step="0.01" value="${escapeAttr(discountValue)}" placeholder="10"></div>
+                            <div class="admin-field"><label>Прайс</label><input name="price" data-field="admin-product-price" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(priceValue)}" placeholder="2239"></div>
+                            <div class="admin-field"><label>Скидка, %</label><input name="discountPercent" data-field="admin-product-discount" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(discountValue)}" placeholder="10"></div>
                             <div class="admin-field admin-field-price-result"><label>=</label><div class="admin-price-result">${escapeHtml(discountedPriceLabel)}</div></div>
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
@@ -2472,7 +2472,9 @@ function renderAdminProductModal() {
                         <div class="admin-form-section-title">Дополнительно</div>
                         <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                             <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
-                            <div class="admin-field"><label>Действующее вещество</label><input name="activeIngredient" list="admin-active-ingredient-options" data-field="admin-product-active-ingredient" data-options-id="admin-active-ingredient-options" data-suggest-mode="single" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-active-ingredient")}</div>
+                        </div>
+                        <div class="admin-form-row admin-form-row-compact">
+                            <div class="admin-field admin-field-span-full"><label>Действующее вещество</label><input name="activeIngredient" autocomplete="off" data-field="admin-product-active-ingredient" data-options-id="admin-active-ingredient-options" data-suggest-mode="single" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-active-ingredient")}</div>
                         </div>
                         ${isSeedsCategory ? `
                             <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
@@ -2483,15 +2485,15 @@ function renderAdminProductModal() {
                             </div>
                             <div class="admin-form-row admin-form-row-2-compact">
                                 <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>
-                                <div class="admin-field"><label>Культуры для поиска</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
+                                <div class="admin-field"><label>Культуры для поиска</label><input name="cultures" autocomplete="off" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                             </div>
                         ` : `
                             <div class="admin-form-row admin-form-row-compact">
-                                <div class="admin-field"><label>Культуры</label><input name="cultures" list="admin-culture-options" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
+                                <div class="admin-field"><label>Культуры</label><input name="cultures" autocomplete="off" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                             </div>
                         `}
                         <div class="admin-form-row">
-                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" list="admin-tag-options" data-field="admin-product-tags" data-options-id="admin-tag-options" data-suggest-mode="multi" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-tags")}</div>
+                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" autocomplete="off" data-field="admin-product-tags" data-options-id="admin-tag-options" data-suggest-mode="multi" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-tags")}</div>
                         </div>
                         <div class="admin-form-row">
                             <label class="checkbox-row checkbox-row-admin">
@@ -3194,12 +3196,12 @@ function handleInput(event) {
     }
     if (field === "admin-product-price") {
         state.admin.productEditor.priceDraft = event.target.value;
-        renderPreservingFocus();
+        updateAdminPricePreview();
         return;
     }
     if (field === "admin-product-discount") {
         state.admin.productEditor.discountDraft = event.target.value;
-        renderPreservingFocus();
+        updateAdminPricePreview();
         return;
     }
     if (field === "admin-order-search") {
@@ -3425,6 +3427,14 @@ function clearAdminSuggestions(field) {
     if (!holder) return;
     holder.innerHTML = "";
     holder.classList.remove("visible");
+}
+
+function updateAdminPricePreview() {
+    const preview = root.querySelector(".admin-price-result");
+    if (!preview) return;
+    const priceValue = state.admin.productEditor.priceDraft;
+    const discountValue = state.admin.productEditor.discountDraft;
+    preview.textContent = formatDiscountedAdminPrice(priceValue, discountValue);
 }
 
 function applyAdminSuggestion(field, value) {
