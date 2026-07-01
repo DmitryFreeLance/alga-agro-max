@@ -250,11 +250,11 @@ const state = {
         catalogSection: "",
         catalogCategory: "",
         customerSearch: "",
-        productEditor: { open: false, productId: null, categoryDraft: "" },
+        productEditor: { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" },
         orderModal: { open: false, orderId: null },
         customerModal: { open: false, maxUserId: null },
         manufacturerModal: { open: false, id: null, name: "" },
-        broadcastForm: { text: "", imageUrl: "", imageName: "", sending: false },
+        broadcastForm: { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", sending: false, uploading: false },
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
     },
 };
@@ -875,12 +875,19 @@ function hasPesticideSignals(context) {
     if (!context) {
         return false;
     }
-    return /\bсостав\b|\bрасход\b|\bдействующее вещество\b|гербицид|фунгицид|инсектицид|десикант|нематоцид|бактерицид|акарицид|моллюскоцид|зооцид|альгицид|протрав|регулятор рост/u.test(context)
+    return /\bдействующее вещество\b|гербицид|фунгицид|инсектицид|десикант|нематоцид|бактерицид|акарицид|моллюскоцид|зооцид|альгицид|протрав|регулятор рост/u.test(context)
         || Boolean(getPesticideCategoryFromContext(context));
 }
 
+function hasSeedExclusionSignals(context) {
+    if (!context) {
+        return false;
+    }
+    return /\bсостав\b|\bрасход\b/u.test(context) || hasPesticideSignals(context);
+}
+
 function looksLikePesticideProduct(product) {
-    return hasPesticideSignals(getProductContext(product));
+    return hasSeedExclusionSignals(getProductContext(product));
 }
 
 function isLikelyRealPav(product) {
@@ -1737,10 +1744,10 @@ function renderAdminBroadcasts() {
                     </div>
                     <div class="admin-preview-card">
                         <div class="admin-preview-title">Предпросмотр сообщения</div>
-                        ${state.admin.broadcastForm.imageUrl ? `<img src="${escapeAttr(state.admin.broadcastForm.imageUrl)}" alt="" class="admin-preview-image">` : ""}
+                        ${(state.admin.broadcastForm.imagePreviewUrl || state.admin.broadcastForm.imageUrl) ? `<img src="${escapeAttr(state.admin.broadcastForm.imagePreviewUrl || state.admin.broadcastForm.imageUrl)}" alt="" class="admin-preview-image">` : ""}
                         <div>${escapeHtml(state.admin.broadcastForm.text || "Сообщение появится здесь")}</div>
                     </div>
-                    <button class="admin-primary-btn" data-action="send-broadcast" ${state.admin.broadcastForm.sending ? "disabled" : ""}>📢 Отправить всем (${stats.subscribersCount || 0} чел.)</button>
+                    <button class="admin-primary-btn" data-action="send-broadcast" ${(state.admin.broadcastForm.sending || state.admin.broadcastForm.uploading) ? "disabled" : ""}>📢 Отправить всем (${stats.subscribersCount || 0} чел.)</button>
                 </div>
             </div>
             <div class="admin-stack">
@@ -2391,6 +2398,13 @@ function renderAdminProductModal() {
     const unitsPerPackageOptions = getAdminFieldOptions("unitsPerPackage");
     const orderMode = getAdminOrderMode(product);
     const orderConfig = inferAdminOrderConfig(product);
+    const priceValue = state.admin.productEditor.priceDraft !== ""
+        ? state.admin.productEditor.priceDraft
+        : (product?.price ?? "");
+    const discountValue = state.admin.productEditor.discountDraft !== ""
+        ? state.admin.productEditor.discountDraft
+        : (product?.discountPercent ?? "");
+    const discountedPriceLabel = formatDiscountedAdminPrice(priceValue, discountValue);
     const packageDescriptionValue = selectedCategory === "Пестициды"
         ? (formatCompactPackageDisplay(product) || product?.packageDescription || "")
         : (product?.packageDescription || "");
@@ -2437,10 +2451,11 @@ function renderAdminProductModal() {
                         </div>
                     </div>
                     <div class="admin-form-section admin-form-section-order">
-                        <div class="admin-form-section-title">Цена и заказ</div>
+                        <div class="admin-form-section-title">Прайс и заказ</div>
                         <div class="admin-form-row admin-form-row-3">
-                            <div class="admin-field"><label>Цена</label><input name="price" type="number" min="0" step="0.01" value="${escapeAttr(product?.price ?? "")}" placeholder="2239"></div>
-                            <div class="admin-field"><label>Скидка, %</label><input name="discountPercent" type="number" min="0" max="100" step="0.01" value="${escapeAttr(product?.discountPercent ?? "")}" placeholder="10"></div>
+                            <div class="admin-field"><label>Прайс</label><input name="price" data-field="admin-product-price" type="number" min="0" step="0.01" value="${escapeAttr(priceValue)}" placeholder="2239"></div>
+                            <div class="admin-field"><label>Скидка, %</label><input name="discountPercent" data-field="admin-product-discount" type="number" min="0" max="100" step="0.01" value="${escapeAttr(discountValue)}" placeholder="10"></div>
+                            <div class="admin-field admin-field-price-result"><label>=</label><div class="admin-price-result">${escapeHtml(discountedPriceLabel)}</div></div>
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
                             <div class="admin-field"><label>Мин. объем заказа</label><input name="minOrderQuantity" type="number" min="0.001" step="0.001" required value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
@@ -3047,12 +3062,14 @@ function handleClick(event) {
             open: true,
             productId,
             categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
+            priceDraft: product?.price != null ? String(product.price) : "",
+            discountDraft: product?.discountPercent != null ? String(product.discountPercent) : "",
         };
         render();
         return;
     }
     if (action === "close-admin-product") {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
         render();
         return;
     }
@@ -3166,6 +3183,16 @@ function handleInput(event) {
     }
     if (field === "admin-product-category") {
         state.admin.productEditor.categoryDraft = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-price") {
+        state.admin.productEditor.priceDraft = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-discount") {
+        state.admin.productEditor.discountDraft = event.target.value;
         renderPreservingFocus();
         return;
     }
@@ -3483,16 +3510,28 @@ async function uploadCheckoutAttachments(fileList) {
 
 async function uploadBroadcastImage(file) {
     if (!file) return;
+    revokeBroadcastPreviewUrl();
+    state.admin.broadcastForm.uploading = true;
+    state.admin.broadcastForm.imageName = file.name || state.admin.broadcastForm.imageName;
+    state.admin.broadcastForm.imagePreviewUrl = URL.createObjectURL(file);
+    render();
     const formData = new FormData();
     formData.append("maxUserId", String(state.maxUserId || 0));
     formData.append("file", file);
-    const uploaded = await fetchJson("/api/uploads/media", {
-        method: "POST",
-        body: formData,
-    });
-    state.admin.broadcastForm.imageUrl = uploaded.downloadUrl;
-    state.admin.broadcastForm.imageName = uploaded.originalName || uploaded.storedName;
-    render();
+    try {
+        const uploaded = await fetchJson("/api/uploads/media", {
+            method: "POST",
+            body: formData,
+        });
+        state.admin.broadcastForm.imageUrl = resolveUploadedMediaUrl(uploaded);
+        state.admin.broadcastForm.imageName = uploaded.originalName || uploaded.storedName || file.name || "";
+        if (!state.admin.broadcastForm.imageUrl) {
+            showNotice("Файл выбран, но сервер не вернул ссылку на изображение.", "error");
+        }
+    } finally {
+        state.admin.broadcastForm.uploading = false;
+        render();
+    }
 }
 
 async function saveAdminProduct(formData) {
@@ -3589,7 +3628,7 @@ async function saveAdminProduct(formData) {
     };
     const url = id ? `/api/admin/products/${id}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
     const method = id ? "PUT" : "POST";
-    state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+    state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
     showNotice(id ? "Сохранение товара запущено..." : "Добавление товара запущено...");
     render();
     await fetchJson(url, {
@@ -3608,6 +3647,17 @@ function formatAdminNumber(value) {
         return "";
     }
     return Number.isInteger(numeric) ? String(numeric) : numeric.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+
+function formatDiscountedAdminPrice(priceValue, discountValue) {
+    const price = parseOptionalNumber(priceValue);
+    const discountPercent = parseOptionalNumber(discountValue);
+    if (price == null || discountPercent == null) {
+        return "—";
+    }
+    const normalizedDiscount = Math.min(100, Math.max(0, discountPercent));
+    const discounted = price * (1 - normalizedDiscount / 100);
+    return formatPrice(discounted);
 }
 
 function buildAdminProductPayload(product, overrides = {}) {
@@ -3651,7 +3701,7 @@ function buildAdminProductPayload(product, overrides = {}) {
 async function deleteAdminProduct(productId) {
     const wasEditingCurrent = state.admin.productEditor.open && state.admin.productEditor.productId === productId;
     if (wasEditingCurrent) {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
     }
     showNotice("Удаление товара запущено...");
     render();
@@ -3669,7 +3719,7 @@ async function toggleAdminProductVisibility(productId) {
     const nextActive = !product.active;
     const wasEditingCurrent = state.admin.productEditor.open && state.admin.productEditor.productId === productId;
     if (wasEditingCurrent) {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "" };
+        state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
     }
     showNotice(nextActive ? "Публикация товара обновляется..." : "Скрытие товара запущено...");
     render();
@@ -3723,6 +3773,9 @@ async function sendBroadcast() {
     if (!state.admin.broadcastForm.text.trim()) {
         throw new Error("Введите текст рассылки");
     }
+    if (state.admin.broadcastForm.imagePreviewUrl && !state.admin.broadcastForm.imageUrl) {
+        throw new Error("Изображение выбрано, но еще не загрузилось на сервер. Повтори через пару секунд.");
+    }
     state.admin.broadcastForm.sending = true;
     render();
     await fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`, {
@@ -3733,9 +3786,40 @@ async function sendBroadcast() {
             imageUrl: state.admin.broadcastForm.imageUrl || "",
         }),
     });
-    state.admin.broadcastForm = { text: "", imageUrl: "", imageName: "", sending: false };
+    revokeBroadcastPreviewUrl();
+    state.admin.broadcastForm = { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", sending: false, uploading: false };
     state.admin.broadcasts = await fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`);
     render();
+}
+
+function resolveUploadedMediaUrl(uploaded) {
+    if (!uploaded || typeof uploaded !== "object") {
+        return "";
+    }
+    const direct = [
+        uploaded.downloadUrl,
+        uploaded.url,
+        uploaded.fileUrl,
+        uploaded.download_url,
+        uploaded.file_url,
+    ].find(value => String(value || "").trim());
+    if (direct) {
+        return String(direct).trim();
+    }
+    const scope = String(uploaded.scope || "").trim();
+    const storedName = String(uploaded.storedName || "").trim();
+    const originalName = String(uploaded.originalName || storedName || "").trim();
+    if (!scope || !storedName) {
+        return "";
+    }
+    return `${window.location.origin}/api/files/${encodeURIComponent(scope)}/${encodeURIComponent(storedName)}?filename=${encodeURIComponent(originalName)}`;
+}
+
+function revokeBroadcastPreviewUrl() {
+    const previewUrl = String(state.admin.broadcastForm.imagePreviewUrl || "").trim();
+    if (previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+    }
 }
 
 async function refreshCatalogData() {
@@ -4903,12 +4987,14 @@ function handleActionError(error) {
     showNotice(error.message || "Что-то пошло не так", "error");
     if (state.admin.broadcastForm.sending) {
         state.admin.broadcastForm.sending = false;
-        render();
+    }
+    if (state.admin.broadcastForm.uploading) {
+        state.admin.broadcastForm.uploading = false;
     }
     if (state.checkout.submitting) {
         state.checkout.submitting = false;
-        render();
     }
+    render();
 }
 
 function showNotice(message, type = "success") {

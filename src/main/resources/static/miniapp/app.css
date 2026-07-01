@@ -2423,6 +2423,9 @@ button[disabled] {
 
 .modal-sheet-admin-product {
     width: min(1080px, calc(100% - 24px));
+    max-height: min(92vh, 980px);
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .modal-sheet-admin-product .modal-head {
@@ -2439,6 +2442,23 @@ button[disabled] {
 
 .modal-sheet-admin-product textarea {
     min-height: 68px;
+}
+
+.admin-field-price-result {
+    align-self: end;
+}
+
+.admin-price-result {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    border-radius: 16px;
+    padding: 0 14px;
+    background: #fffaf0;
+    border: 1px solid rgba(220, 169, 62, 0.22);
+    color: var(--green-900);
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 .history-card {
@@ -2607,8 +2627,9 @@ button[disabled] {
         top: 50%;
         bottom: auto;
         transform: translateY(-50%);
-        max-height: none;
-        overflow: visible;
+        max-height: min(92vh, 980px);
+        overflow-y: auto;
+        overflow-x: hidden;
     }
 
     .bottom-nav {

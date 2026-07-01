@@ -184,7 +184,7 @@ public final class CatalogStructure {
 
     public static String normalizeSeedSubcategory(String value) {
         String normalized = TextUtils.normalizeToken(value);
-        if (hasPesticideSignals(normalized)) {
+        if (hasSeedExclusionSignals(normalized)) {
             return "";
         }
         if (normalized.contains("подсолнеч")) return "Подсолнечник";
@@ -215,9 +215,7 @@ public final class CatalogStructure {
     }
 
     private static boolean hasPesticideSignals(String normalized) {
-        return normalized.contains("состав")
-                || normalized.contains("расход")
-                || normalized.contains("действующее вещество")
+        return normalized.contains("действующее вещество")
                 || normalized.contains("гербиц")
                 || normalized.contains("фунгиц")
                 || normalized.contains("инсекти")
@@ -230,5 +228,11 @@ public final class CatalogStructure {
                 || normalized.contains("альгицид")
                 || normalized.contains("протрав")
                 || normalized.contains("регулятор рост");
+    }
+
+    private static boolean hasSeedExclusionSignals(String normalized) {
+        return normalized.contains("состав")
+                || normalized.contains("расход")
+                || hasPesticideSignals(normalized);
     }
 }
