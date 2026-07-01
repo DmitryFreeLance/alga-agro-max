@@ -91,6 +91,9 @@ public final class CatalogStructure {
             return PESTICIDES;
         }
         String normalized = TextUtils.normalizeToken(context);
+        if (hasPesticideSignals(normalized)) {
+            return PESTICIDES;
+        }
         if (normalized.contains("подсолнеч") || normalized.contains("кукуруз") || normalized.contains("рапс")
                 || normalized.contains("горох") || normalized.contains("соя") || normalized.contains("пшениц")
                 || normalized.contains("ячмен") || normalized.contains("гречих") || normalized.contains("овес")
@@ -181,6 +184,9 @@ public final class CatalogStructure {
 
     public static String normalizeSeedSubcategory(String value) {
         String normalized = TextUtils.normalizeToken(value);
+        if (hasPesticideSignals(normalized)) {
+            return "";
+        }
         if (normalized.contains("подсолнеч")) return "Подсолнечник";
         if (normalized.contains("кукуруз")) return "Кукуруза";
         if (normalized.contains("рапс")) return "Рапс";
@@ -206,5 +212,23 @@ public final class CatalogStructure {
             return "Травосмеси";
         }
         return "";
+    }
+
+    private static boolean hasPesticideSignals(String normalized) {
+        return normalized.contains("состав")
+                || normalized.contains("расход")
+                || normalized.contains("действующее вещество")
+                || normalized.contains("гербиц")
+                || normalized.contains("фунгиц")
+                || normalized.contains("инсекти")
+                || normalized.contains("десикант")
+                || normalized.contains("нематоцид")
+                || normalized.contains("бактерицид")
+                || normalized.contains("акарицид")
+                || normalized.contains("моллюскоцид")
+                || normalized.contains("зооцид")
+                || normalized.contains("альгицид")
+                || normalized.contains("протрав")
+                || normalized.contains("регулятор рост");
     }
 }

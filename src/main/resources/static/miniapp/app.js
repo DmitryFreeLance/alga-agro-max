@@ -118,7 +118,29 @@ const FIXED_SECTION_DEFINITIONS = [
 
 const SECTION_INDEX = new Map(FIXED_SECTION_DEFINITIONS.map((section, index) => [normalize(section.name), index]));
 const SECTION_DEFINITION_MAP = new Map(FIXED_SECTION_DEFINITIONS.map(section => [normalize(section.name), section]));
-const FIXED_CULTURE_OPTIONS = FIXED_SECTION_DEFINITIONS.find(section => section.name === "Семена")?.subcategories || [];
+const FIXED_SEED_CULTURE_OPTIONS = FIXED_SECTION_DEFINITIONS.find(section => section.name === "Семена")?.subcategories || [];
+const FIXED_PESTICIDE_CULTURE_OPTIONS = [
+    "Подсолнечник",
+    "Кукуруза",
+    "Рапс",
+    "Горох",
+    "Соя",
+    "Озимая пшеница",
+    "Яровая пшеница",
+    "Яровой ячмень",
+    "Озимая рожь",
+    "Озимый тритикале",
+    "Яровой тритикале",
+    "Гречиха",
+    "Овес",
+    "Люцерна",
+    "Сахарная свекла",
+    "Картофель",
+    "Капуста",
+    "Яблоня",
+    "Вишня",
+    "Виноград",
+];
 const SEED_FAO_RANGES = [
     { label: "ФАО до 150", min: null, max: 149 },
     { label: "ФАО 150-200", min: 150, max: 199 },
@@ -725,6 +747,9 @@ function isSeedMixture(product) {
 }
 
 function getSeedPrimarySubcategory(product) {
+    if (looksLikePesticideProduct(product)) {
+        return "";
+    }
     if (isSeedMixture(product)) {
         return "Травосмеси";
     }
@@ -754,45 +779,52 @@ function getSeedFilterCultureValues(product) {
     return primary ? [primary] : [];
 }
 
-function expandCultureToFixedOptions(value) {
+function expandCultureToFixedOptions(value, sectionName = "Семена") {
     const normalized = normalize(value);
     if (!normalized) {
         return [];
     }
-    const direct = FIXED_CULTURE_OPTIONS.filter(option => normalize(option) === normalized);
+    const options = normalize(sectionName) === normalize("Пестициды")
+        ? FIXED_PESTICIDE_CULTURE_OPTIONS
+        : FIXED_SEED_CULTURE_OPTIONS;
+    const direct = options.filter(option => normalize(option) === normalized);
     if (direct.length) {
         return direct;
     }
-    if (normalized.includes("подсолнеч")) return ["Подсолнечник"];
-    if (normalized.includes("кукуруз")) return ["Кукуруза"];
-    if (normalized.includes("рапс")) return ["Рапс"];
-    if (normalized.includes("горох")) return ["Горох"];
-    if (normalized.includes("соя")) return ["Соя"];
-    if (normalized.includes("гречих")) return ["Гречиха"];
-    if (normalized.includes("овес")) return ["Овес"];
-    if (normalized.includes("люцерн")) return ["Люцерна"];
-    if (normalized.includes("ячмен")) return ["Яровой ячмень"];
-    if (normalized.includes("рож")) return ["Озимая рожь"];
-    if (normalized.includes("тритикал")) return ["Озимый тритикале", "Яровой тритикале"];
-    if (normalized.includes("пшениц")) return ["Озимая пшеница", "Яровая пшеница"];
-    if (normalized.includes("травосм") || normalized.includes("смес") || normalized.includes("комби")) return ["Травосмеси"];
-    if (normalized.includes("бобов") && normalized.includes("трав")) return ["Бобовые травы"];
-    if (normalized.includes("маслич") && normalized.includes("трав")) return ["Масличные травы"];
-    if (normalized.includes("злаков") && normalized.includes("трав")) return ["Злаковые травы"];
-    if (normalized.includes("клевер") || normalized.includes("вика") || normalized.includes("лядвен")) return ["Бобовые травы"];
-    if (normalized.includes("райграс") || normalized.includes("овсяниц") || normalized.includes("тимофеевк") || normalized.includes("фестулолиум") || normalized.includes("ежа")) {
-        return ["Злаковые травы"];
+    let matches = [];
+    if (normalized.includes("подсолнеч")) matches = ["Подсолнечник"];
+    else if (normalized.includes("кукуруз")) matches = ["Кукуруза"];
+    else if (normalized.includes("рапс")) matches = ["Рапс"];
+    else if (normalized.includes("горох")) matches = ["Горох"];
+    else if (normalized.includes("соя")) matches = ["Соя"];
+    else if (normalized.includes("гречих")) matches = ["Гречиха"];
+    else if (normalized.includes("овес")) matches = ["Овес"];
+    else if (normalized.includes("люцерн")) matches = ["Люцерна"];
+    else if (normalized.includes("ячмен")) matches = ["Яровой ячмень"];
+    else if (normalized.includes("рож")) matches = ["Озимая рожь"];
+    else if (normalized.includes("тритикал")) matches = ["Озимый тритикале", "Яровой тритикале"];
+    else if (normalized.includes("пшениц")) matches = ["Озимая пшеница", "Яровая пшеница"];
+    else if (normalized.includes("свекл")) matches = ["Сахарная свекла"];
+    else if (normalized.includes("картоф")) matches = ["Картофель"];
+    else if (normalized.includes("капуст")) matches = ["Капуста"];
+    else if (normalized.includes("яблон")) matches = ["Яблоня"];
+    else if (normalized.includes("вишн")) matches = ["Вишня"];
+    else if (normalized.includes("виноград")) matches = ["Виноград"];
+    else if (normalized.includes("травосм") || normalized.includes("смес") || normalized.includes("комби")) matches = ["Травосмеси"];
+    else if (normalized.includes("бобов") && normalized.includes("трав")) matches = ["Бобовые травы"];
+    else if (normalized.includes("маслич") && normalized.includes("трав")) matches = ["Масличные травы"];
+    else if (normalized.includes("злаков") && normalized.includes("трав")) matches = ["Злаковые травы"];
+    else if (normalized.includes("клевер") || normalized.includes("вика") || normalized.includes("лядвен")) matches = ["Бобовые травы"];
+    else if (normalized.includes("райграс") || normalized.includes("овсяниц") || normalized.includes("тимофеевк") || normalized.includes("фестулолиум") || normalized.includes("ежа")) {
+        matches = ["Злаковые травы"];
+    } else if (normalized.includes("зернов")) {
+        matches = ["Озимая пшеница", "Яровая пшеница", "Яровой ячмень", "Озимая рожь", "Озимый тритикале", "Яровой тритикале", "Овес"];
+    } else if (normalized.includes("маслич")) {
+        matches = ["Подсолнечник", "Рапс", "Масличные травы"];
+    } else if (normalized.includes("бобов")) {
+        matches = ["Горох", "Соя", "Бобовые травы", "Люцерна"];
     }
-    if (normalized.includes("зернов")) {
-        return ["Озимая пшеница", "Яровая пшеница", "Яровой ячмень", "Озимая рожь", "Озимый тритикале", "Яровой тритикале", "Овес"];
-    }
-    if (normalized.includes("маслич")) {
-        return ["Подсолнечник", "Рапс", "Масличные травы"];
-    }
-    if (normalized.includes("бобов")) {
-        return ["Горох", "Соя", "Бобовые травы", "Люцерна"];
-    }
-    return [];
+    return matches.filter(option => options.some(item => normalize(item) === normalize(option)));
 }
 
 function getPesticideCultureValues(product) {
@@ -807,9 +839,9 @@ function getPesticideCultureValues(product) {
         ...Object.values(product?.rawData || {}),
     ];
     candidates.forEach(candidate => {
-        expandCultureToFixedOptions(candidate).forEach(value => values.add(value));
+        expandCultureToFixedOptions(candidate, "Пестициды").forEach(value => values.add(value));
     });
-    return FIXED_CULTURE_OPTIONS.filter(option => values.has(option));
+    return FIXED_PESTICIDE_CULTURE_OPTIONS.filter(option => values.has(option));
 }
 
 function getPesticideCategoryFromContext(context) {
@@ -837,6 +869,18 @@ function getPesticideCategoryFromContext(context) {
         return "Гербициды";
     }
     return resolveSectionSubcategory(context, "Пестициды");
+}
+
+function hasPesticideSignals(context) {
+    if (!context) {
+        return false;
+    }
+    return /\bсостав\b|\bрасход\b|\bдействующее вещество\b|гербицид|фунгицид|инсектицид|десикант|нематоцид|бактерицид|акарицид|моллюскоцид|зооцид|альгицид|протрав|регулятор рост/u.test(context)
+        || Boolean(getPesticideCategoryFromContext(context));
+}
+
+function looksLikePesticideProduct(product) {
+    return hasPesticideSignals(getProductContext(product));
 }
 
 function isLikelyRealPav(product) {
@@ -901,7 +945,9 @@ function mapProductToSectionSubcategory(product, sectionName) {
 function getCultureOptionsForSection(sectionName, products = []) {
     const normalizedSection = normalize(sectionName);
     if (normalizedSection === normalize("Семена") || normalizedSection === normalize("Пестициды")) {
-        return [...FIXED_CULTURE_OPTIONS];
+        return normalizedSection === normalize("Пестициды")
+            ? [...FIXED_PESTICIDE_CULTURE_OPTIONS]
+            : [...FIXED_SEED_CULTURE_OPTIONS];
     }
     return uniqueValues(products.flatMap(item => getFilterCultureValues(item, sectionName)).filter(Boolean));
 }
@@ -1891,9 +1937,11 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
     const cultures = getCultureOptionsForSection(effectiveSection, sectionProducts);
     const cultureSearch = normalize(state.catalog.cultureSearch);
     const visibleCultures = cultures.filter(name => !cultureSearch || normalize(name).includes(cultureSearch));
-    const subcategories = uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, effectiveSection)).filter(Boolean));
+    const categoryTree = getCategoryTree(sectionProducts, effectiveSection);
     const subcategorySearch = normalize(state.catalog.subcategorySearch);
-    const visibleSubcategories = subcategories.filter(name => !subcategorySearch || normalize(name).includes(subcategorySearch));
+    const visibleCategoryTree = !subcategorySearch
+        ? categoryTree
+        : categoryTree.filter(node => normalize(node.label).includes(subcategorySearch));
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
     const isPesticidesSection = normalize(effectiveSection) === normalize("Пестициды");
     const showCultureSection = isSeedsSection || isPesticidesSection;
@@ -1903,7 +1951,6 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
         : [];
     const activeIngredientSearch = normalize(state.catalog.activeIngredientSearch);
     const visibleActiveIngredients = activeIngredients.filter(value => !activeIngredientSearch || normalize(value).includes(activeIngredientSearch));
-    const categoryTree = getCategoryTree(sectionProducts, effectiveSection);
     const seedFaoRanges = SEED_FAO_RANGES.map(item => item.label);
     const seedMaturityGroups = SEED_MATURITY_GROUPS;
     const seedTechnologies = SEED_TREATMENT_TECHNOLOGIES;
@@ -1964,7 +2011,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                     </div>
                 ` : ""}
             </div>
-            ${!isSeedsSection && subcategories.length ? `
+            ${!isSeedsSection && categoryTree.length ? `
                 <div class="drawer-section" data-filter-anchor="subcategory">
                     <button type="button" class="drawer-section-toggle" data-action="toggle-filter-panel" data-panel="subcategory">
                         <span>Категория</span>
@@ -1976,7 +2023,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
                                 <input type="search" data-field="filter-subcategory-search" placeholder="Поиск категории" value="${escapeAttr(state.catalog.subcategorySearch)}">
                             </div>
                         ` : ""}
-                        <div class="tree-list">${categoryTree.length ? categoryTree.filter(node => visibleSubcategories.includes(node.label)).map(node => renderCategoryTreeNode(node, draft)).join("") : `<div class="filter-empty">Категории не найдены</div>`}</div>
+                        <div class="tree-list">${visibleCategoryTree.length ? visibleCategoryTree.map(node => renderCategoryTreeNode(node, draft)).join("") : `<div class="filter-empty">Категории не найдены</div>`}</div>
                     ` : ""}
                 </div>
             ` : ""}
@@ -2092,8 +2139,9 @@ function countProductsByManufacturer(products, manufacturer) {
 }
 
 function getCategoryTree(products, sectionName) {
-    if (normalize(sectionName) === normalize("Пестициды")) {
-        return getAdminSubcategoryOptions("Пестициды").map(label => ({
+    const configuredOptions = getAdminSubcategoryOptions(sectionName);
+    if (configuredOptions.length) {
+        return configuredOptions.map(label => ({
             label,
             value: label,
             field: "filter-subcategory",
@@ -4016,12 +4064,12 @@ function getProductSectionName(product) {
     if (directSection?.name === "Препараты для закрытого грунта") {
         return directSection.name;
     }
+    const pesticideCategory = getActualPesticideCategory(product);
+    if (pesticideCategory || hasPesticideSignals(context)) {
+        return "Пестициды";
+    }
     if (isSeedsSectionName(context)) {
         return "Семена";
-    }
-    const pesticideCategory = getActualPesticideCategory(product);
-    if (pesticideCategory) {
-        return "Пестициды";
     }
     if (directSection && directSection.name !== "Препараты для закрытого грунта") {
         return directSection.name;
@@ -4344,30 +4392,9 @@ function trimDraftFiltersToAvailable() {
     if (!draft) {
         return;
     }
-    const sectionProducts = getDraftSectionProducts(draft);
-    const manufacturers = new Set(uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean)));
-    const cultures = new Set(uniqueValues(sectionProducts.flatMap(item => getFilterCultureValues(item, draft.sections[0] || state.catalog.section || "")).filter(Boolean)));
-    const pesticideTargets = new Set(getAvailablePesticideTargetFilterValues(sectionProducts));
     const effectiveSection = draft.sections[0] || state.catalog.section || "";
-    const subcategories = new Set(
-        uniqueValues(sectionProducts.flatMap(item => getFilterSubcategoryValues(item, effectiveSection)).filter(Boolean))
-    );
-    const activeIngredients = new Set(uniqueValues(sectionProducts.flatMap(item => extractActiveIngredientTerms(item)).filter(Boolean)));
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
-    draft.manufacturers = draft.manufacturers.filter(item => manufacturers.has(item));
-    draft.cultures = draft.cultures.filter(item => cultures.has(item));
-    draft.pesticideTargets = draft.pesticideTargets.filter(item => pesticideTargets.has(item));
-    draft.activeIngredients = draft.activeIngredients.filter(item => activeIngredients.has(item));
-    draft.subcategories = draft.subcategories.filter(item => subcategories.has(item));
     if (isSeedsSection) {
-        const faoRanges = new Set(SEED_FAO_RANGES.map(item => item.label));
-        const maturityGroups = new Set(SEED_MATURITY_GROUPS);
-        const technologies = new Set(SEED_TREATMENT_TECHNOLOGIES);
-        const reproductions = new Set(getSeedReproductionOptions(sectionProducts));
-        draft.seedFaoRanges = (draft.seedFaoRanges || []).filter(item => faoRanges.has(item));
-        draft.seedMaturityGroups = (draft.seedMaturityGroups || []).filter(item => maturityGroups.has(item));
-        draft.seedTreatmentTechnologies = (draft.seedTreatmentTechnologies || []).filter(item => technologies.has(item));
-        draft.seedReproductionValues = (draft.seedReproductionValues || []).filter(item => reproductions.has(item));
         return;
     }
     draft.seedFaoRanges = [];
@@ -4722,11 +4749,43 @@ function simplifyActiveIngredientTerm(value) {
     } else {
         term = tokens[0];
     }
-    term = term.replace(/[),.;:+\s]+$/g, "").trim();
+    term = canonicalizeActiveIngredientTerm(term.replace(/[),.;:+\s]+$/g, "").trim());
     if (term.length <= 4) {
         return "";
     }
     return term;
+}
+
+function canonicalizeActiveIngredientTerm(term) {
+    const normalizedTerm = normalize(term);
+    if (!normalizedTerm) {
+        return "";
+    }
+    const explicitMap = {
+        "бентазона": "бентазон",
+        "имазамокса": "имазамокс",
+        "имазапира": "имазапир",
+        "флорасулама": "флорасулам",
+        "флуметсулама": "флуметсулам",
+        "метрибузина": "метрибузин",
+        "метазахлора": "метазахлор",
+        "клопиралида": "клопиралид",
+        "пиклорама": "пиклорам",
+        "никосульфурона": "никосульфурон",
+        "римсульфурона": "римсульфурон",
+        "тифенсульфурона": "тифенсульфурон",
+        "метсульфурона": "метсульфурон",
+        "трибенурона": "трибенурон",
+        "дикамбы": "дикамба",
+    };
+    if (explicitMap[normalizedTerm]) {
+        return explicitMap[normalizedTerm];
+    }
+    const stripped = normalizedTerm.replace(/([а-яё-]+)([ая])$/u, "$1");
+    if (stripped !== normalizedTerm && /(зон|зам|лам|лид|фоп|дим|урон|сульфурон|коназол|стробин|пир|пирам|азин|азол|метил|ахлор|аксил|ксад)$/u.test(stripped)) {
+        return stripped;
+    }
+    return normalizedTerm;
 }
 
 function normalizeFilterLabel(value) {
