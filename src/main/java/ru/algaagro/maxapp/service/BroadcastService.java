@@ -29,18 +29,24 @@ public class BroadcastService {
     @Transactional
     public Map<String, Object> sendBroadcast(String text, String imageUrl) {
         String normalizedText = text == null ? "" : text.trim();
+        String normalizedImageUrl = imageUrl == null ? "" : imageUrl.trim();
         if (normalizedText.isBlank()) {
             throw new IllegalArgumentException("Текст рассылки обязателен");
         }
+        List<Map<String, Object>> attachments = new ArrayList<>();
+        Map<String, Object> imageAttachment = maxApiClient.urlImageAttachment(normalizedImageUrl);
+        if (imageAttachment != null) {
+            attachments.add(imageAttachment);
+        }
         List<Long> recipients = new ArrayList<>(userService.findAllUserIds());
         for (Long userId : recipients) {
-            maxApiClient.sendToUser(userId, normalizedText, null, "html");
+            maxApiClient.sendToUser(userId, normalizedText, attachments.isEmpty() ? null : attachments, "html");
         }
         BroadcastLog log = new BroadcastLog();
         log.setText(normalizedText);
-        log.setImageUrl(imageUrl);
+        log.setImageUrl(normalizedImageUrl);
         log.setRecipientsCount(recipients.size());
-        log.setMessageType(imageUrl == null || imageUrl.isBlank() ? "text" : "photo");
+        log.setMessageType(normalizedImageUrl.isBlank() ? "text" : "photo");
         BroadcastLog saved = broadcastLogRepository.save(log);
 
         Map<String, Object> response = new LinkedHashMap<>();

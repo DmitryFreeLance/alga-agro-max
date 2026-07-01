@@ -7,10 +7,12 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +21,8 @@ import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.stereotype.Component;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.util.JsonHelper;
@@ -121,6 +125,20 @@ public class MaxApiClient {
         );
     }
 
+    public Map<String, Object> urlImageAttachment(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+        String token = uploadedImageTokens.computeIfAbsent("url::" + imageUrl.trim(), key -> uploadImageTokenFromUrl(imageUrl.trim()));
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return Map.of(
+                "type", "image",
+                "payload", Map.of("token", token)
+        );
+    }
+
     private void sendMessage(String targetQuery, String text, List<Map<String, Object>> attachments, String format) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("text", text);
@@ -180,24 +198,7 @@ public class MaxApiClient {
             try (InputStream inputStream = resource.getInputStream()) {
                 bytes = inputStream.readAllBytes();
             }
-            String boundary = "----AlgaAgroMaxBoundary" + System.nanoTime();
-            HttpRequest fileRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(uploadUrl))
-                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                    .timeout(Duration.ofSeconds(60))
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(buildMultipartBody(boundary, resource.getFilename(), bytes)))
-                    .build();
-            HttpResponse<String> fileResponse = httpClient.send(fileRequest, HttpResponse.BodyHandlers.ofString());
-            if (fileResponse.statusCode() / 100 != 2) {
-                throw new IllegalStateException("MAX image upload failed " + fileResponse.statusCode() + ": " + fileResponse.body());
-            }
-            JsonNode fileJson = jsonHelper.readTree(fileResponse.body());
-            String token = fileJson.path("token").asText("");
-            if (token.isBlank()) {
-                log.info("MAX image upload completed without token for {}. Attachment will be skipped.", classpathLocation);
-                return "";
-            }
-            return token;
+            return uploadImageBytes(uploadUrl, resource.getFilename(), "image/png", bytes, classpathLocation);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("MAX classpath image upload interrupted for {}: {}", classpathLocation, e.getMessage());
@@ -208,15 +209,100 @@ public class MaxApiClient {
         }
     }
 
-    private byte[] buildMultipartBody(String boundary, String filename, byte[] bytes) throws IOException {
+    private String uploadImageTokenFromUrl(String imageUrl) {
+        if (!enabled()) {
+            return null;
+        }
+        try {
+            HttpRequest downloadRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(imageUrl))
+                    .timeout(Duration.ofSeconds(60))
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
+            if (downloadResponse.statusCode() / 100 != 2) {
+                throw new IllegalStateException("Image download failed " + downloadResponse.statusCode());
+            }
+            HttpRequest uploadRequest = baseRequest(appProperties.getMax().getApiBaseUrl() + "/uploads?type=image")
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+            HttpResponse<String> uploadResponse = httpClient.send(uploadRequest, HttpResponse.BodyHandlers.ofString());
+            ensureSuccess(uploadResponse);
+            JsonNode uploadJson = jsonHelper.readTree(uploadResponse.body());
+            String uploadUrl = uploadJson.path("url").asText("");
+            if (uploadUrl.isBlank()) {
+                throw new IllegalStateException("MAX image upload URL is empty");
+            }
+            String filename = resolveFilename(imageUrl, downloadResponse.headers());
+            String contentType = resolveContentType(downloadResponse.headers(), filename);
+            return uploadImageBytes(uploadUrl, filename, contentType, downloadResponse.body(), imageUrl);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("MAX URL image upload interrupted for {}: {}", imageUrl, e.getMessage());
+            return null;
+        } catch (IOException | RuntimeException e) {
+            log.warn("MAX URL image upload failed for {}: {}", imageUrl, e.getMessage());
+            return null;
+        }
+    }
+
+    private String uploadImageBytes(String uploadUrl, String filename, String contentType, byte[] bytes, String sourceLabel) throws IOException, InterruptedException {
+        String boundary = "----AlgaAgroMaxBoundary" + System.nanoTime();
+        HttpRequest fileRequest = HttpRequest.newBuilder()
+                .uri(URI.create(uploadUrl))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .timeout(Duration.ofSeconds(60))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(buildMultipartBody(boundary, filename, contentType, bytes)))
+                .build();
+        HttpResponse<String> fileResponse = httpClient.send(fileRequest, HttpResponse.BodyHandlers.ofString());
+        if (fileResponse.statusCode() / 100 != 2) {
+            throw new IllegalStateException("MAX image upload failed " + fileResponse.statusCode() + ": " + fileResponse.body());
+        }
+        JsonNode fileJson = jsonHelper.readTree(fileResponse.body());
+        String token = fileJson.path("token").asText("");
+        if (token.isBlank()) {
+            log.info("MAX image upload completed without token for {}. Attachment will be skipped.", sourceLabel);
+            return "";
+        }
+        return token;
+    }
+
+    private byte[] buildMultipartBody(String boundary, String filename, String contentType, byte[] bytes) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         outputStream.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
         outputStream.write(("Content-Disposition: form-data; name=\"data\"; filename=\"" + filename + "\"\r\n")
                 .getBytes(StandardCharsets.UTF_8));
-        outputStream.write("Content-Type: image/png\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        outputStream.write(("Content-Type: " + contentType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         outputStream.write(bytes);
         outputStream.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
         return outputStream.toByteArray();
+    }
+
+    private String resolveFilename(String imageUrl, HttpHeaders headers) {
+        String path = URI.create(imageUrl).getPath();
+        String candidate = path == null ? "" : path.substring(path.lastIndexOf('/') + 1).trim();
+        if (!candidate.isBlank()) {
+            return candidate;
+        }
+        String contentType = headers.firstValue("Content-Type").orElse("");
+        if (contentType.toLowerCase(Locale.ROOT).contains("png")) {
+            return "broadcast.png";
+        }
+        if (contentType.toLowerCase(Locale.ROOT).contains("webp")) {
+            return "broadcast.webp";
+        }
+        return "broadcast.jpg";
+    }
+
+    private String resolveContentType(HttpHeaders headers, String filename) {
+        String headerValue = headers.firstValue("Content-Type").orElse("").trim();
+        if (!headerValue.isBlank()) {
+            return headerValue;
+        }
+        return MediaTypeFactory.getMediaType(filename)
+                .map(MediaType::toString)
+                .orElse("image/jpeg");
     }
 
     private HttpRequest.Builder baseRequest(String url) {
