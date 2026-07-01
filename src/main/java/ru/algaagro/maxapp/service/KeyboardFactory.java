@@ -35,6 +35,7 @@ public class KeyboardFactory {
                 List.of(messageButton("📦 Номенклатура")),
                 List.of(messageButton("👥 Пользователи")),
                 List.of(messageButton("🧾 Заказы"), messageButton("📣 Пост")),
+                List.of(messageButton("📨 Рассылка")),
                 List.of(messageButton("🔗 Кнопки постов"))
         );
         return inlineKeyboard(rows);
@@ -61,6 +62,12 @@ public class KeyboardFactory {
         ));
     }
 
+    public List<Map<String, Object>> broadcastTextKeyboard() {
+        return inlineKeyboard(List.of(
+                List.of(messageButton("✅ Готово"), messageButton("❌ Отмена"))
+        ));
+    }
+
     public List<Map<String, Object>> postPreviewKeyboard(List<PostButton> postButtons) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
         for (PostButton button : postButtons) {
@@ -68,6 +75,12 @@ public class KeyboardFactory {
         }
         rows.add(List.of(messageButton("🚀 Опубликовать"), messageButton("🗑 Отменить")));
         return inlineKeyboard(rows);
+    }
+
+    public List<Map<String, Object>> broadcastPreviewKeyboard() {
+        return inlineKeyboard(List.of(
+                List.of(messageButton("📨 Отправить всем"), messageButton("🗑 Отменить"))
+        ));
     }
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {

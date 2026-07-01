@@ -1311,10 +1311,6 @@ function renderAdminPage() {
                         ${renderAdminMenuButton("orders", "◩", "Заявки", getPendingOrdersCount())}
                         ${renderAdminMenuButton("customers", "◎", "Клиенты", null)}
                     </div>
-                    <div class="admin-sidebar-group">
-                        <div class="admin-sidebar-label">Коммуникации</div>
-                        ${renderAdminMenuButton("broadcasts", "✦", "Рассылка", null)}
-                    </div>
                     <button class="admin-exit-btn" data-action="admin-exit">← Клиентский каталог</button>
                     <div class="admin-sidebar-footer">Алга Агро Групп · 2026</div>
                 </aside>
@@ -1358,8 +1354,6 @@ function getAdminPageMeta() {
             return { title: "Заявки", subtitle: "Фильтрация, просмотр состава и смена статусов" };
         case "customers":
             return { title: "Клиенты", subtitle: "Посетители бота, корзины, черновики и история заказов" };
-        case "broadcasts":
-            return { title: "Рассылка", subtitle: "Сообщения всем пользователям и история кампаний" };
         case "dashboard":
         default:
             return { title: "Дашборд", subtitle: "Ключевые показатели и последние заявки" };
@@ -1384,8 +1378,6 @@ function renderAdminContent() {
             return renderAdminOrders();
         case "customers":
             return renderAdminCustomers();
-        case "broadcasts":
-            return renderAdminBroadcasts();
         case "dashboard":
         default:
             return renderAdminDashboard();
@@ -2349,6 +2341,20 @@ function getAdminOrderMode(product) {
     return "liters";
 }
 
+function getAdminPackageVolumeLabel(orderMode) {
+    switch (String(orderMode || "")) {
+        case "kg":
+            return "Объем упаковки, кг";
+        case "pe":
+            return "Объем упаковки, п.е.";
+        case "ton":
+            return "Объем упаковки, т";
+        case "liters":
+        default:
+            return "Объем упаковки, л";
+    }
+}
+
 function inferAdminOrderConfig(product) {
     const preset = inferAdminOrderPreset(product);
     const description = String(product?.packageDescription || "").trim();
@@ -2442,7 +2448,7 @@ function renderAdminProductModal() {
                         </div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["liters", "Литры"], ["kg", "Килограммы"], ["pe", "П.е."], ["ton", "Тонны"]], orderMode)}</select></div>
-                            <div class="admin-field"><label>Объем упаковки</label><input name="packageVolume" type="number" min="0.001" step="0.001" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
+                            <div class="admin-field"><label>${escapeHtml(getAdminPackageVolumeLabel(orderMode))}</label><input name="packageVolume" type="number" min="0.001" step="0.001" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
                             <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
@@ -2473,7 +2479,7 @@ function renderAdminProductModal() {
                                 <div class="admin-field"><label>ФАО</label><input name="seedFao" value="${escapeAttr(product?.seedFao || "")}" placeholder="150"></div>
                                 <div class="admin-field"><label>Штук в мешке</label><input name="seedsPerBag" value="${escapeAttr(product?.seedsPerBag || "")}" placeholder="80000"></div>
                                 <div class="admin-field"><label>Группа спелости</label><input name="seedMaturityGroup" value="${escapeAttr(product?.filterMap?.seedMaturityGroup || product?.filterMap?.maturityGroup || "")}" placeholder="Среднеспелые"></div>
-                                <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" value="${escapeAttr(product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "")}" placeholder="ЭС, РС1"></div>
+                                <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" value="${escapeAttr(product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "")}" placeholder="ЭС, РС1, РС2"></div>
                             </div>
                             <div class="admin-form-row admin-form-row-2-compact">
                                 <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>

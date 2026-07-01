@@ -38,6 +38,7 @@ public class BotUpdateHandler {
     private final ExcelImportService excelImportService;
     private final ProductResearchService productResearchService;
     private final OrderService orderService;
+    private final BroadcastService broadcastService;
     private final AppProperties appProperties;
 
     public BotUpdateHandler(
@@ -49,6 +50,7 @@ public class BotUpdateHandler {
             ExcelImportService excelImportService,
             ProductResearchService productResearchService,
             OrderService orderService,
+            BroadcastService broadcastService,
             AppProperties appProperties
     ) {
         this.userService = userService;
@@ -59,6 +61,7 @@ public class BotUpdateHandler {
         this.excelImportService = excelImportService;
         this.productResearchService = productResearchService;
         this.orderService = orderService;
+        this.broadcastService = broadcastService;
         this.appProperties = appProperties;
     }
 
@@ -178,6 +181,21 @@ public class BotUpdateHandler {
             return;
         }
 
+        if (session.getState() == SessionState.BROADCAST_WAITING_MEDIA && user.isAdmin()) {
+            if (capturePostMedia(update, session)) {
+                maxApiClient.sendToUser(user.getMaxUserId(),
+                        "🖼 Медиа для рассылки добавлено. Можно отправить еще материалы или нажать «Готово».",
+                        keyboardFactory.postMediaKeyboard(),
+                        "html");
+            } else {
+                maxApiClient.sendToUser(user.getMaxUserId(),
+                        "Я жду фото, видео или медиагруппу для рассылки.",
+                        keyboardFactory.postMediaKeyboard(),
+                        "html");
+            }
+            return;
+        }
+
         if (session.getState() == SessionState.POST_WAITING_TEXT && user.isAdmin()) {
             if (text == null || text.isBlank()) {
                 maxApiClient.sendToUser(user.getMaxUserId(),
@@ -190,6 +208,25 @@ public class BotUpdateHandler {
             payload.put("text", text);
             botSessionService.update(session, SessionState.IDLE, payload);
             sendPostPreview(user.getMaxUserId(), payload);
+            return;
+        }
+
+        if (session.getState() == SessionState.BROADCAST_WAITING_TEXT && user.isAdmin()) {
+            if (text == null || text.isBlank()) {
+                maxApiClient.sendToUser(user.getMaxUserId(),
+                        "✍️ Теперь нужен текст рассылки. Отправьте его сообщением, затем нажмите «Готово».",
+                        keyboardFactory.broadcastTextKeyboard(),
+                        "html");
+                return;
+            }
+            Map<String, Object> payload = botSessionService.getPayload(session);
+            payload.put("text", text);
+            payload.put("mode", "broadcast_waiting");
+            botSessionService.update(session, SessionState.BROADCAST_WAITING_TEXT, payload);
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "📝 Текст рассылки сохранен. Можно прислать новую версию или нажать «Готово» для предпросмотра.",
+                    keyboardFactory.broadcastTextKeyboard(),
+                    "html");
             return;
         }
 
@@ -277,6 +314,10 @@ public class BotUpdateHandler {
             startPostFlow(user, null);
             return true;
         }
+        if (normalized.equals("рассылка")) {
+            startBroadcastFlow(user, null);
+            return true;
+        }
         if (normalized.equals("кнопки постов")) {
             showButtons(user, null);
             return true;
@@ -313,6 +354,23 @@ public class BotUpdateHandler {
                 askPostText(user, null);
                 return true;
             }
+            if (session.getState() == SessionState.BROADCAST_WAITING_MEDIA) {
+                askBroadcastText(user, null);
+                return true;
+            }
+            if (session.getState() == SessionState.BROADCAST_WAITING_TEXT) {
+                if (hasBroadcastDraftText(session)) {
+                    Map<String, Object> payload = botSessionService.getPayload(session);
+                    botSessionService.update(session, SessionState.IDLE, payload);
+                    sendBroadcastPreview(user.getMaxUserId(), payload);
+                } else {
+                    maxApiClient.sendToUser(user.getMaxUserId(),
+                            "Сначала отправьте текст рассылки, а потом нажмите «Готово».",
+                            keyboardFactory.broadcastTextKeyboard(),
+                            "html");
+                }
+                return true;
+            }
             return false;
         }
         if (normalized.equals("отмена") || normalized.equals("отменить")) {
@@ -326,6 +384,12 @@ public class BotUpdateHandler {
         if (normalized.equals("опубликовать")) {
             publishPost(user, null);
             return true;
+        }
+        if (normalized.equals("отправить всем")) {
+            if (isBroadcastPreviewFlow(session)) {
+                publishBroadcast(user, null);
+                return true;
+            }
         }
         return false;
     }
@@ -459,9 +523,11 @@ public class BotUpdateHandler {
         switch (callbackPayload) {
             case "admin:import" -> startImportFlow(user, callbackId);
             case "admin:post" -> startPostFlow(user, callbackId);
+            case "admin:broadcast" -> startBroadcastFlow(user, callbackId);
             case "import:done" -> runImport(user, callbackId);
             case "post:media:done" -> askPostText(user, callbackId);
             case "post:publish" -> publishPost(user, callbackId);
+            case "broadcast:publish" -> publishBroadcast(user, callbackId);
             case "post:cancel", "flow:cancel" -> cancelFlow(user, callbackId);
             case "admin:buttons" -> showButtons(user, callbackId);
             case "buttons:add" -> notifyButtonCreationDisabled(user, callbackId);
@@ -688,6 +754,45 @@ public class BotUpdateHandler {
         maxApiClient.answerCallback(callbackId, "Жду текст");
     }
 
+    private void startBroadcastFlow(AppUser user, String callbackId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("mode", "broadcast_waiting");
+        payload.put("media", new ArrayList<>());
+        payload.put("text", "");
+        botSessionService.update(botSessionService.getOrCreate(user.getMaxUserId()), SessionState.BROADCAST_WAITING_MEDIA, payload);
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                """
+                📨 <b>Подготовка рассылки</b>
+
+                Шаг 1 из 3. Отправьте фото, видео или медиагруппу для рассылки.
+                Когда закончите, нажмите «Готово».
+                """,
+                keyboardFactory.postMediaKeyboard(),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Жду медиа для рассылки");
+    }
+
+    private void askBroadcastText(AppUser user, String callbackId) {
+        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        List<Map<String, Object>> media = castList(payload.get("media"));
+        if (media.isEmpty()) {
+            maxApiClient.answerCallback(callbackId, "Сначала добавьте медиа для рассылки");
+            return;
+        }
+        payload.put("mode", "broadcast_waiting");
+        botSessionService.update(session, SessionState.BROADCAST_WAITING_TEXT, payload);
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                """
+                ✍️ Шаг 2 из 3. Теперь отправьте текст рассылки.
+
+                После того как текст будет готов, нажмите «Готово», и я покажу предпросмотр.
+                """,
+                keyboardFactory.broadcastTextKeyboard(),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Жду текст рассылки");
+    }
+
     private void publishPost(AppUser user, String callbackId) {
         BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
         Map<String, Object> payload = botSessionService.getPayload(session);
@@ -718,6 +823,28 @@ public class BotUpdateHandler {
                 keyboardFactory.adminMenu(),
                 "html");
         maxApiClient.answerCallback(callbackId, "Пост отправлен");
+    }
+
+    private void publishBroadcast(AppUser user, String callbackId) {
+        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        List<Map<String, Object>> media = new ArrayList<>(castList(payload.get("media")));
+        String text = cleanValue(payload.get("text"));
+        if (text == null) {
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "⚠️ Для рассылки нужен текст сообщения.",
+                    keyboardFactory.adminMenu(),
+                    "html");
+            maxApiClient.answerCallback(callbackId, "Нет текста рассылки");
+            return;
+        }
+        broadcastService.sendBroadcastWithAttachments(text, media);
+        botSessionService.reset(user.getMaxUserId());
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "📨 Рассылка отправлена всем пользователям.",
+                keyboardFactory.adminMenu(),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Рассылка отправлена");
     }
 
     private void cancelFlow(AppUser user, String callbackId) {
@@ -825,6 +952,15 @@ public class BotUpdateHandler {
         attachments.addAll(keyboardFactory.postPreviewKeyboard(postButtonService.getActiveButtons()));
         maxApiClient.sendToUser(userId,
                 "👀 <b>Предпросмотр поста</b>\n\n" + payload.getOrDefault("text", ""),
+                attachments,
+                "html");
+    }
+
+    private void sendBroadcastPreview(Long userId, Map<String, Object> payload) {
+        List<Map<String, Object>> attachments = new ArrayList<>(castList(payload.get("media")));
+        attachments.addAll(keyboardFactory.broadcastPreviewKeyboard());
+        maxApiClient.sendToUser(userId,
+                "👀 <b>Предпросмотр рассылки</b>\n\n" + payload.getOrDefault("text", ""),
                 attachments,
                 "html");
     }
@@ -1024,6 +1160,16 @@ public class BotUpdateHandler {
 
     private boolean isImportPreviewFlow(BotSession session) {
         return "import_preview_waiting".equals(String.valueOf(botSessionService.getPayload(session).get("mode")));
+    }
+
+    private boolean isBroadcastPreviewFlow(BotSession session) {
+        return "broadcast_waiting".equals(String.valueOf(botSessionService.getPayload(session).get("mode")))
+                && session.getState() == SessionState.IDLE
+                && hasBroadcastDraftText(session);
+    }
+
+    private boolean hasBroadcastDraftText(BotSession session) {
+        return cleanValue(botSessionService.getPayload(session).get("text")) != null;
     }
 
     private Long extractImportJobId(BotSession session) {

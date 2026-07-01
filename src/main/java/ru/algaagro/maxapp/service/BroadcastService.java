@@ -56,6 +56,31 @@ public class BroadcastService {
         return response;
     }
 
+    @Transactional
+    public Map<String, Object> sendBroadcastWithAttachments(String text, List<Map<String, Object>> attachments) {
+        String normalizedText = text == null ? "" : text.trim();
+        List<Map<String, Object>> safeAttachments = attachments == null ? List.of() : new ArrayList<>(attachments);
+        if (normalizedText.isBlank()) {
+            throw new IllegalArgumentException("Текст рассылки обязателен");
+        }
+        List<Long> recipients = new ArrayList<>(userService.findAllUserIds());
+        for (Long userId : recipients) {
+            maxApiClient.sendToUser(userId, normalizedText, safeAttachments.isEmpty() ? null : safeAttachments, "html");
+        }
+        BroadcastLog log = new BroadcastLog();
+        log.setText(normalizedText);
+        log.setImageUrl("");
+        log.setRecipientsCount(recipients.size());
+        log.setMessageType(safeAttachments.isEmpty() ? "text" : "photo");
+        BroadcastLog saved = broadcastLogRepository.save(log);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", saved.getId());
+        response.put("recipientsCount", saved.getRecipientsCount());
+        response.put("createdAt", saved.getCreatedAt());
+        return response;
+    }
+
     public Map<String, Object> getStats() {
         List<BroadcastLog> history = broadcastLogRepository.findTop20ByOrderByCreatedAtDesc();
         Map<String, Object> stats = new LinkedHashMap<>();

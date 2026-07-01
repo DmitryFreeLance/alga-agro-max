@@ -1693,6 +1693,8 @@ img {
 .admin-app {
     min-height: 100vh;
     background: #edf4ea;
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
 }
 
 .admin-page {
@@ -1705,6 +1707,8 @@ img {
     grid-template-columns: 260px minmax(0, 1fr);
     gap: 22px;
     align-items: start;
+    width: min(100%, 1440px);
+    margin: 0 auto;
 }
 
 .admin-sidebar {
