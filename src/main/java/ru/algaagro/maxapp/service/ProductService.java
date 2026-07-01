@@ -28,6 +28,7 @@ import ru.algaagro.maxapp.util.TextUtils;
 public class ProductService {
 
     private static final BigDecimal DEFAULT_ORDER_QUANTITY = BigDecimal.ONE;
+    private static final BigDecimal DEFAULT_CATALOG_PRICE = new BigDecimal("10");
     private static final Pattern BOX_MULTIPLIER_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern BOX_TOTAL_PATTERN = Pattern.compile("(?i)короб[а-я]*[^\\d]{0,20}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern TOTAL_VOLUME_PATTERN = Pattern.compile("(?i)итог[ао]?[^\\d]{0,12}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
@@ -314,7 +315,7 @@ public class ProductService {
         OrderRules orderRules = resolveOrderRules(product);
         Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
         Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
-        BigDecimal basePrice = product.getPrice();
+        BigDecimal basePrice = firstPositive(product.getPrice(), DEFAULT_CATALOG_PRICE);
         BigDecimal discountPercent = firstPositive(
                 parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
                 parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Скидка", ""), ""))
@@ -366,11 +367,32 @@ public class ProductService {
                 Objects.toString(rawData.getOrDefault("Семян в мешке", ""), ""),
                 Objects.toString(rawData.getOrDefault("Количество семян в мешке", ""), "")
         ));
-        dto.put("cultivationTechnology", firstNonBlank(
+        String cultivationTechnology = firstNonBlank(
                 Objects.toString(filterMap.getOrDefault("cultivationTechnology", ""), ""),
                 Objects.toString(filterMap.getOrDefault("seedTechnology", ""), ""),
                 Objects.toString(rawData.getOrDefault("Технология возделывания", ""), ""),
                 Objects.toString(rawData.getOrDefault("Технология обработки", ""), "")
+        );
+        if (isSunflowerSeedProduct(product) && TextUtils.normalizeToken(cultivationTechnology).contains("sulfo")) {
+            cultivationTechnology = "";
+        }
+        dto.put("cultivationTechnology", cultivationTechnology);
+        dto.put("seedMaturityGroup", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("seedMaturityGroup", ""), ""),
+                Objects.toString(filterMap.getOrDefault("maturityGroup", ""), ""),
+                Objects.toString(rawData.getOrDefault("Группа спелости", ""), "")
+        ));
+        dto.put("seedReproduction", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("seedReproduction", ""), ""),
+                Objects.toString(filterMap.getOrDefault("reproduction", ""), ""),
+                Objects.toString(rawData.getOrDefault("Репродукция", ""), "")
+        ));
+        dto.put("seedVegetationPeriod", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("seedVegetationPeriod", ""), ""),
+                Objects.toString(filterMap.getOrDefault("vegetationPeriod", ""), ""),
+                Objects.toString(rawData.getOrDefault("Срок вегетации", ""), ""),
+                Objects.toString(rawData.getOrDefault("Срок созревания", ""), ""),
+                Objects.toString(rawData.getOrDefault("Дни вегетации", ""), "")
         ));
         return dto;
     }
@@ -381,7 +403,7 @@ public class ProductService {
         dto.put("externalId", product.getExternalId());
         dto.put("sourceFile", product.getSourceFile());
         dto.put("sku", product.getSku());
-        dto.put("price", product.getPrice());
+        dto.put("price", firstPositive(product.getPrice(), DEFAULT_CATALOG_PRICE));
         dto.put("discountPercent", firstPositive(
                 parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
                 BigDecimal.ZERO
@@ -514,10 +536,13 @@ public class ProductService {
         product.setCategory(normalizedCategory);
         product.setSubcategory(normalizedSubcategory);
         product.setItemType(blankToNull(firstNonBlank(normalizedSubcategory, normalizedCategory, payload.itemType())));
-        product.setUnitName(payload.unitName());
+        product.setUnitName(blankToNull(firstNonBlank(
+                payload.unitName(),
+                CatalogStructure.SEEDS.equals(normalizedCategory) ? "п.е." : null
+        )));
         product.setPackageType(blankToNull(payload.packageType()));
         product.setPackageDescription(blankToNull(payload.packageDescription()));
-        product.setPrice(payload.price());
+        product.setPrice(firstPositive(payload.price(), DEFAULT_CATALOG_PRICE));
         product.setStockQuantity(payload.stockQuantity());
         product.setMinOrderQuantity(sanitizePositive(payload.minOrderQuantity()));
         product.setOrderStep(sanitizePositive(payload.orderStep()));
@@ -534,12 +559,77 @@ public class ProductService {
         Map<String, Object> filterMap = payload.filterMap() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload.filterMap());
         if (isTruthy(filterMap.get("forGreenhouse")) || isTruthy(filterMap.get("greenhouse")) || CatalogStructure.CLOSED_GROUND.equals(normalizedCategory)) {
             filterMap.put("forGreenhouse", true);
+        } else {
+            filterMap.remove("forGreenhouse");
         }
         if (normalizedSubcategory != null && !normalizedSubcategory.isBlank()) {
             filterMap.put("subcategory", List.of(normalizedSubcategory));
+        } else {
+            filterMap.remove("subcategory");
         }
+        if (product.getBrand() != null && !product.getBrand().isBlank()) {
+            filterMap.put("manufacturer", List.of(product.getBrand()));
+        } else {
+            filterMap.remove("manufacturer");
+        }
+        if (!cultures.isEmpty()) {
+            filterMap.put("cultures", new ArrayList<>(cultures));
+        } else {
+            filterMap.remove("cultures");
+        }
+        copyStructuredValue(filterMap, "seedFao", "fao");
+        copyStructuredValue(filterMap, "seedsPerBag", "bagSeedCount");
+        copyStructuredValue(filterMap, "seedMaturityGroup", "maturityGroup");
+        copyStructuredValue(filterMap, "seedReproduction", "reproduction");
+        copyStructuredValue(filterMap, "seedVegetationPeriod", "vegetationPeriod");
         product.setFilterMapJson(jsonHelper.writeValue(filterMap));
-        product.setRawDataJson(jsonHelper.writeValue(payload.rawData() == null ? Map.of() : payload.rawData()));
+        Map<String, Object> rawData = payload.rawData() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload.rawData());
+        putOrRemove(rawData, "Действующее вещество", filterMap.get("activeIngredient"));
+        putOrRemove(rawData, "ФАО", filterMap.get("seedFao"));
+        putOrRemove(rawData, "Семян в мешке", filterMap.get("seedsPerBag"));
+        putOrRemove(rawData, "Группа спелости", filterMap.get("seedMaturityGroup"));
+        putOrRemove(rawData, "Репродукция", filterMap.get("seedReproduction"));
+        putOrRemove(rawData, "Технология возделывания", filterMap.get("cultivationTechnology"));
+        putOrRemove(rawData, "Срок вегетации", filterMap.get("seedVegetationPeriod"));
+        product.setRawDataJson(jsonHelper.writeValue(rawData));
+    }
+
+    private void copyStructuredValue(Map<String, Object> map, String sourceKey, String aliasKey) {
+        Object value = map.get(sourceKey);
+        if (value == null) {
+            map.remove(aliasKey);
+            return;
+        }
+        String text = Objects.toString(value, "").trim();
+        if (text.isBlank()) {
+            map.remove(aliasKey);
+            return;
+        }
+        map.put(sourceKey, text);
+        map.put(aliasKey, text);
+    }
+
+    private void putOrRemove(Map<String, Object> map, String key, Object value) {
+        String text = Objects.toString(value, "").trim();
+        if (!text.isBlank()) {
+            map.put(key, text);
+            return;
+        }
+        map.remove(key);
+    }
+
+    private boolean isSunflowerSeedProduct(CatalogProduct product) {
+        if (!CatalogStructure.SEEDS.equals(CatalogStructure.normalizeSectionName(product.getCategory()))) {
+            return false;
+        }
+        return "Подсолнечник".equals(CatalogStructure.inferSubcategory(
+                CatalogStructure.SEEDS,
+                String.join(" ",
+                        Objects.toString(product.getSubcategory(), ""),
+                        Objects.toString(product.getItemType(), ""),
+                        Objects.toString(product.getName(), ""),
+                        Objects.toString(product.getDescription(), ""))
+        ));
     }
 
     private String normalizeAdminCategory(

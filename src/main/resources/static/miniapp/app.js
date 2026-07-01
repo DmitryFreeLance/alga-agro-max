@@ -168,7 +168,6 @@ const SEED_TREATMENT_TECHNOLOGIES = [
     "Технология экспресс (ExpressSun)",
     "Технология Clearfield («чистое поле»)",
     "Технология Clearfield Plus",
-    "Технология Sulfo",
 ];
 const SEED_REPRODUCTION_ORDER = [
     "ОС",
@@ -212,6 +211,7 @@ const state = {
         cultureSearch: "",
         subcategorySearch: "",
         activeIngredientSearch: "",
+        scrollToProductsPending: false,
         draft: null,
         applied: emptyFilters(),
     },
@@ -405,6 +405,7 @@ function render() {
         }
     }
     applyPendingFilterFocus();
+    applyPendingCatalogScroll();
 }
 
 function renderNotice() {
@@ -426,13 +427,11 @@ function renderPreservingFocus() {
     const drawerScrollTop = getFilterScrollContainer()?.scrollTop ?? 0;
     const pageScrollTop = window.scrollY;
     render();
-    if (state.catalog.filtersOpen) {
-        const nextDrawer = getFilterScrollContainer();
-        if (nextDrawer) {
-            nextDrawer.scrollTop = drawerScrollTop || state.catalog.filterScrollTop || 0;
-        }
-        window.scrollTo(0, pageScrollTop);
+    const nextDrawer = getFilterScrollContainer();
+    if (state.catalog.filtersOpen && nextDrawer) {
+        nextDrawer.scrollTop = drawerScrollTop || state.catalog.filterScrollTop || 0;
     }
+    window.scrollTo(0, pageScrollTop);
     if (!field) {
         return;
     }
@@ -578,7 +577,9 @@ function renderSectionPage() {
                 </select>
             </div>
             <div class="search-muted">${filtered.length} товаров</div>
-            ${renderProductsGrid(filtered)}
+            <div data-products-anchor="catalog-results">
+                ${renderProductsGrid(filtered)}
+            </div>
         </div>
     `;
 }
@@ -797,7 +798,7 @@ function expandCultureToFixedOptions(value, sectionName = "Семена") {
     let matches = [];
     if (normalized.includes("подсолнеч")) matches = ["Подсолнечник"];
     else if (normalized.includes("кукуруз")) matches = ["Кукуруза"];
-    else if (normalized.includes("рапс")) matches = ["Рапс"];
+    else if (normalized.includes("рапс") && !normalized.includes("масл") && !normalized.includes("эфир")) matches = ["Рапс"];
     else if (normalized.includes("горох")) matches = ["Горох"];
     else if (normalized.includes("соя")) matches = ["Соя"];
     else if (normalized.includes("гречих")) matches = ["Гречиха"];
@@ -832,8 +833,19 @@ function expandCultureToFixedOptions(value, sectionName = "Семена") {
 
 function getPesticideCultureValues(product) {
     const values = new Set();
-    const candidates = [
+    const explicitCandidates = [
         ...(product?.cultures || []),
+        ...toStringArray(product?.filterMap?.cultures),
+        product?.rawData?.["Культура"],
+        product?.rawData?.["Культуры"],
+    ];
+    explicitCandidates.forEach(candidate => {
+        expandCultureToFixedOptions(candidate, "Пестициды").forEach(value => values.add(value));
+    });
+    if (normalize(getProductSectionName(product)) === normalize("ПАВы")) {
+        return FIXED_PESTICIDE_CULTURE_OPTIONS.filter(option => values.has(option));
+    }
+    const candidates = [
         product?.subcategory,
         product?.itemType,
         product?.description,
@@ -977,8 +989,6 @@ function renderProductCard(product) {
     const favorite = isFavorite(product.id);
     const cartItem = getCartItem(product.id);
     const price = renderProductPrice(product);
-    const subtitle = getProductCardSubtitle(product);
-    const preview = getProductCardPreview(product);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -987,67 +997,55 @@ function renderProductCard(product) {
             </div>
             <div class="product-card-body">
                 <p class="product-card-title">${escapeHtml(product.name)}</p>
-                <p class="product-card-subtitle">${escapeHtml(subtitle)}</p>
-                <p class="product-card-preview">${escapeHtml(preview)}</p>
+                ${renderProductCardDetails(product)}
                 <div class="price-line">
                     ${price}
-                    ${product.price == null
-                        ? `<span></span>`
-                        : cartItem
-                            ? renderStepper(product.id, cartItem.quantity, "card")
-                            : `<button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>`}
+                    ${cartItem
+                        ? renderStepper(product.id, cartItem.quantity, "card")
+                        : `<button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>`}
                 </div>
             </div>
         </article>
     `;
 }
 
-function getProductCardSubtitle(product) {
-    if (normalize(getProductSectionName(product)) === normalize("Пестициды")) {
-        return formatCompactPackageDisplay(product) || product.brand || getProductLeafSectionName(product) || "";
-    }
+function renderProductCardDetails(product) {
     if (normalize(getProductSectionName(product)) === normalize("Семена")) {
-        const details = [
-            product?.seedFao ? `ФАО ${product.seedFao}` : "",
-            product?.seedsPerBag ? `${product.seedsPerBag} шт/мешок` : "",
-        ].filter(Boolean);
-        if (details.length) {
-            return details.join(" • ");
-        }
+        const manufacturer = product?.brand || "Производитель";
+        const technology = getSeedTechnologyDisplay(product);
+        const fao = getSeedFaoDisplay(product);
+        const technologyLine = [technology, fao].filter(Boolean).join(" • ") || "Технология возделывания • ФАО";
+        const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
+        const vegetation = getSeedVegetationPeriodDisplay(product) || "Срок созревания";
+        return `
+            <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
+            <div class="product-card-detail-list">
+                <p class="product-card-detail">${escapeHtml(technologyLine)}</p>
+                <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
+                <p class="product-card-detail">${escapeHtml(vegetation)}</p>
+            </div>
+        `;
     }
-    return product.brand || getProductLeafSectionName(product) || "";
+    const manufacturer = product?.brand || "Производитель";
+    const category = getAdminCatalogChildName(product) || getProductSectionName(product) || "Категория";
+    const packageDisplay = formatCompactPackageDisplay(product) || product?.packageDescription || product?.packageType || product?.unitName || "Упаковка";
+    const activeIngredient = product?.activeIngredient || "Действующее вещество";
+    return `
+        <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
+        <div class="product-card-detail-list">
+            <p class="product-card-detail">${escapeHtml(category)}</p>
+            <p class="product-card-detail">${escapeHtml(packageDisplay)}</p>
+            <p class="product-card-detail">${escapeHtml(activeIngredient)}</p>
+        </div>
+    `;
+}
+
+function getProductCardSubtitle(product) {
+    return product.brand || "Производитель";
 }
 
 function getProductCardPreview(product) {
-    const lines = [];
-    if (normalize(getProductSectionName(product)) === normalize("Семена")) {
-        if (product?.cultivationTechnology) {
-            lines.push(product.cultivationTechnology);
-        }
-        if (product?.description) {
-            lines.push(product.description);
-        }
-    } else if (normalize(getProductSectionName(product)) === normalize("Пестициды")) {
-        if (product?.activeIngredient) {
-            lines.push(product.activeIngredient);
-        }
-        if (product?.description) {
-            lines.push(product.description);
-        }
-    } else {
-        if (product?.description) {
-            lines.push(product.description);
-        }
-        if (product?.activeIngredient) {
-            lines.push(product.activeIngredient);
-        }
-    }
-    const fallback = [
-        formatCompactPackageDisplay(product),
-        getProductLeafSectionName(product),
-        product?.brand,
-    ].filter(Boolean);
-    return normalizeCardDescription((lines.find(Boolean) || fallback.join(" • ") || "Описание скоро появится"));
+    return normalizeCardDescription(product?.description || "");
 }
 
 function normalizeCardDescription(value) {
@@ -1076,13 +1074,11 @@ function formatCompactPackageDisplay(product) {
 
 function renderProductPrice(product) {
     const oldPrice = normalizePrice(product.oldPrice);
-    if (product.price == null) {
-        return `<div class="price-block request"><div class="old-price">&nbsp;</div><strong>По запросу</strong></div>`;
-    }
+    const safePrice = product.price == null ? 10 : product.price;
     return `
         <div class="price-block ${oldPrice ? "discounted" : ""}">
             <div class="old-price">${oldPrice ? `${formatPrice(oldPrice)}` : "&nbsp;"}</div>
-            <strong class="${oldPrice ? "price-current-discount" : ""}">${formatPrice(product.price)}</strong>
+            <strong class="${oldPrice ? "price-current-discount" : ""}">${formatPrice(safePrice)}</strong>
         </div>
     `;
 }
@@ -1119,6 +1115,7 @@ function renderCartPage() {
 
 function renderCartItem(item) {
     const visual = getProductVisual(item.product);
+    const lineTotal = Number(item.product.price ?? 10) * Number(item.quantity || 0);
     return `
         <article class="cart-item">
             <div class="cart-thumb" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -1131,7 +1128,7 @@ function renderCartItem(item) {
             </div>
             <div class="cart-end">
                 <button class="delete-btn" data-action="remove-cart" data-product-id="${item.product.id}">×</button>
-                <strong>${item.product.price == null ? "По запросу" : formatPrice(item.product.price * item.quantity)}</strong>
+                <strong>${formatPrice(lineTotal)}</strong>
             </div>
         </article>
     `;
@@ -1535,7 +1532,7 @@ function renderAdminCatalog() {
                                         </td>
                                         <td data-label="Категория">${escapeHtml(getAdminCatalogChildName(product) || getProductSectionName(product) || product.category || "—")}</td>
                                         <td data-label="Цена">
-                                            <strong>${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
+                                            <strong>${formatPrice(product.price ?? 10)}</strong>
                                             ${product.oldPrice ? `<div class="search-muted"><s>${formatPrice(product.oldPrice)}</s></div>` : ""}
                                         </td>
                                         <td data-label="Статус">${renderAdminStatusBadge(product.active ? "ACTIVE" : "HIDDEN", product.active ? "Активен" : "Скрыт")}</td>
@@ -1809,12 +1806,13 @@ function renderProductModal() {
     const visual = getProductVisual(product);
     const sectionName = getSectionDisplayName(getProductSectionName(product));
     const subcategoryName = getAdminCatalogChildName(product);
-    const modalSubtitle = [subcategoryName, product.brand].filter(Boolean).join(" · ");
     const galleryItems = [visual.icon];
     const currentImage = galleryItems[state.productModal.imageIndex] || visual.icon;
     const favorite = isFavorite(product.id);
-    const canBuy = product.price != null;
+    const canBuy = true;
     const currentQty = getCartItem(product.id)?.quantity || state.productModal.quantity;
+    const isSeedsSection = normalize(getProductSectionName(product)) === normalize("Семена");
+    const displayPrice = product.price == null ? 10 : product.price;
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-product"></div>
@@ -1838,44 +1836,52 @@ function renderProductModal() {
                     </div>
                     <div>
                         <h3>${escapeHtml(product.name)}</h3>
-                        <div class="product-brand">${escapeHtml(product.brand || "")}</div>
+                        <div class="product-brand">${escapeHtml(product.brand || "Производитель")}</div>
                     </div>
                     <div class="detail-price">
                         ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
-                        <strong class="${product.oldPrice ? "price-current-discount" : ""}">${product.price == null ? "По запросу" : formatPrice(product.price)}</strong>
+                        <strong class="${product.oldPrice ? "price-current-discount" : ""}">${formatPrice(displayPrice)}</strong>
                     </div>
                     <div class="product-spec-list product-spec-list-card">
-                        <div class="product-spec-item">
-                            <span>Упаковка / объем</span>
-                            <div class="packaging-chips">
-                                <span class="packaging-chip">${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Упаковка не указана")}</span>
-                            </div>
-                        </div>
-                        ${normalize(getProductSectionName(product)) === normalize("Семена") && (product.seedFao || product.seedsPerBag) ? `
+                        ${isSeedsSection ? `
                             <div class="product-spec-item">
-                                <span>Параметры семян</span>
-                                <strong class="product-copy-block">${escapeHtml([
-                                    product.seedFao ? `ФАО ${product.seedFao}` : "",
-                                    product.seedsPerBag ? `${product.seedsPerBag} шт/мешок` : "",
-                                ].filter(Boolean).join(" • "))}</strong>
+                                <span>Производитель</span>
+                                <strong class="product-copy-block">${escapeHtml(product.brand || "Производитель")}</strong>
                             </div>
-                        ` : ""}
-                        ${normalize(getProductSectionName(product)) === normalize("Семена") && product.cultivationTechnology ? `
                             <div class="product-spec-item">
-                                <span>Технология возделывания</span>
-                                <strong class="product-copy-block">${escapeHtml(product.cultivationTechnology)}</strong>
+                                <span>Технология / ФАО</span>
+                                <strong class="product-copy-block">${escapeHtml([getSeedTechnologyDisplay(product), getSeedFaoDisplay(product)].filter(Boolean).join(" • ") || "Технология возделывания • ФАО")}</strong>
                             </div>
-                        ` : ""}
+                            <div class="product-spec-item">
+                                <span>Количество семян</span>
+                                <strong class="product-copy-block">${escapeHtml(getSeedsPerBagDisplay(product) || "Количество семян")}</strong>
+                            </div>
+                            <div class="product-spec-item">
+                                <span>Срок созревания</span>
+                                <strong class="product-copy-block">${escapeHtml(getSeedVegetationPeriodDisplay(product) || "Срок созревания")}</strong>
+                            </div>
+                        ` : `
+                            <div class="product-spec-item">
+                                <span>Производитель</span>
+                                <strong class="product-copy-block">${escapeHtml(product.brand || "Производитель")}</strong>
+                            </div>
+                            <div class="product-spec-item">
+                                <span>Категория</span>
+                                <strong class="product-copy-block">${escapeHtml(subcategoryName || sectionName || product.category || "Категория")}</strong>
+                            </div>
+                            <div class="product-spec-item">
+                                <span>Упаковка</span>
+                                <strong class="product-copy-block">${escapeHtml(formatCompactPackageDisplay(product) || product.packageDescription || product.packageType || product.unitName || "Упаковка")}</strong>
+                            </div>
+                            <div class="product-spec-item">
+                                <span>Действующее вещество</span>
+                                <strong class="product-copy-block">${escapeHtml(product.activeIngredient || "Действующее вещество")}</strong>
+                            </div>
+                        `}
                         ${product.description ? `
                             <div class="product-spec-item">
                                 <span>Описание</span>
                                 <strong class="product-copy-block">${escapeHtml(product.description)}</strong>
-                            </div>
-                        ` : ""}
-                        ${shouldShowProductActiveIngredient(product) ? `
-                            <div class="product-spec-item">
-                                <span>Действующее вещество</span>
-                                <strong class="product-copy-block">${escapeHtml(product.activeIngredient)}</strong>
                             </div>
                         ` : ""}
                     </div>
@@ -2407,7 +2413,9 @@ function renderAdminProductModal() {
     const packageDescriptionOptions = getAdminFieldOptions("packageDescription");
     const packageVolumeOptions = getAdminFieldOptions("packageVolume");
     const unitsPerPackageOptions = getAdminFieldOptions("unitsPerPackage");
-    const orderMode = getAdminOrderMode(product);
+    const orderMode = product?.unitName
+        ? getAdminOrderMode(product)
+        : (isSeedsCategory ? "pe" : getAdminOrderMode(product));
     const orderConfig = inferAdminOrderConfig(product);
     const priceValue = state.admin.productEditor.priceDraft !== ""
         ? state.admin.productEditor.priceDraft
@@ -2416,7 +2424,9 @@ function renderAdminProductModal() {
         ? state.admin.productEditor.discountDraft
         : (product?.discountPercent ?? "");
     const discountedPriceLabel = formatDiscountedAdminPrice(priceValue, discountValue);
-    const packageDescriptionValue = selectedCategory === "Пестициды"
+    const packageDescriptionValue = isSeedsCategory
+        ? (product?.packageDescription || "1 п.е.")
+        : selectedCategory === "Пестициды"
         ? (formatCompactPackageDisplay(product) || product?.packageDescription || "")
         : (product?.packageDescription || "");
     return `
@@ -2490,6 +2500,9 @@ function renderAdminProductModal() {
                             </div>
                             <div class="admin-form-row admin-form-row-2-compact">
                                 <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>
+                                <div class="admin-field"><label>Срок созревания</label><input name="seedVegetationPeriod" value="${escapeAttr(product?.seedVegetationPeriod || product?.rawData?.["Срок вегетации"] || product?.rawData?.["Срок созревания"] || product?.rawData?.["Дни вегетации"] || "")}" placeholder="105-110 дней"></div>
+                            </div>
+                            <div class="admin-form-row admin-form-row-2-compact">
                                 <div class="admin-field"><label>Культуры для поиска</label><input name="cultures" autocomplete="off" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                             </div>
                         ` : `
@@ -2698,7 +2711,7 @@ function renderAdminCustomerModal() {
                                     ${customer.cartItems.map(item => `
                                         <div class="summary-row">
                                             <span>${escapeHtml(item.name)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "")}</span>
-                                            <strong>${item.priceOnRequest ? "По запросу" : formatPrice(item.totalPrice || 0)}</strong>
+                                            <strong>${formatPrice((item.totalPrice && item.totalPrice > 0 ? item.totalPrice : Number(item.quantity || 0) * 10) || 10)}</strong>
                                         </div>
                                     `).join("")}
                                 </div>
@@ -2778,10 +2791,8 @@ function formatCustomerCartTotal(customer) {
     if (!customer?.cartItemsCount) {
         return "—";
     }
-    if (customer?.cartContainsRequestPrice && total <= 0) {
-        return "По запросу";
-    }
-    return `${customer?.cartContainsRequestPrice ? "~" : ""}${formatPrice(total)}`;
+    const safeTotal = total > 0 ? total : Number(customer?.cartItemsCount || 0) * 10;
+    return formatPrice(safeTotal || 10);
 }
 
 function isAdminWorkspaceActive() {
@@ -2818,6 +2829,7 @@ function handleClick(event) {
         state.catalog.subcategorySearch = "";
         state.catalog.activeIngredientSearch = "";
         state.catalog.filterScrollTop = 0;
+        state.catalog.scrollToProductsPending = true;
         render();
         return;
     }
@@ -2830,6 +2842,7 @@ function handleClick(event) {
             subcategories: sameSingle || !subcategory ? [] : [subcategory],
         };
         state.catalog.draft = cloneFilters(state.catalog.applied);
+        state.catalog.scrollToProductsPending = true;
         render();
         return;
     }
@@ -2877,10 +2890,6 @@ function handleClick(event) {
     if (action === "add-product") {
         const productId = Number(button.dataset.productId);
         const product = getProductById(productId);
-        if (product?.price == null) {
-            openManagerLink();
-            return;
-        }
         addToCart(productId, getInitialQuantity(product));
         render();
         return;
@@ -3034,7 +3043,7 @@ function handleClick(event) {
         state.catalog.draft.sections = section ? [section] : [];
         state.catalog.manufacturerSearch = "";
         trimDraftFiltersToAvailable();
-        render();
+        renderPreservingFocus();
         return;
     }
     if (action === "toggle-filter-section") {
@@ -3561,6 +3570,7 @@ async function uploadBroadcastImage(file) {
 
 async function saveAdminProduct(formData) {
     const id = Number(formData.get("productId")) || null;
+    const existingProduct = id ? state.admin.products.find(item => item.id === id) : null;
     const activeIngredient = String(formData.get("activeIngredient") || "").trim();
     const discountPercent = parseOptionalNumber(formData.get("discountPercent"));
     const minOrderQuantity = parseOptionalNumber(formData.get("minOrderQuantity"));
@@ -3588,10 +3598,14 @@ async function saveAdminProduct(formData) {
     const seedsPerBag = String(formData.get("seedsPerBag") || "").trim();
     const seedMaturityGroup = String(formData.get("seedMaturityGroup") || "").trim();
     const seedReproduction = String(formData.get("seedReproduction") || "").trim();
-    const cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
+    const seedVegetationPeriod = String(formData.get("seedVegetationPeriod") || "").trim();
+    let cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
     if (forGreenhouse) {
         category = "Препараты для закрытого грунта";
         subcategory = "";
+    }
+    if (normalize(category) === normalize("Семена") && normalize(subcategory) === normalize("Подсолнечник") && normalize(cultivationTechnology).includes("sulfo")) {
+        cultivationTechnology = "";
     }
 
     if (orderMode === "kg") {
@@ -3599,7 +3613,7 @@ async function saveAdminProduct(formData) {
     } else if (orderMode === "pe") {
         unitName = "п.е.";
         packageType = "п.е.";
-        packageDescription = "П.е.";
+        packageDescription = packageDescription || "1 п.е.";
     } else if (orderMode === "ton") {
         unitName = "т";
         packageType = "тонна";
@@ -3621,6 +3635,35 @@ async function saveAdminProduct(formData) {
             packageDescription = packageDescription || unitName;
         }
     }
+    if (normalize(category) === normalize("Семена")) {
+        unitName = "п.е.";
+        packageType = packageType || "п.е.";
+        packageDescription = packageDescription || "1 п.е.";
+    }
+
+    const mergedFilterMap = {
+        ...(existingProduct?.filterMap || {}),
+        activeIngredient,
+        discountPercent: discountPercent == null ? "" : formatAdminNumber(discountPercent),
+        oldPrice: "",
+        forGreenhouse,
+        seedFao,
+        seedsPerBag,
+        seedMaturityGroup,
+        seedReproduction,
+        seedVegetationPeriod,
+        cultivationTechnology,
+    };
+    const mergedRawData = {
+        ...(existingProduct?.rawData || {}),
+        "Действующее вещество": activeIngredient,
+        "ФАО": seedFao,
+        "Семян в мешке": seedsPerBag,
+        "Группа спелости": seedMaturityGroup,
+        "Репродукция": seedReproduction,
+        "Технология возделывания": cultivationTechnology,
+        "Срок вегетации": seedVegetationPeriod,
+    };
 
     const payload = {
         name: String(formData.get("name") || "").trim(),
@@ -3630,25 +3673,16 @@ async function saveAdminProduct(formData) {
         brand: String(formData.get("brand") || "").trim(),
         description: String(formData.get("description") || "").trim(),
         unitName,
-        price: parseOptionalNumber(formData.get("price")),
+        price: parseOptionalNumber(formData.get("price")) ?? 10,
         stockQuantity: parseOptionalNumber(formData.get("stockQuantity")),
         packageType,
         packageDescription,
         minOrderQuantity,
         orderStep,
-        cultures: String(formData.get("cultures") || "").trim(),
+        cultures: String(formData.get("cultures") || "").trim() || (normalize(category) === normalize("Семена") ? subcategory : ""),
         tags: String(formData.get("tags") || "").trim(),
-        filterMap: {
-            activeIngredient,
-            discountPercent: discountPercent == null ? "" : formatAdminNumber(discountPercent),
-            oldPrice: "",
-            forGreenhouse,
-            seedFao,
-            seedsPerBag,
-            seedMaturityGroup,
-            seedReproduction,
-            cultivationTechnology,
-        },
+        filterMap: mergedFilterMap,
+        rawData: mergedRawData,
         active: String(formData.get("active")) !== "false",
     };
     const url = id ? `/api/admin/products/${id}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
@@ -3697,7 +3731,7 @@ function buildAdminProductPayload(product, overrides = {}) {
         subcategory: product.subcategory || "",
         itemType: product.itemType || "",
         unitName: product.unitName || "шт",
-        price: product.price ?? null,
+        price: product.price ?? 10,
         stockQuantity: product.stockQuantity ?? null,
         packageType: product.packageType || "",
         packageDescription: product.packageDescription || "",
@@ -3715,6 +3749,7 @@ function buildAdminProductPayload(product, overrides = {}) {
             seedsPerBag: product.seedsPerBag || product.filterMap?.seedsPerBag || "",
             seedMaturityGroup: product.seedMaturityGroup || product.filterMap?.seedMaturityGroup || product.filterMap?.maturityGroup || "",
             seedReproduction: product.seedReproduction || product.filterMap?.seedReproduction || product.filterMap?.reproduction || "",
+            seedVegetationPeriod: product.seedVegetationPeriod || product.filterMap?.seedVegetationPeriod || product.filterMap?.vegetationPeriod || "",
             cultivationTechnology: product.cultivationTechnology || product.filterMap?.cultivationTechnology || "",
         },
         rawData: product.rawData || {},
@@ -4224,6 +4259,40 @@ function getProductSectionName(product) {
     return "Пестициды";
 }
 
+function getSeedTechnologyDisplay(product) {
+    const technology = String(product?.cultivationTechnology || product?.filterMap?.cultivationTechnology || "").trim();
+    if (!technology) {
+        return "";
+    }
+    if (normalize(getSeedPrimarySubcategory(product)) === normalize("Подсолнечник") && normalize(technology).includes("sulfo")) {
+        return "";
+    }
+    return technology;
+}
+
+function getSeedFaoDisplay(product) {
+    return product?.seedFao ? `ФАО ${product.seedFao}` : "";
+}
+
+function getSeedsPerBagDisplay(product) {
+    const value = String(product?.seedsPerBag || "").trim();
+    return value || "";
+}
+
+function getSeedVegetationPeriodDisplay(product) {
+    const direct = String(product?.seedVegetationPeriod || product?.filterMap?.seedVegetationPeriod || product?.filterMap?.vegetationPeriod || "").trim();
+    if (direct) {
+        return direct;
+    }
+    const rawValue = firstNonBlank(
+        product?.rawData?.["Срок вегетации"],
+        product?.rawData?.["Срок созревания"],
+        product?.rawData?.["Дни вегетации"],
+        product?.seedMaturityGroup
+    );
+    return String(rawValue || "").trim();
+}
+
 function buildCategoriesTree(products) {
     const tree = {};
     FIXED_SECTION_DEFINITIONS.forEach(section => {
@@ -4354,7 +4423,7 @@ function renderStepper(productId, quantity, variant) {
 
 function addToCart(productId, quantity) {
     const product = getProductById(productId);
-    if (!product || product.price == null) return;
+    if (!product) return;
     const existing = getCartItem(productId);
     const base = existing ? existing.quantity : 0;
     const next = getSanitizedQuantityForProduct(product, base + quantity);
@@ -4425,11 +4494,8 @@ function sumCartUnits() {
 }
 
 function formatApproximateTotal(items) {
-    const numeric = items.filter(item => item.product.price != null);
-    const hasRequest = items.some(item => item.product.price == null);
-    const total = numeric.reduce((sum, item) => sum + Number(item.product.price) * Number(item.quantity), 0);
-    if (!numeric.length && hasRequest) return "По запросу";
-    return `${hasRequest ? "~" : ""}${formatPrice(total)}`;
+    const total = items.reduce((sum, item) => sum + Number(item.product.price ?? 10) * Number(item.quantity || 0), 0);
+    return formatPrice(total || 10);
 }
 
 function toggleFavorite(productId) {
@@ -4684,9 +4750,6 @@ function getSeedTreatmentTechnology(product) {
     if (haystack.includes("clearfield") || haystack.includes("чистое поле")) {
         return "Технология Clearfield («чистое поле»)";
     }
-    if (haystack.includes("sulfo")) {
-        return "Технология Sulfo";
-    }
     if (haystack.includes("expresssun") || haystack.includes("express san") || haystack.includes("expresssun") || haystack.includes("экспресс")) {
         return "Технология экспресс (ExpressSun)";
     }
@@ -4694,6 +4757,21 @@ function getSeedTreatmentTechnology(product) {
         return "Классическая технология";
     }
     return "";
+}
+
+function applyPendingCatalogScroll() {
+    if (!state.catalog.scrollToProductsPending) {
+        return;
+    }
+    const anchor = root.querySelector("[data-products-anchor=\"catalog-results\"]");
+    if (!anchor) {
+        return;
+    }
+    state.catalog.scrollToProductsPending = false;
+    requestAnimationFrame(() => {
+        const top = Math.max(0, window.scrollY + anchor.getBoundingClientRect().top - 88);
+        window.scrollTo({ top, behavior: "smooth" });
+    });
 }
 
 function normalizeSeedReproductionValue(value) {
