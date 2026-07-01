@@ -26,6 +26,7 @@ import org.springframework.http.MediaTypeFactory;
 import org.springframework.stereotype.Component;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.util.JsonHelper;
+import ru.algaagro.maxapp.util.TextUtils;
 
 @Component
 public class MaxApiClient {
@@ -260,9 +261,23 @@ public class MaxApiClient {
             throw new IllegalStateException("MAX image upload failed " + fileResponse.statusCode() + ": " + fileResponse.body());
         }
         JsonNode fileJson = jsonHelper.readTree(fileResponse.body());
-        String token = fileJson.path("token").asText("");
+        String token = firstText(fileJson,
+                "token",
+                "data.token",
+                "payload.token",
+                "file.token",
+                "media.token",
+                "image.token",
+                "attachment.token",
+                "result.token",
+                "uploads.0.token",
+                "files.0.token",
+                "data.uploads.0.token",
+                "data.files.0.token");
         if (token.isBlank()) {
-            log.info("MAX image upload completed without token for {}. Attachment will be skipped.", sourceLabel);
+            log.info("MAX image upload completed without token for {}. Response body={}",
+                    sourceLabel,
+                    TextUtils.trimTo(fileResponse.body(), 1200));
             return "";
         }
         return token;
@@ -303,6 +318,36 @@ public class MaxApiClient {
         return MediaTypeFactory.getMediaType(filename)
                 .map(MediaType::toString)
                 .orElse("image/jpeg");
+    }
+
+    private String firstText(JsonNode node, String... paths) {
+        for (String path : paths) {
+            JsonNode current = node;
+            boolean missing = false;
+            for (String segment : path.split("\\.")) {
+                if (segment.matches("\\d+")) {
+                    int index = Integer.parseInt(segment);
+                    if (!current.isArray() || current.size() <= index) {
+                        missing = true;
+                        break;
+                    }
+                    current = current.get(index);
+                } else {
+                    current = current.path(segment);
+                }
+                if (current.isMissingNode() || current.isNull()) {
+                    missing = true;
+                    break;
+                }
+            }
+            if (!missing) {
+                String value = current.asText("").trim();
+                if (!value.isBlank()) {
+                    return value;
+                }
+            }
+        }
+        return "";
     }
 
     private HttpRequest.Builder baseRequest(String url) {
