@@ -254,7 +254,7 @@ const state = {
         orderModal: { open: false, orderId: null },
         customerModal: { open: false, maxUserId: null },
         manufacturerModal: { open: false, id: null, name: "" },
-        broadcastForm: { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", sending: false, uploading: false },
+        broadcastForm: { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", imageFile: null, sending: false, uploading: false, uploadError: "" },
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
     },
 };
@@ -1735,7 +1735,7 @@ function renderAdminBroadcasts() {
                             <input type="file" accept="image/*" data-field="broadcast-image">
                             <div class="admin-upload-icon">▣</div>
                             <div>${state.admin.broadcastForm.imageName ? escapeHtml(state.admin.broadcastForm.imageName) : "Нажмите для загрузки фото"}</div>
-                            <small>JPG, PNG, WebP — необязательно</small>
+                            <small>${escapeHtml(getBroadcastUploadStatusText())}</small>
                         </label>
                     </div>
                     <div class="field">
@@ -1747,7 +1747,7 @@ function renderAdminBroadcasts() {
                         ${(state.admin.broadcastForm.imagePreviewUrl || state.admin.broadcastForm.imageUrl) ? `<img src="${escapeAttr(state.admin.broadcastForm.imagePreviewUrl || state.admin.broadcastForm.imageUrl)}" alt="" class="admin-preview-image">` : ""}
                         <div>${escapeHtml(state.admin.broadcastForm.text || "Сообщение появится здесь")}</div>
                     </div>
-                    <button class="admin-primary-btn" data-action="send-broadcast" ${(state.admin.broadcastForm.sending || state.admin.broadcastForm.uploading) ? "disabled" : ""}>📢 Отправить всем (${stats.subscribersCount || 0} чел.)</button>
+                    <button class="admin-primary-btn" data-action="send-broadcast" ${state.admin.broadcastForm.sending ? "disabled" : ""}>📢 Отправить всем (${stats.subscribersCount || 0} чел.)</button>
                 </div>
             </div>
             <div class="admin-stack">
@@ -3511,7 +3511,10 @@ async function uploadCheckoutAttachments(fileList) {
 async function uploadBroadcastImage(file) {
     if (!file) return;
     revokeBroadcastPreviewUrl();
+    state.admin.broadcastForm.imageFile = file;
     state.admin.broadcastForm.uploading = true;
+    state.admin.broadcastForm.uploadError = "";
+    state.admin.broadcastForm.imageUrl = "";
     state.admin.broadcastForm.imageName = file.name || state.admin.broadcastForm.imageName;
     state.admin.broadcastForm.imagePreviewUrl = URL.createObjectURL(file);
     render();
@@ -3526,6 +3529,7 @@ async function uploadBroadcastImage(file) {
         state.admin.broadcastForm.imageUrl = resolveUploadedMediaUrl(uploaded);
         state.admin.broadcastForm.imageName = uploaded.originalName || uploaded.storedName || file.name || "";
         if (!state.admin.broadcastForm.imageUrl) {
+            state.admin.broadcastForm.uploadError = "Сервер не вернул ссылку на изображение.";
             showNotice("Файл выбран, но сервер не вернул ссылку на изображение.", "error");
         }
     } finally {
@@ -3773,8 +3777,12 @@ async function sendBroadcast() {
     if (!state.admin.broadcastForm.text.trim()) {
         throw new Error("Введите текст рассылки");
     }
-    if (state.admin.broadcastForm.imagePreviewUrl && !state.admin.broadcastForm.imageUrl) {
-        throw new Error("Изображение выбрано, но еще не загрузилось на сервер. Повтори через пару секунд.");
+    if (state.admin.broadcastForm.imageFile && !state.admin.broadcastForm.imageUrl) {
+        showNotice("Загружаем изображение перед отправкой...", "success");
+        await uploadBroadcastImage(state.admin.broadcastForm.imageFile);
+    }
+    if (state.admin.broadcastForm.imageFile && !state.admin.broadcastForm.imageUrl) {
+        throw new Error(state.admin.broadcastForm.uploadError || "Не удалось загрузить изображение на сервер.");
     }
     state.admin.broadcastForm.sending = true;
     render();
@@ -3787,9 +3795,25 @@ async function sendBroadcast() {
         }),
     });
     revokeBroadcastPreviewUrl();
-    state.admin.broadcastForm = { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", sending: false, uploading: false };
+    state.admin.broadcastForm = { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", imageFile: null, sending: false, uploading: false, uploadError: "" };
     state.admin.broadcasts = await fetchJson(`/api/admin/broadcasts?maxUserId=${state.maxUserId}`);
     render();
+}
+
+function getBroadcastUploadStatusText() {
+    if (state.admin.broadcastForm.uploading) {
+        return "Загружаем изображение...";
+    }
+    if (state.admin.broadcastForm.uploadError) {
+        return state.admin.broadcastForm.uploadError;
+    }
+    if (state.admin.broadcastForm.imageUrl) {
+        return "Изображение загружено и готово к рассылке.";
+    }
+    if (state.admin.broadcastForm.imagePreviewUrl) {
+        return "Файл выбран. Если загрузка не завершилась, попробуем еще раз при отправке.";
+    }
+    return "JPG, PNG, WebP — необязательно";
 }
 
 function resolveUploadedMediaUrl(uploaded) {
@@ -4990,6 +5014,9 @@ function handleActionError(error) {
     }
     if (state.admin.broadcastForm.uploading) {
         state.admin.broadcastForm.uploading = false;
+    }
+    if (state.admin.broadcastForm.imageFile && !state.admin.broadcastForm.imageUrl) {
+        state.admin.broadcastForm.uploadError = error.message || "Не удалось загрузить изображение.";
     }
     if (state.checkout.submitting) {
         state.checkout.submitting = false;
