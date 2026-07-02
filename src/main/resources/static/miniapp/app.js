@@ -4886,6 +4886,16 @@ function shouldPreferDisplayValue(candidate, current) {
     return candidate.length < current.length;
 }
 
+function firstNonBlank(...values) {
+    for (const value of values) {
+        const text = String(value || "").trim();
+        if (text) {
+            return text;
+        }
+    }
+    return "";
+}
+
 function getSubcategoryFilterTitle(sectionName) {
     const normalized = normalize(sectionName);
     if (normalized.includes("семен")) {

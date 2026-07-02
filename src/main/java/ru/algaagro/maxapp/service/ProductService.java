@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
 import ru.algaagro.maxapp.util.CatalogStructure;
@@ -1178,6 +1180,22 @@ public class ProductService {
     }
 
     private void syncProductWithBitrix(Long productId) {
+        if (productId == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    executeBitrixSync(productId);
+                }
+            });
+            return;
+        }
+        executeBitrixSync(productId);
+    }
+
+    private void executeBitrixSync(Long productId) {
         BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
         if (bitrixSyncService != null && productId != null) {
             try {
