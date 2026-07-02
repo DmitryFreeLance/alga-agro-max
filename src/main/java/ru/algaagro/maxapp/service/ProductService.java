@@ -15,6 +15,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ import ru.algaagro.maxapp.util.TextUtils;
 @Service
 public class ProductService {
 
+    private static final Logger log = LoggerFactory.getLogger(ProductService.class);
     private static final BigDecimal DEFAULT_ORDER_QUANTITY = BigDecimal.ONE;
     private static final BigDecimal DEFAULT_CATALOG_PRICE = new BigDecimal("10");
     private static final Pattern BOX_MULTIPLIER_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
@@ -1177,7 +1180,11 @@ public class ProductService {
     private void syncProductWithBitrix(Long productId) {
         BitrixSyncService bitrixSyncService = bitrixSyncServiceProvider.getIfAvailable();
         if (bitrixSyncService != null && productId != null) {
-            bitrixSyncService.syncLocalProduct(productId);
+            try {
+                bitrixSyncService.syncLocalProduct(productId);
+            } catch (RuntimeException exception) {
+                log.warn("Bitrix sync skipped for product {}: {}", productId, exception.getMessage());
+            }
         }
     }
 

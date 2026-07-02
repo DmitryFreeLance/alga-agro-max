@@ -287,6 +287,7 @@ bootstrap().catch(error => {
 
 root.addEventListener("click", handleClick);
 root.addEventListener("input", handleInput);
+root.addEventListener("search", handleInput);
 root.addEventListener("change", handleChange);
 root.addEventListener("submit", handleSubmit);
 root.addEventListener("focusin", handleFocusIn);
@@ -511,11 +512,11 @@ function renderCatalogPage() {
     return `
         <section class="page stack">
             <div class="search-shell">
-                <label class="search-field">
+                <div class="search-field" role="search">
                     <span>🔎</span>
                     <input data-field="catalog-query" type="search" placeholder="Поиск по каталогу..." value="${escapeAttr(state.catalog.query)}">
-                    ${searchQuery ? `<button type="button" class="search-clear-btn" data-action="clear-search">×</button>` : `<span></span>`}
-                </label>
+                    ${searchQuery ? `<button type="button" class="search-clear-btn" data-action="clear-search" aria-label="Очистить поиск">×</button>` : `<span class="search-clear-placeholder"></span>`}
+                </div>
             </div>
             ${state.catalog.section ? renderSectionPage() : renderCatalogHome(results)}
         </section>
@@ -989,6 +990,7 @@ function renderProductCard(product) {
     const favorite = isFavorite(product.id);
     const cartItem = getCartItem(product.id);
     const price = renderProductPrice(product);
+    const badge = renderProductCardBadge(product);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -996,7 +998,10 @@ function renderProductCard(product) {
                 <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
             </div>
             <div class="product-card-body">
-                <p class="product-card-title">${escapeHtml(product.name)}</p>
+                <div class="product-card-heading">
+                    <p class="product-card-title">${escapeHtml(product.name)}</p>
+                    ${badge}
+                </div>
                 ${renderProductCardDetails(product)}
                 <div class="price-line">
                     ${price}
@@ -1007,6 +1012,18 @@ function renderProductCard(product) {
             </div>
         </article>
     `;
+}
+
+function renderProductCardBadge(product) {
+    if (normalize(getProductSectionName(product)) === normalize("Семена")) {
+        const reproduction = getSeedReproductionDisplay(product);
+        if (!reproduction) {
+            return "";
+        }
+        return `<span class="product-card-badge product-card-badge-seed">${escapeHtml(reproduction)}</span>`;
+    }
+    const packageDisplay = formatCompactPackageDisplay(product) || product?.packageDescription || product?.packageType || product?.unitName || "Упаковка";
+    return `<span class="product-card-badge product-card-badge-package">${escapeHtml(packageDisplay)}</span>`;
 }
 
 function renderProductCardDetails(product) {
@@ -1028,13 +1045,11 @@ function renderProductCardDetails(product) {
     }
     const manufacturer = product?.brand || "Производитель";
     const category = getAdminCatalogChildName(product) || getProductSectionName(product) || "Категория";
-    const packageDisplay = formatCompactPackageDisplay(product) || product?.packageDescription || product?.packageType || product?.unitName || "Упаковка";
     const activeIngredient = product?.activeIngredient || "Действующее вещество";
     return `
         <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
         <div class="product-card-detail-list">
             <p class="product-card-detail">${escapeHtml(category)}</p>
-            <p class="product-card-detail">${escapeHtml(packageDisplay)}</p>
             <p class="product-card-detail">${escapeHtml(activeIngredient)}</p>
         </div>
     `;
@@ -2803,6 +2818,9 @@ function handleClick(event) {
     const button = event.target.closest("[data-action]");
     if (!button) return;
     const { action } = button.dataset;
+    if (button.tagName === "BUTTON") {
+        event.preventDefault();
+    }
     if (action === "pick-admin-suggestion") {
         applyAdminSuggestion(button.dataset.field, button.dataset.value || "");
         return;
@@ -2829,8 +2847,9 @@ function handleClick(event) {
         state.catalog.subcategorySearch = "";
         state.catalog.activeIngredientSearch = "";
         state.catalog.filterScrollTop = 0;
-        state.catalog.scrollToProductsPending = true;
+        state.catalog.scrollToProductsPending = false;
         render();
+        window.scrollTo({ top: 0, behavior: "auto" });
         return;
     }
     if (action === "set-section-subcategory") {
@@ -4291,6 +4310,10 @@ function getSeedVegetationPeriodDisplay(product) {
         product?.seedMaturityGroup
     );
     return String(rawValue || "").trim();
+}
+
+function getSeedReproductionDisplay(product) {
+    return getSeedReproductionValues(product)[0] || "";
 }
 
 function buildCategoriesTree(products) {
