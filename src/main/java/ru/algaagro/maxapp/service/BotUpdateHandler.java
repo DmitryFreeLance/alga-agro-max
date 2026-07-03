@@ -888,7 +888,7 @@ public class BotUpdateHandler {
                 Доступна заранее зашитая кнопка:
                 <code>\uD83D\uDED2 Каталог — https://max.ru/id9729390997_bot</code>
 
-                В боте ее можно только удалить.
+                Для постов она зафиксирована в коде и не редактируется через бота.
                 """,
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                 "html");

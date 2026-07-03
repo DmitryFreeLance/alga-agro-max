@@ -84,12 +84,9 @@ public class KeyboardFactory {
     }
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {
-        List<List<Map<String, Object>>> rows = new ArrayList<>();
-        for (PostButton button : postButtons) {
-            rows.add(List.of(messageButton("🗑 Удалить кнопку " + button.getId())));
-        }
-        rows.add(List.of(messageButton("🛠 Админка")));
-        return inlineKeyboard(rows);
+        return inlineKeyboard(List.of(
+                List.of(messageButton("🛠 Админка"))
+        ));
     }
 
     public List<Map<String, Object>> buttonTargetKeyboard() {

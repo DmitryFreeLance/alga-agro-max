@@ -18,21 +18,14 @@ public class PostButtonService {
         this.postButtonRepository = postButtonRepository;
     }
 
+    @Transactional
     public List<PostButton> getActiveButtons() {
-        return postButtonRepository.findAllByActiveTrueOrderBySortOrderAscIdAsc();
+        return List.of(ensureDefaultCatalogButton());
     }
 
     @Transactional
     public void ensureDefaultButtons() {
-        PostButton defaultButton = postButtonRepository.findFirstByLabelAndUrl(DEFAULT_CATALOG_LABEL, DEFAULT_CATALOG_URL)
-                .orElseGet(() -> {
-                    PostButton button = new PostButton();
-                    button.setLabel(DEFAULT_CATALOG_LABEL);
-                    button.setUrl(DEFAULT_CATALOG_URL);
-                    button.setActive(true);
-                    button.setSortOrder(0);
-                    return postButtonRepository.save(button);
-                });
+        PostButton defaultButton = ensureDefaultCatalogButton();
         postButtonRepository.findAll().forEach(button -> {
             boolean isDefault = button.getId() != null && button.getId().equals(defaultButton.getId());
             if (!isDefault && button.isActive()) {
@@ -44,19 +37,37 @@ public class PostButtonService {
 
     @Transactional
     public PostButton createButton(String label, String url) {
-        PostButton button = new PostButton();
-        button.setLabel(label);
-        button.setUrl(url);
-        button.setSortOrder((int) postButtonRepository.count());
-        return postButtonRepository.save(button);
+        return ensureDefaultCatalogButton();
     }
 
     @Transactional
     public boolean deleteButton(Long id) {
-        return postButtonRepository.findById(id).map(button -> {
-            button.setActive(false);
-            postButtonRepository.save(button);
-            return true;
-        }).orElse(false);
+        ensureDefaultCatalogButton();
+        return false;
+    }
+
+    private PostButton ensureDefaultCatalogButton() {
+        PostButton defaultButton = postButtonRepository.findFirstByLabelAndUrl(DEFAULT_CATALOG_LABEL, DEFAULT_CATALOG_URL)
+                .orElseGet(() -> {
+                    PostButton button = new PostButton();
+                    button.setLabel(DEFAULT_CATALOG_LABEL);
+                    button.setUrl(DEFAULT_CATALOG_URL);
+                    button.setActive(true);
+                    button.setSortOrder(0);
+                    return postButtonRepository.save(button);
+                });
+        boolean changed = false;
+        if (!defaultButton.isActive()) {
+            defaultButton.setActive(true);
+            changed = true;
+        }
+        if (defaultButton.getSortOrder() != 0) {
+            defaultButton.setSortOrder(0);
+            changed = true;
+        }
+        if (changed) {
+            defaultButton = postButtonRepository.save(defaultButton);
+        }
+        return defaultButton;
     }
 }
