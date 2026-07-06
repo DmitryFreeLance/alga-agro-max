@@ -574,6 +574,16 @@ img {
     color: #e25d6f;
 }
 
+.product-share-fab {
+    position: absolute;
+    top: 10px;
+    right: 58px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 16px rgba(27, 61, 18, 0.10);
+    color: var(--green-900);
+    font-size: 0.98rem;
+}
+
 .product-card-body {
     padding: 10px 12px 12px;
     display: grid;
@@ -1120,6 +1130,12 @@ img {
 .product-link-copy-btn {
     font-size: 1rem;
     line-height: 1;
+}
+
+.modal-head-product .mini-icon-btn,
+.modal-head-product .modal-close {
+    background: rgba(40, 115, 52, 0.10);
+    color: var(--green-900);
 }
 
 .modal-title-wrap {

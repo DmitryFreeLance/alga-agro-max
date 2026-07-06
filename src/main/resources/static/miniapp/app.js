@@ -1871,15 +1871,13 @@ function renderProductModal() {
             <div class="modal-sheet">
                 <div class="modal-head modal-head-product">
                     <button class="product-back-link" data-action="close-product">‹ Назад</button>
-                    <div class="modal-head-actions">
-                        <button type="button" class="mini-icon-btn product-link-copy-btn" data-action="copy-product-link" data-product-id="${product.id}" aria-label="Скопировать ссылку на товар">⛓</button>
-                        <button class="modal-close" data-action="close-product">×</button>
-                    </div>
+                    <button class="modal-close" data-action="close-product">×</button>
                 </div>
                 <div class="product-gallery">
                     <div class="gallery-stage" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
                         ${galleryItems.length > 1 ? `<button class="gallery-nav prev" data-action="gallery-prev">‹</button>` : ""}
                         <img src="${currentImage}" alt="${escapeAttr(product.name)}">
+                        <button type="button" class="mini-icon-btn product-share-fab" data-action="copy-product-link" data-product-id="${product.id}" aria-label="Скопировать ссылку на товар">🔗</button>
                         <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
                         ${galleryItems.length > 1 ? `<button class="gallery-nav next" data-action="gallery-next">›</button>` : ""}
                     </div>
