@@ -409,8 +409,8 @@ public class ProductService {
         }
         String unitName = firstNonBlank(product.getUnitName(), "шт");
         String normalizedUnit = TextUtils.normalizeToken(unitName);
-        String packageDescription = firstNonBlank(product.getPackageDescription());
-        String packageType = firstNonBlank(product.getPackageType());
+        String packageDescription = firstNonBlank(product.getPackageDescription(), "");
+        String packageType = firstNonBlank(product.getPackageType(), "");
         boolean volumeUnit = normalizedUnit.equals("л")
                 || normalizedUnit.contains("лит")
                 || normalizedUnit.equals("кг")

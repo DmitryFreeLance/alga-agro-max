@@ -24,8 +24,7 @@ const FIXED_SECTION_DEFINITIONS = [
             "Яровая пшеница",
             "Яровой ячмень",
             "Озимая рожь",
-            "Озимый тритикале",
-            "Яровой тритикале",
+            "Тритикале",
             "Гречиха",
             "Овес",
             "Бобовые травы",
@@ -130,8 +129,7 @@ const FIXED_PESTICIDE_CULTURE_OPTIONS = [
     "Яровая пшеница",
     "Яровой ячмень",
     "Озимая рожь",
-    "Озимый тритикале",
-    "Яровой тритикале",
+    "Тритикале",
     "Гречиха",
     "Овес",
     "Люцерна",
@@ -669,8 +667,7 @@ function resolveSectionSubcategory(rawValue, sectionName) {
         if (normalized.includes("яров") && normalized.includes("пшениц")) return "Яровая пшеница";
         if (normalized.includes("ячмен")) return "Яровой ячмень";
         if (normalized.includes("озим") && normalized.includes("рож")) return "Озимая рожь";
-        if (normalized.includes("озим") && normalized.includes("тритикал")) return "Озимый тритикале";
-        if (normalized.includes("яров") && normalized.includes("тритикал")) return "Яровой тритикале";
+        if (normalized.includes("тритикал")) return "Тритикале";
         if (normalized.includes("гречих")) return "Гречиха";
         if (normalized.includes("овес")) return "Овес";
         if (normalized.includes("люцерн")) return "Люцерна";
@@ -807,7 +804,7 @@ function expandCultureToFixedOptions(value, sectionName = "Семена") {
     else if (normalized.includes("люцерн")) matches = ["Люцерна"];
     else if (normalized.includes("ячмен")) matches = ["Яровой ячмень"];
     else if (normalized.includes("рож")) matches = ["Озимая рожь"];
-    else if (normalized.includes("тритикал")) matches = ["Озимый тритикале", "Яровой тритикале"];
+    else if (normalized.includes("тритикал")) matches = ["Тритикале"];
     else if (normalized.includes("пшениц")) matches = ["Озимая пшеница", "Яровая пшеница"];
     else if (normalized.includes("свекл")) matches = ["Сахарная свекла"];
     else if (normalized.includes("картоф")) matches = ["Картофель"];
@@ -823,7 +820,7 @@ function expandCultureToFixedOptions(value, sectionName = "Семена") {
     else if (normalized.includes("райграс") || normalized.includes("овсяниц") || normalized.includes("тимофеевк") || normalized.includes("фестулолиум") || normalized.includes("ежа")) {
         matches = ["Злаковые травы"];
     } else if (normalized.includes("зернов")) {
-        matches = ["Озимая пшеница", "Яровая пшеница", "Яровой ячмень", "Озимая рожь", "Озимый тритикале", "Яровой тритикале", "Овес"];
+        matches = ["Озимая пшеница", "Яровая пшеница", "Яровой ячмень", "Озимая рожь", "Тритикале", "Овес"];
     } else if (normalized.includes("маслич")) {
         matches = ["Подсолнечник", "Рапс", "Масличные травы"];
     } else if (normalized.includes("бобов")) {
@@ -1028,11 +1025,11 @@ function renderProductCardBadge(product) {
 
 function renderProductCardDetails(product) {
     if (normalize(getProductSectionName(product)) === normalize("Семена")) {
-        const manufacturer = product?.brand || "Производитель";
         const primarySubcategory = normalize(getSeedPrimarySubcategory(product));
         const isCorn = primarySubcategory === normalize("Кукуруза");
         const isSunflower = primarySubcategory === normalize("Подсолнечник");
         const isRapeseed = primarySubcategory === normalize("Рапс");
+        const cultureLabel = getSeedCardCultureLabel(product);
         const technology = getSeedTechnologyDisplay(product);
         const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
         const technologyLine = [technology, fao].filter(Boolean).join(" • ");
@@ -1040,15 +1037,18 @@ function renderProductCardDetails(product) {
         const vegetation = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
         if (isCorn) {
             return `
-                <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
+                <p class="product-card-subtitle">${escapeHtml(product?.brand || "Производитель")}</p>
                 <div class="product-card-detail-list">
                     <p class="product-card-detail">${escapeHtml(getSeedFaoDisplay(product) || "ФАО")}</p>
                     <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
                 </div>
             `;
         }
+        if (!isSunflower && !isRapeseed) {
+            return `<p class="product-card-subtitle">${escapeHtml(cultureLabel || getSeedPrimarySubcategory(product) || "Культура")}</p>`;
+        }
         return `
-            <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
+            <p class="product-card-subtitle">${escapeHtml(product?.brand || "Производитель")}</p>
             <div class="product-card-detail-list">
                 <p class="product-card-detail">${escapeHtml(technologyLine || "Технология возделывания")}</p>
                 <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
@@ -1840,6 +1840,13 @@ function renderProductModal() {
     const canBuy = true;
     const currentQty = getCartItem(product.id)?.quantity || state.productModal.quantity;
     const isSeedsSection = normalize(getProductSectionName(product)) === normalize("Семена");
+    const seedPrimarySubcategory = getSeedPrimarySubcategory(product);
+    const isSeedCorn = normalize(seedPrimarySubcategory) === normalize("Кукуруза");
+    const isSeedSunflower = normalize(seedPrimarySubcategory) === normalize("Подсолнечник");
+    const isSeedRapeseed = normalize(seedPrimarySubcategory) === normalize("Рапс");
+    const seedHeaderSubtitle = isSeedsSection && !isSeedCorn && !isSeedSunflower && !isSeedRapeseed
+        ? (getSeedCardCultureLabel(product) || seedPrimarySubcategory || "Культура")
+        : (product.brand || "Производитель");
     const displayPrice = product.price == null ? 10 : product.price;
     return `
         <div class="modal">
@@ -1864,7 +1871,7 @@ function renderProductModal() {
                     </div>
                     <div>
                         <h3>${escapeHtml(product.name)}</h3>
-                        <div class="product-brand">${escapeHtml(product.brand || "Производитель")}</div>
+                        <div class="product-brand">${escapeHtml(seedHeaderSubtitle)}</div>
                     </div>
                     <div class="detail-price">
                         ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
@@ -2472,7 +2479,7 @@ function renderAdminProductModal() {
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Раздел</label><select name="category" data-field="admin-product-category">${renderOptions(categories.map(item => [item, getSectionDisplayName(item)]), selectedCategory)}</select></div>
                             <div class="admin-field"><label>Подкатегория</label><select name="subcategory" ${subcategoryOptions.length ? "" : "disabled"}>${renderOptions((subcategoryOptions.length ? subcategoryOptions : [""]).map(item => [item, item || "Без подкатегории"]), selectedSubcategory || subcategoryOptions[0] || "")}</select></div>
-                            <div class="admin-field"><label>Производитель</label><input name="brand" autocomplete="off" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" required value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
+                            <div class="admin-field"><label>Производитель</label><input name="brand" autocomplete="off" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
                         </div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["liters", "Литры"], ["kg", "Килограммы"], ["pe", "П.е."], ["ton", "Тонны"]], orderMode)}</select></div>
@@ -4317,18 +4324,39 @@ function getSeedReproductionDisplay(product) {
     return getSeedReproductionValues(product)[0] || "";
 }
 
+function getSeedCardCultureLabel(product) {
+    const primarySubcategory = getSeedPrimarySubcategory(product);
+    if (normalize(primarySubcategory) === normalize("Тритикале")) {
+        return getSeedSpecificCultureLabel(product) || primarySubcategory;
+    }
+    return primarySubcategory;
+}
+
+function getSeedSpecificCultureLabel(product) {
+    const context = getProductContext(product);
+    if (context.includes("озим") && context.includes("тритикал")) {
+        return "Озимый тритикале";
+    }
+    if (context.includes("яров") && context.includes("тритикал")) {
+        return "Яровой тритикале";
+    }
+    return "";
+}
+
 function renderSeedProductSpecs(product) {
     const manufacturer = product?.brand || "Производитель";
     const primarySubcategory = normalize(getSeedPrimarySubcategory(product));
     const isCorn = primarySubcategory === normalize("Кукуруза");
     const isSunflower = primarySubcategory === normalize("Подсолнечник");
     const isRapeseed = primarySubcategory === normalize("Рапс");
+    const cultureLabel = getSeedCardCultureLabel(product) || getSeedPrimarySubcategory(product) || "Культура";
     const technology = getSeedTechnologyDisplay(product);
     const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
     const technologyLine = [technology, fao].filter(Boolean).join(" • ");
     const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
     const vegetationLabel = "Срок созревания";
     const vegetationValue = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
+    const packageDisplay = String(product?.packageDescription || "").trim();
     if (isCorn) {
         return `
             <div class="product-spec-item">
@@ -4343,6 +4371,26 @@ function renderSeedProductSpecs(product) {
                 <span>Количество семян</span>
                 <strong class="product-copy-block">${escapeHtml(seedsPerBag)}</strong>
             </div>
+            ${packageDisplay ? `
+                <div class="product-spec-item">
+                    <span>Фасовка</span>
+                    <strong class="product-copy-block">${escapeHtml(packageDisplay)}</strong>
+                </div>
+            ` : ""}
+        `;
+    }
+    if (!isSunflower && !isRapeseed) {
+        return `
+            <div class="product-spec-item">
+                <span>Культура</span>
+                <strong class="product-copy-block">${escapeHtml(cultureLabel)}</strong>
+            </div>
+            ${packageDisplay ? `
+                <div class="product-spec-item">
+                    <span>Фасовка</span>
+                    <strong class="product-copy-block">${escapeHtml(packageDisplay)}</strong>
+                </div>
+            ` : ""}
         `;
     }
     return `
@@ -4362,6 +4410,12 @@ function renderSeedProductSpecs(product) {
             <span>${escapeHtml(vegetationLabel)}</span>
             <strong class="product-copy-block">${escapeHtml(vegetationValue)}</strong>
         </div>
+        ${packageDisplay ? `
+            <div class="product-spec-item">
+                <span>Фасовка</span>
+                <strong class="product-copy-block">${escapeHtml(packageDisplay)}</strong>
+            </div>
+        ` : ""}
     `;
 }
 
