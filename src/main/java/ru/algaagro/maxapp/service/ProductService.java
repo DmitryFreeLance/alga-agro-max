@@ -138,7 +138,7 @@ public class ProductService {
         product.setExternalId(firstNonBlank(normalizedImportedProduct.externalId(), product.getExternalId(), created ? "manual-" + System.currentTimeMillis() : null));
         product.setSourceFile(firstNonBlank(normalizedImportedProduct.sourceFile(), product.getSourceFile()));
         product.setSku(firstNonBlank(normalizedImportedProduct.sku(), product.getSku()));
-        product.setName(firstNonBlank(normalizedImportedProduct.name(), product.getName()));
+        product.setName(resolveImportedText(product.getName(), normalizedImportedProduct.name()));
         product.setDescription(firstNonBlank(normalizedImportedProduct.description(), product.getDescription()));
         product.setBrand(firstNonBlank(normalizedImportedProduct.brand(), product.getBrand()));
         product.setCategory(firstNonBlank(normalizedImportedProduct.category(), product.getCategory()));
@@ -257,7 +257,7 @@ public class ProductService {
         Map<String, Object> existingFilterMap = jsonHelper.readMap(existing.getFilterMapJson());
         Map<String, Object> mergedFilterMap = mergeMaps(existingFilterMap, normalizedImportedProduct.filterMap());
         List<ImportFieldChange> changes = new ArrayList<>();
-        addStringChange(changes, "Название", existing.getName(), firstNonBlank(normalizedImportedProduct.name(), existing.getName()));
+        addStringChange(changes, "Название", existing.getName(), resolveImportedText(existing.getName(), normalizedImportedProduct.name()));
         addStringChange(changes, "Описание", existing.getDescription(), firstNonBlank(normalizedImportedProduct.description(), existing.getDescription()));
         addStringChange(changes, "Производитель", existing.getBrand(), firstNonBlank(normalizedImportedProduct.brand(), existing.getBrand()));
         addStringChange(changes, "Раздел", existing.getCategory(), firstNonBlank(normalizedImportedProduct.category(), existing.getCategory()));
@@ -1260,6 +1260,18 @@ public class ProductService {
         );
     }
 
+    private String resolveImportedText(String existingValue, String importedValue) {
+        String normalizedImported = blankToNull(importedValue);
+        if (normalizedImported == null) {
+            return existingValue;
+        }
+        String normalizedExisting = blankToNull(existingValue);
+        if (normalizedExisting != null && TextUtils.normalizeToken(normalizedExisting).equals(TextUtils.normalizeToken(normalizedImported))) {
+            return normalizedExisting;
+        }
+        return normalizedImported;
+    }
+
     private boolean shouldDefaultBigBagForSeed(String category, String subcategory, List<String> cultures, String name, String description) {
         if (!CatalogStructure.SEEDS.equals(CatalogStructure.normalizeSectionName(category))) {
             return false;
@@ -1298,7 +1310,7 @@ public class ProductService {
         return !Objects.equals(blankToNull(existing.getExternalId()), blankToNull(firstNonBlank(normalizedImported.externalId(), existing.getExternalId())))
                 || !Objects.equals(blankToNull(existing.getSourceFile()), blankToNull(firstNonBlank(normalizedImported.sourceFile(), existing.getSourceFile())))
                 || !Objects.equals(blankToNull(existing.getSku()), blankToNull(firstNonBlank(normalizedImported.sku(), existing.getSku())))
-                || !Objects.equals(blankToNull(existing.getName()), blankToNull(firstNonBlank(normalizedImported.name(), existing.getName())))
+                || !Objects.equals(blankToNull(existing.getName()), blankToNull(resolveImportedText(existing.getName(), normalizedImported.name())))
                 || !Objects.equals(blankToNull(existing.getDescription()), blankToNull(firstNonBlank(normalizedImported.description(), existing.getDescription())))
                 || !Objects.equals(blankToNull(existing.getBrand()), blankToNull(firstNonBlank(normalizedImported.brand(), existing.getBrand())))
                 || !Objects.equals(blankToNull(existing.getCategory()), blankToNull(firstNonBlank(normalizedImported.category(), existing.getCategory())))

@@ -2253,7 +2253,8 @@ public class ExcelImportService {
         if (row == null || !isWorkbookFileName(row.sourceFile()) || row.columns() == null || row.columns().isEmpty()) {
             return Optional.empty();
         }
-        if (countStructuredWorkbookHeaders(row.columns()) < 2) {
+        int structuredHeaderCount = countStructuredWorkbookHeaders(row.columns());
+        if (structuredHeaderCount < 2) {
             return Optional.empty();
         }
 
@@ -2264,114 +2265,222 @@ public class ExcelImportService {
         if (name.isBlank()) {
             return Optional.empty();
         }
+        boolean hasSectionColumn = hasHeader(row.columns(), "раздел", "section");
+        boolean hasCategoryColumn = hasHeader(row.columns(), "категор", "category");
+        boolean hasSubcategoryColumn = hasHeader(row.columns(), "подкатегор", "subcategory");
+        boolean hasCultureColumn = hasHeader(row.columns(), "культура", "cultures", "culture");
+        boolean hasItemTypeColumn = hasHeader(row.columns(), "тип товара", "товарная группа", "item type", "itemtype");
+        boolean hasBrandColumn = hasHeader(row.columns(), "производител", "бренд", "manufacturer", "brand");
+        boolean hasActiveIngredientColumn = hasHeader(row.columns(), "действующ", "active ingredient", "activeingredient");
+        boolean hasDescriptionColumn = hasHeader(row.columns(), "описан", "description");
+        boolean hasCompositionColumn = hasHeader(row.columns(), "состав", "composition");
+        boolean hasRateColumn = hasHeader(row.columns(), "норма расхода", "расход", "дозиров");
+        boolean hasUnitColumn = hasHeader(row.columns(), "единица заказа", "ед заказа", "единица", "ед.", "unitname", "unit");
+        boolean hasPriceColumn = hasHeader(row.columns(), "цена", "стоим", "прайс", "price", "руб");
+        boolean hasStockColumn = hasHeader(row.columns(), "остат", "налич", "stock", "колич");
+        boolean hasPackageTypeColumn = hasHeader(row.columns(), "тип упаков", "packagetype");
+        boolean hasPackageDescriptionColumn = hasHeader(row.columns(), "фасовк", "упаковк", "тара", "package description", "packagedescription", "объем", "объём", "package volume", "packagevolume");
+        boolean hasMinOrderColumn = hasHeader(row.columns(), "мин", "минимальн", "minimum", "minorderquantity");
+        boolean hasOrderStepColumn = hasHeader(row.columns(), "кратност", "шаг заказа", "order step", "orderstep");
+        boolean hasDiscountColumn = hasHeader(row.columns(), "скидк", "discount");
+        boolean hasOldPriceColumn = hasHeader(row.columns(), "старая цена", "old price", "oldprice");
+        boolean hasForGreenhouseColumn = hasHeader(row.columns(), "теплиц", "закрыт", "greenhouse");
+        boolean hasSeedFaoColumn = hasHeader(row.columns(), "фао", "fao");
+        boolean hasSeedsPerBagColumn = hasHeader(row.columns(), "семян в мешке", "штук в мешке", "количество семян", "seedsperbag", "bagseedcount");
+        boolean hasSeedMaturityGroupColumn = hasHeader(row.columns(), "группа спелости", "seedmaturitygroup", "maturitygroup");
+        boolean hasSeedReproductionColumn = hasHeader(row.columns(), "репродукц", "seedreproduction", "reproduction");
+        boolean hasSeedVegetationPeriodColumn = hasHeader(row.columns(), "срок вегетац", "срок созреван", "дни вегетац", "seedvegetationperiod", "vegetationperiod");
+        boolean hasCultivationTechnologyColumn = hasHeader(row.columns(), "технология возделыв", "технология обработк", "cultivationtechnology");
+        boolean hasPurposesColumn = hasHeader(row.columns(), "назначен", "purpose", "purposes");
+        boolean hasTagsColumn = hasHeader(row.columns(), "тег", "tags");
 
-        String explicitSection = readColumn(row.columns(), "раздел", "section");
-        String explicitCategoryValue = readColumn(row.columns(), "категор", "category");
-        String explicitSubcategory = readColumn(row.columns(), "подкатегор", "subcategory");
-        String explicitCulture = readColumn(row.columns(), "культура", "cultures", "culture");
-        String itemType = readColumn(row.columns(), "тип товара", "товарная группа", "item type", "itemtype");
-        String brand = readColumn(row.columns(), "производител", "бренд", "manufacturer", "brand");
-        String activeIngredient = readColumn(row.columns(), "действующ", "active ingredient", "activeingredient");
-        String description = readColumn(row.columns(), "описан", "description");
-        String composition = readColumn(row.columns(), "состав", "composition");
-        String rate = firstNonBlank(
+        if (isPriceOnlyWorkbookRow(row.columns(), structuredHeaderCount)) {
+            return Optional.of(productService.prepareImportedProduct(new ProductService.ImportedProduct(
+                    buildExternalId(row),
+                    row.sourceFile(),
+                    firstNonBlank(readColumn(row.columns(), "артикул", "sku", "код"), extractSku(row.columns())),
+                    name,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    firstPositive(
+                            parseStructuredDecimal(row.columns(), "цена", "стоим", "прайс", "price", "руб"),
+                            extractPrice(row.columns())
+                    ),
+                    firstPositive(
+                            parseStructuredDecimal(row.columns(), "остат", "налич", "stock", "колич"),
+                            extractStock(row.columns())
+                    ),
+                    "",
+                    "",
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    Map.of(),
+                    new LinkedHashMap<>(row.columns())
+            )));
+        }
+
+        String explicitSection = hasSectionColumn ? readColumn(row.columns(), "раздел", "section") : "";
+        String explicitCategoryValue = hasCategoryColumn ? readColumn(row.columns(), "категор", "category") : "";
+        String explicitSubcategory = hasSubcategoryColumn ? readColumn(row.columns(), "подкатегор", "subcategory") : "";
+        String explicitCulture = hasCultureColumn ? readColumn(row.columns(), "культура", "cultures", "culture") : "";
+        String itemType = hasItemTypeColumn ? readColumn(row.columns(), "тип товара", "товарная группа", "item type", "itemtype") : "";
+        String brand = hasBrandColumn ? readColumn(row.columns(), "производител", "бренд", "manufacturer", "brand") : "";
+        String activeIngredient = hasActiveIngredientColumn ? readColumn(row.columns(), "действующ", "active ingredient", "activeingredient") : "";
+        String description = hasDescriptionColumn ? readColumn(row.columns(), "описан", "description") : "";
+        String composition = hasCompositionColumn ? readColumn(row.columns(), "состав", "composition") : "";
+        String rate = hasRateColumn ? firstNonBlank(
                 readColumn(row.columns(), "норма расхода"),
                 readColumn(row.columns(), "расход"),
                 readColumn(row.columns(), "дозиров")
-        );
-        String unitName = firstNonBlank(
-                readColumn(row.columns(), "единица заказа", "ед заказа", "единица", "ед.", "unitname", "unit"),
-                inferUnit(row.columns()).orElse("")
-        );
-        BigDecimal price = firstPositive(
-                parseStructuredDecimal(row.columns(), "цена", "стоим", "прайс", "price", "руб"),
-                extractPrice(row.columns())
-        );
-        BigDecimal stockQuantity = firstPositive(
-                parseStructuredDecimal(row.columns(), "остат", "налич", "stock", "колич"),
-                extractStock(row.columns())
-        );
-        String packageType = readColumn(row.columns(), "тип упаков", "packagetype");
-        String packageDescription = firstNonBlank(
-                readColumn(row.columns(), "фасовк", "упаковк", "тара", "package description", "packagedescription"),
-                readColumn(row.columns(), "объем", "объём", "package volume", "packagevolume")
-        );
-        BigDecimal minOrderQuantity = parseStructuredDecimal(row.columns(), "мин", "минимальн", "minimum", "minorderquantity");
-        BigDecimal orderStep = parseStructuredDecimal(row.columns(), "кратност", "шаг заказа", "order step", "orderstep");
-        String discountPercent = readColumn(row.columns(), "скидк", "discount");
-        String oldPrice = readColumn(row.columns(), "старая цена", "old price", "oldprice");
-        boolean forGreenhouse = parseBooleanValue(readColumn(row.columns(), "теплиц", "закрыт", "greenhouse"));
-        String seedFao = readColumn(row.columns(), "фао", "fao");
-        String seedsPerBag = firstNonBlank(
+        ) : "";
+        String unitName = hasUnitColumn
+                ? firstNonBlank(readColumn(row.columns(), "единица заказа", "ед заказа", "единица", "ед.", "unitname", "unit"), inferUnit(row.columns()).orElse(""))
+                : "";
+        BigDecimal price = hasPriceColumn
+                ? firstPositive(parseStructuredDecimal(row.columns(), "цена", "стоим", "прайс", "price", "руб"), extractPrice(row.columns()))
+                : null;
+        BigDecimal stockQuantity = hasStockColumn
+                ? firstPositive(parseStructuredDecimal(row.columns(), "остат", "налич", "stock", "колич"), extractStock(row.columns()))
+                : null;
+        String packageType = hasPackageTypeColumn ? readColumn(row.columns(), "тип упаков", "packagetype") : "";
+        String packageDescription = hasPackageDescriptionColumn
+                ? firstNonBlank(
+                        readColumn(row.columns(), "фасовк", "упаковк", "тара", "package description", "packagedescription"),
+                        readColumn(row.columns(), "объем", "объём", "package volume", "packagevolume")
+                )
+                : "";
+        BigDecimal minOrderQuantity = hasMinOrderColumn ? parseStructuredDecimal(row.columns(), "мин", "минимальн", "minimum", "minorderquantity") : null;
+        BigDecimal orderStep = hasOrderStepColumn ? parseStructuredDecimal(row.columns(), "кратност", "шаг заказа", "order step", "orderstep") : null;
+        String discountPercent = hasDiscountColumn ? readColumn(row.columns(), "скидк", "discount") : "";
+        String oldPrice = hasOldPriceColumn ? readColumn(row.columns(), "старая цена", "old price", "oldprice") : "";
+        boolean forGreenhouse = hasForGreenhouseColumn && parseBooleanValue(readColumn(row.columns(), "теплиц", "закрыт", "greenhouse"));
+        String seedFao = hasSeedFaoColumn ? readColumn(row.columns(), "фао", "fao") : "";
+        String seedsPerBag = hasSeedsPerBagColumn ? firstNonBlank(
                 readColumn(row.columns(), "семян в мешке"),
                 readColumn(row.columns(), "штук в мешке"),
                 readColumn(row.columns(), "количество семян"),
                 readColumn(row.columns(), "seedsperbag"),
                 readColumn(row.columns(), "bagseedcount")
-        );
-        String seedMaturityGroup = firstNonBlank(
+        ) : "";
+        String seedMaturityGroup = hasSeedMaturityGroupColumn ? firstNonBlank(
                 readColumn(row.columns(), "группа спелости"),
                 readColumn(row.columns(), "seedmaturitygroup"),
                 readColumn(row.columns(), "maturitygroup")
-        );
-        String seedReproduction = firstNonBlank(
+        ) : "";
+        String seedReproduction = hasSeedReproductionColumn ? firstNonBlank(
                 readColumn(row.columns(), "репродукц"),
                 readColumn(row.columns(), "seedreproduction"),
                 readColumn(row.columns(), "reproduction")
-        );
-        String seedVegetationPeriod = firstNonBlank(
+        ) : "";
+        String seedVegetationPeriod = hasSeedVegetationPeriodColumn ? firstNonBlank(
                 readColumn(row.columns(), "срок вегетац"),
                 readColumn(row.columns(), "срок созреван"),
                 readColumn(row.columns(), "дни вегетац"),
                 readColumn(row.columns(), "seedvegetationperiod"),
                 readColumn(row.columns(), "vegetationperiod")
-        );
-        String cultivationTechnology = firstNonBlank(
+        ) : "";
+        String cultivationTechnology = hasCultivationTechnologyColumn ? firstNonBlank(
                 readColumn(row.columns(), "технология возделыв"),
                 readColumn(row.columns(), "технология обработк"),
                 readColumn(row.columns(), "cultivationtechnology")
-        );
+        ) : "";
 
-        if (description.isBlank()) {
+        ProductService.ImportMatch existingMatch = productService.findExistingProductForImport(new ProductService.ImportedProduct(
+                buildExternalId(row),
+                row.sourceFile(),
+                firstNonBlank(readColumn(row.columns(), "артикул", "sku", "код"), extractSku(row.columns())),
+                name,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                price,
+                stockQuantity,
+                "",
+                "",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(),
+                new LinkedHashMap<>(row.columns())
+        ));
+        boolean updatesExistingProduct = existingMatch.product() != null;
+
+        if (!updatesExistingProduct && description.isBlank()) {
             description = buildLocalDescription(row, composition, rate);
         }
 
-        String normalizedCategoryFromCategoryColumn = normalizeStructuredSection(explicitCategoryValue);
-        String category = firstNonBlank(normalizeStructuredSection(explicitSection), normalizedCategoryFromCategoryColumn);
+        String normalizedCategoryFromCategoryColumn = hasCategoryColumn ? normalizeStructuredSection(explicitCategoryValue) : "";
+        String category = firstNonBlank(hasSectionColumn ? normalizeStructuredSection(explicitSection) : "", normalizedCategoryFromCategoryColumn);
         String subcategoryCandidate = firstNonBlank(
                 explicitSubcategory,
-                normalizedCategoryFromCategoryColumn.isBlank() ? explicitCategoryValue : "",
-                explicitCulture
+                hasCategoryColumn && normalizedCategoryFromCategoryColumn.isBlank() ? explicitCategoryValue : "",
+                !updatesExistingProduct ? explicitCulture : ""
         );
-        if (category.isBlank()) {
+        if (!updatesExistingProduct && category.isBlank()) {
             category = inferStructuredCategory(row, subcategoryCandidate, activeIngredient, description, forGreenhouse, seedFao, seedsPerBag, cultivationTechnology);
         }
-        if (forGreenhouse) {
+        if (hasForGreenhouseColumn && forGreenhouse) {
             category = CatalogStructure.CLOSED_GROUND;
         }
-        String subcategory = inferStructuredSubcategory(category, row, subcategoryCandidate, description);
-        if (itemType.isBlank()) {
+        String subcategory = updatesExistingProduct
+                ? firstNonBlank(
+                        explicitSubcategory,
+                        hasCategoryColumn && normalizedCategoryFromCategoryColumn.isBlank() ? explicitCategoryValue : ""
+                )
+                : inferStructuredSubcategory(category, row, subcategoryCandidate, description);
+        if (!updatesExistingProduct && itemType.isBlank()) {
             itemType = firstNonBlank(subcategory, category, row.section());
         }
 
-        List<String> cultures = splitMultiValue(firstNonBlank(explicitCulture, CatalogStructure.SEEDS.equals(category) ? subcategory : ""));
-        List<String> purposes = splitMultiValue(readColumn(row.columns(), "назначен", "purpose", "purposes"));
-        List<String> tags = splitMultiValue(firstNonBlank(
-                readColumn(row.columns(), "тег", "tags"),
-                readColumn(row.columns(), "назначен", "purpose", "purposes")
-        ));
+        List<String> cultures = hasCultureColumn
+                ? splitMultiValue(firstNonBlank(explicitCulture, !updatesExistingProduct && CatalogStructure.SEEDS.equals(category) ? subcategory : ""))
+                : List.of();
+        List<String> purposes = hasPurposesColumn ? splitMultiValue(readColumn(row.columns(), "назначен", "purpose", "purposes")) : List.of();
+        List<String> tags = hasTagsColumn
+                ? splitMultiValue(firstNonBlank(readColumn(row.columns(), "тег", "tags"), hasPurposesColumn ? readColumn(row.columns(), "назначен", "purpose", "purposes") : ""))
+                : List.of();
 
         Map<String, Object> filterMap = new LinkedHashMap<>();
-        putIfNotBlank(filterMap, "activeIngredient", activeIngredient);
-        putIfNotBlank(filterMap, "discountPercent", discountPercent);
-        putIfNotBlank(filterMap, "oldPrice", oldPrice);
-        putIfNotBlank(filterMap, "seedFao", seedFao);
-        putIfNotBlank(filterMap, "seedsPerBag", seedsPerBag);
-        putIfNotBlank(filterMap, "seedMaturityGroup", seedMaturityGroup);
-        putIfNotBlank(filterMap, "seedReproduction", seedReproduction);
-        putIfNotBlank(filterMap, "seedVegetationPeriod", seedVegetationPeriod);
-        putIfNotBlank(filterMap, "cultivationTechnology", cultivationTechnology);
-        if (forGreenhouse) {
+        if (hasActiveIngredientColumn) {
+            putIfNotBlank(filterMap, "activeIngredient", activeIngredient);
+        }
+        if (hasDiscountColumn) {
+            putIfNotBlank(filterMap, "discountPercent", discountPercent);
+        }
+        if (hasOldPriceColumn) {
+            putIfNotBlank(filterMap, "oldPrice", oldPrice);
+        }
+        if (hasSeedFaoColumn) {
+            putIfNotBlank(filterMap, "seedFao", seedFao);
+        }
+        if (hasSeedsPerBagColumn) {
+            putIfNotBlank(filterMap, "seedsPerBag", seedsPerBag);
+        }
+        if (hasSeedMaturityGroupColumn) {
+            putIfNotBlank(filterMap, "seedMaturityGroup", seedMaturityGroup);
+        }
+        if (hasSeedReproductionColumn) {
+            putIfNotBlank(filterMap, "seedReproduction", seedReproduction);
+        }
+        if (hasSeedVegetationPeriodColumn) {
+            putIfNotBlank(filterMap, "seedVegetationPeriod", seedVegetationPeriod);
+        }
+        if (hasCultivationTechnologyColumn) {
+            putIfNotBlank(filterMap, "cultivationTechnology", cultivationTechnology);
+        }
+        if (hasForGreenhouseColumn && forGreenhouse) {
             filterMap.put("forGreenhouse", true);
         }
 
@@ -2381,37 +2490,70 @@ public class ExcelImportService {
                 rawData.put(key.trim(), value.trim());
             }
         });
-        putIfNotBlank(rawData, "Действующее вещество", activeIngredient);
-        putIfNotBlank(rawData, "ФАО", seedFao);
-        putIfNotBlank(rawData, "Семян в мешке", seedsPerBag);
-        putIfNotBlank(rawData, "Группа спелости", seedMaturityGroup);
-        putIfNotBlank(rawData, "Репродукция", seedReproduction);
-        putIfNotBlank(rawData, "Технология возделывания", cultivationTechnology);
-        putIfNotBlank(rawData, "Срок вегетации", seedVegetationPeriod);
-        putIfNotBlank(rawData, "Фасовка", packageDescription);
-        putIfNotBlank(rawData, "Культура", firstNonBlank(explicitCulture, subcategory));
-        putIfNotBlank(rawData, "Подкатегория", subcategory);
-        putIfNotBlank(rawData, "Раздел", category);
-        putIfNotBlank(rawData, "Минимальный заказ", formatDecimal(minOrderQuantity));
-        putIfNotBlank(rawData, "Кратность", formatDecimal(orderStep));
+        if (hasActiveIngredientColumn) {
+            putIfNotBlank(rawData, "Действующее вещество", activeIngredient);
+        }
+        if (hasSeedFaoColumn) {
+            putIfNotBlank(rawData, "ФАО", seedFao);
+        }
+        if (hasSeedsPerBagColumn) {
+            putIfNotBlank(rawData, "Семян в мешке", seedsPerBag);
+        }
+        if (hasSeedMaturityGroupColumn) {
+            putIfNotBlank(rawData, "Группа спелости", seedMaturityGroup);
+        }
+        if (hasSeedReproductionColumn) {
+            putIfNotBlank(rawData, "Репродукция", seedReproduction);
+        }
+        if (hasCultivationTechnologyColumn) {
+            putIfNotBlank(rawData, "Технология возделывания", cultivationTechnology);
+        }
+        if (hasSeedVegetationPeriodColumn) {
+            putIfNotBlank(rawData, "Срок вегетации", seedVegetationPeriod);
+        }
+        if (hasPackageDescriptionColumn) {
+            putIfNotBlank(rawData, "Фасовка", packageDescription);
+        }
+        if (hasCultureColumn) {
+            putIfNotBlank(rawData, "Культура", firstNonBlank(explicitCulture, !updatesExistingProduct ? subcategory : ""));
+        }
+        if (hasSubcategoryColumn) {
+            putIfNotBlank(rawData, "Подкатегория", subcategory);
+        }
+        if (hasSectionColumn || hasCategoryColumn || (hasForGreenhouseColumn && forGreenhouse)) {
+            putIfNotBlank(rawData, "Раздел", category);
+        }
+        if (hasMinOrderColumn) {
+            putIfNotBlank(rawData, "Минимальный заказ", formatDecimal(minOrderQuantity));
+        }
+        if (hasOrderStepColumn) {
+            putIfNotBlank(rawData, "Кратность", formatDecimal(orderStep));
+        }
 
-        ProductService.OrderRules orderRules = productService.inferOrderRules(
-                name,
-                unitName,
-                description,
-                rawData,
-                filterMap
-        );
-        String resolvedUnitName = firstNonBlank(
-                unitName,
-                CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
-                orderRules.unitName(),
-                "шт"
-        );
-        String resolvedPackageType = firstNonBlank(packageType, orderRules.packageType());
-        String resolvedPackageDescription = firstNonBlank(packageDescription, orderRules.packageDescription());
-        BigDecimal resolvedMinOrder = firstPositive(minOrderQuantity, orderRules.minOrderQuantity());
-        BigDecimal resolvedOrderStep = firstPositive(orderStep, orderRules.orderStep(), resolvedMinOrder);
+        String resolvedUnitName = unitName;
+        String resolvedPackageType = packageType;
+        String resolvedPackageDescription = packageDescription;
+        BigDecimal resolvedMinOrder = minOrderQuantity;
+        BigDecimal resolvedOrderStep = orderStep;
+        if (!updatesExistingProduct) {
+            ProductService.OrderRules orderRules = productService.inferOrderRules(
+                    name,
+                    unitName,
+                    description,
+                    rawData,
+                    filterMap
+            );
+            resolvedUnitName = firstNonBlank(
+                    unitName,
+                    CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
+                    orderRules.unitName(),
+                    "шт"
+            );
+            resolvedPackageType = firstNonBlank(packageType, orderRules.packageType());
+            resolvedPackageDescription = firstNonBlank(packageDescription, orderRules.packageDescription());
+            resolvedMinOrder = firstPositive(minOrderQuantity, orderRules.minOrderQuantity());
+            resolvedOrderStep = firstPositive(orderStep, orderRules.orderStep(), resolvedMinOrder);
+        }
 
         return Optional.of(productService.prepareImportedProduct(new ProductService.ImportedProduct(
                 buildExternalId(row),
@@ -2545,6 +2687,13 @@ public class ExcelImportService {
                 .filter(row -> countStructuredWorkbookHeaders(row.columns()) >= 2)
                 .count();
         return structuredRows * 10 >= rows.size() * 8;
+    }
+
+    private boolean isPriceOnlyWorkbookRow(Map<String, String> columns, int structuredHeaderCount) {
+        return structuredHeaderCount <= 2
+                && hasHeader(columns, "назван", "наименован", "позиция", "товар", "номенклат", "product", "name")
+                && hasHeader(columns, "цена", "стоим", "прайс", "price", "руб")
+                && !hasHeader(columns, "раздел", "section", "категор", "category", "подкатегор", "subcategory", "культура", "cultures", "culture");
     }
 
     private boolean hasHeader(Map<String, String> columns, String... needles) {
