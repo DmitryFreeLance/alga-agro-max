@@ -305,11 +305,13 @@ root.addEventListener("change", handleChange);
 root.addEventListener("submit", handleSubmit);
 root.addEventListener("focusin", handleFocusIn);
 root.addEventListener("focusout", handleFocusOut);
+window.addEventListener("popstate", handlePopState);
 
 async function bootstrap() {
     const criticalProducts = fetchJson("/api/catalog/products?sort=name").then(products => {
         state.products = products;
         state.sections = getCatalogSections();
+        syncProductModalFromUrl();
         state.app.catalogLoading = false;
         render();
     });
@@ -1869,7 +1871,10 @@ function renderProductModal() {
             <div class="modal-sheet">
                 <div class="modal-head modal-head-product">
                     <button class="product-back-link" data-action="close-product">‹ Назад</button>
-                    <button class="modal-close" data-action="close-product">×</button>
+                    <div class="modal-head-actions">
+                        <button type="button" class="mini-icon-btn product-link-copy-btn" data-action="copy-product-link" data-product-id="${product.id}" aria-label="Скопировать ссылку на товар">⛓</button>
+                        <button class="modal-close" data-action="close-product">×</button>
+                    </div>
                 </div>
                 <div class="product-gallery">
                     <div class="gallery-stage" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -2907,13 +2912,17 @@ function handleClick(event) {
         return;
     }
     if (action === "open-product") {
-        state.productModal = { open: true, productId: Number(button.dataset.productId), quantity: 1, imageIndex: 0 };
+        openProductModal(Number(button.dataset.productId));
         render();
         return;
     }
     if (action === "close-product") {
         closeProductModal();
         render();
+        return;
+    }
+    if (action === "copy-product-link") {
+        copyProductLink(Number(button.dataset.productId)).catch(handleActionError);
         return;
     }
     if (action === "gallery-prev" || action === "gallery-next") {
@@ -3947,6 +3956,7 @@ async function refreshCatalogData() {
     ]);
     state.products = products;
     state.sections = getCatalogSections();
+    syncProductModalFromUrl();
     if (state.profile?.admin) {
         await loadAdminData();
     }
@@ -4663,8 +4673,46 @@ function isFavorite(productId) {
     return state.favorites.includes(productId);
 }
 
-function closeProductModal() {
+function closeProductModal(options = {}) {
+    const { syncUrl = true } = options;
     state.productModal = { open: false, productId: null, quantity: 1, imageIndex: 0 };
+    if (syncUrl) {
+        updateBrowserProductUrl(null);
+    }
+}
+
+function openProductModal(productId, options = {}) {
+    const { syncUrl = true } = options;
+    const product = getProductById(Number(productId));
+    if (!product) {
+        return false;
+    }
+    state.productModal = {
+        open: true,
+        productId: product.id,
+        quantity: getInitialQuantity(product),
+        imageIndex: 0,
+    };
+    if (syncUrl) {
+        updateBrowserProductUrl(product.id);
+    }
+    return true;
+}
+
+function handlePopState() {
+    syncProductModalFromUrl();
+    render();
+}
+
+function syncProductModalFromUrl() {
+    const requestedProductId = getRequestedProductIdFromUrl();
+    if (requestedProductId) {
+        openProductModal(requestedProductId, { syncUrl: false });
+        return;
+    }
+    if (state.productModal.open) {
+        closeProductModal({ syncUrl: false });
+    }
 }
 
 function hydrateCheckoutFromProfile() {
@@ -5431,6 +5479,78 @@ function resolveMaxUserId() {
         }
     }
     return null;
+}
+
+function getRequestedProductIdFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const candidate = Number(url.searchParams.get("productId") || url.searchParams.get("product") || "");
+        return Number.isFinite(candidate) && candidate > 0 ? candidate : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function updateBrowserProductUrl(productId) {
+    if (!window.history?.replaceState) {
+        return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("product");
+    if (productId && Number.isFinite(Number(productId))) {
+        url.searchParams.set("productId", String(productId));
+    } else {
+        url.searchParams.delete("productId");
+    }
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+}
+
+function buildProductShareUrl(productId) {
+    const baseUrl = String(
+        state.meta?.miniAppUrl
+        || `${window.location.origin}${window.location.pathname}`
+    ).trim();
+    const url = new URL(baseUrl, window.location.href);
+    url.searchParams.delete("maxUserId");
+    url.searchParams.delete("product");
+    url.searchParams.set("productId", String(productId));
+    return url.toString();
+}
+
+async function copyProductLink(productId) {
+    const product = getProductById(Number(productId));
+    if (!product) {
+        throw new Error("Товар не найден.");
+    }
+    const url = buildProductShareUrl(product.id);
+    await copyTextToClipboard(url);
+    showNotice("Ссылка на товар скопирована.");
+}
+
+async function copyTextToClipboard(text) {
+    const value = String(text || "").trim();
+    if (!value) {
+        throw new Error("Нет текста для копирования.");
+    }
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "readonly");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (!successful) {
+        throw new Error("Не удалось скопировать ссылку.");
+    }
 }
 
 function parseMaxUserIdFromBridgeInitData() {

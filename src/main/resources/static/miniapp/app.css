@@ -1111,6 +1111,17 @@ img {
     padding: 14px 14px 0;
 }
 
+.modal-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.product-link-copy-btn {
+    font-size: 1rem;
+    line-height: 1;
+}
+
 .modal-title-wrap {
     min-width: 0;
 }
