@@ -351,6 +351,7 @@ public class ProductService {
         dto.put("minOrderQuantity", orderRules.minOrderQuantity());
         dto.put("orderStep", orderRules.orderStep());
         dto.put("orderHint", buildOrderHint(orderRules));
+        dto.put("orderDisplayUnit", resolveDisplayUnit(product));
         dto.put("imageStyle", buildImageStyle(product));
         dto.put("oldPrice", effectivePrice != null && basePrice != null && effectivePrice.compareTo(basePrice) < 0 ? basePrice : legacyOldPrice);
         dto.put("discountPercent", discountPercent);
@@ -400,6 +401,26 @@ public class ProductService {
                 Objects.toString(rawData.getOrDefault("Дни вегетации", ""), "")
         ));
         return dto;
+    }
+
+    public String resolveDisplayUnit(CatalogProduct product) {
+        if (product == null) {
+            return "шт";
+        }
+        String unitName = firstNonBlank(product.getUnitName(), "шт");
+        String normalizedUnit = TextUtils.normalizeToken(unitName);
+        String packageDescription = firstNonBlank(product.getPackageDescription());
+        String packageType = firstNonBlank(product.getPackageType());
+        boolean volumeUnit = normalizedUnit.equals("л")
+                || normalizedUnit.contains("лит")
+                || normalizedUnit.equals("кг")
+                || normalizedUnit.contains("кил");
+        boolean boxLike = BOX_MULTIPLIER_PATTERN.matcher(packageDescription).find()
+                || TextUtils.normalizeToken(packageType).contains("короб");
+        if (volumeUnit && boxLike) {
+            return "шт";
+        }
+        return unitName;
     }
 
     public Map<String, Object> toAdminDto(CatalogProduct product) {

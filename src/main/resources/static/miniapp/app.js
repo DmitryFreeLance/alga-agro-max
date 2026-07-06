@@ -571,14 +571,14 @@ function renderSectionPage() {
     return `
         <div class="stack">
             ${renderSectionStructure(state.catalog.section, products)}
-            <div class="toolbar-row catalog-toolbar-compact">
-                <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Фильтры</button>
+            <div class="toolbar-row catalog-toolbar-compact" data-products-anchor="catalog-results">
+                <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Ещё фильтры</button>
                 <select class="toolbar-select" data-field="catalog-sort">
                     ${renderSortOptions()}
                 </select>
             </div>
             <div class="search-muted">${filtered.length} товаров</div>
-            <div data-products-anchor="catalog-results">
+            <div>
                 ${renderProductsGrid(filtered)}
             </div>
         </div>
@@ -1029,15 +1029,28 @@ function renderProductCardBadge(product) {
 function renderProductCardDetails(product) {
     if (normalize(getProductSectionName(product)) === normalize("Семена")) {
         const manufacturer = product?.brand || "Производитель";
+        const primarySubcategory = normalize(getSeedPrimarySubcategory(product));
+        const isCorn = primarySubcategory === normalize("Кукуруза");
+        const isSunflower = primarySubcategory === normalize("Подсолнечник");
+        const isRapeseed = primarySubcategory === normalize("Рапс");
         const technology = getSeedTechnologyDisplay(product);
-        const fao = getSeedFaoDisplay(product);
-        const technologyLine = [technology, fao].filter(Boolean).join(" • ") || "Технология возделывания • ФАО";
+        const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
+        const technologyLine = [technology, fao].filter(Boolean).join(" • ");
         const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
-        const vegetation = getSeedVegetationPeriodDisplay(product) || "Срок созревания";
+        const vegetation = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
+        if (isCorn) {
+            return `
+                <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
+                <div class="product-card-detail-list">
+                    <p class="product-card-detail">${escapeHtml(getSeedFaoDisplay(product) || "ФАО")}</p>
+                    <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
+                </div>
+            `;
+        }
         return `
             <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
             <div class="product-card-detail-list">
-                <p class="product-card-detail">${escapeHtml(technologyLine)}</p>
+                <p class="product-card-detail">${escapeHtml(technologyLine || "Технология возделывания")}</p>
                 <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
                 <p class="product-card-detail">${escapeHtml(vegetation)}</p>
             </div>
@@ -1859,22 +1872,7 @@ function renderProductModal() {
                     </div>
                     <div class="product-spec-list product-spec-list-card">
                         ${isSeedsSection ? `
-                            <div class="product-spec-item">
-                                <span>Производитель</span>
-                                <strong class="product-copy-block">${escapeHtml(product.brand || "Производитель")}</strong>
-                            </div>
-                            <div class="product-spec-item">
-                                <span>Технология / ФАО</span>
-                                <strong class="product-copy-block">${escapeHtml([getSeedTechnologyDisplay(product), getSeedFaoDisplay(product)].filter(Boolean).join(" • ") || "Технология возделывания • ФАО")}</strong>
-                            </div>
-                            <div class="product-spec-item">
-                                <span>Количество семян</span>
-                                <strong class="product-copy-block">${escapeHtml(getSeedsPerBagDisplay(product) || "Количество семян")}</strong>
-                            </div>
-                            <div class="product-spec-item">
-                                <span>Срок созревания</span>
-                                <strong class="product-copy-block">${escapeHtml(getSeedVegetationPeriodDisplay(product) || "Срок созревания")}</strong>
-                            </div>
+                            ${renderSeedProductSpecs(product)}
                         ` : `
                             <div class="product-spec-item">
                                 <span>Производитель</span>
@@ -1922,7 +1920,7 @@ function renderFiltersDrawer() {
             <div class="drawer-sheet">
                 <div class="drawer-top">
                     <button type="button" class="drawer-back-btn" data-action="close-filters">← Назад</button>
-                    <div class="modal-title">Фильтры</div>
+                    <div class="modal-title">Ещё фильтры</div>
                     <button type="button" class="drawer-reset-link" data-action="reset-filters">Сбросить всё</button>
                 </div>
                 <div class="drawer-scroll">
@@ -1942,7 +1940,7 @@ function renderInlineFiltersSidebar() {
         <aside class="catalog-filters-sidebar">
             <div class="catalog-filters-card">
                 <div class="catalog-filters-head">
-                    <div class="catalog-filters-title">Фильтры</div>
+                    <div class="catalog-filters-title">Ещё фильтры</div>
                     <button class="catalog-reset-link" data-action="reset-inline-filters">Сбросить</button>
                 </div>
                 ${renderCatalogFiltersPanel({ inline: true })}
@@ -4295,6 +4293,9 @@ function getSeedFaoDisplay(product) {
 
 function getSeedsPerBagDisplay(product) {
     const value = String(product?.seedsPerBag || "").trim();
+    if (value && /^\d+(?:[.,]\d+)?$/u.test(value)) {
+        return `${value} шт/мешок`;
+    }
     return value || "";
 }
 
@@ -4314,6 +4315,54 @@ function getSeedVegetationPeriodDisplay(product) {
 
 function getSeedReproductionDisplay(product) {
     return getSeedReproductionValues(product)[0] || "";
+}
+
+function renderSeedProductSpecs(product) {
+    const manufacturer = product?.brand || "Производитель";
+    const primarySubcategory = normalize(getSeedPrimarySubcategory(product));
+    const isCorn = primarySubcategory === normalize("Кукуруза");
+    const isSunflower = primarySubcategory === normalize("Подсолнечник");
+    const isRapeseed = primarySubcategory === normalize("Рапс");
+    const technology = getSeedTechnologyDisplay(product);
+    const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
+    const technologyLine = [technology, fao].filter(Boolean).join(" • ");
+    const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
+    const vegetationLabel = "Срок созревания";
+    const vegetationValue = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
+    if (isCorn) {
+        return `
+            <div class="product-spec-item">
+                <span>Производитель</span>
+                <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
+            </div>
+            <div class="product-spec-item">
+                <span>ФАО</span>
+                <strong class="product-copy-block">${escapeHtml(getSeedFaoDisplay(product) || "ФАО")}</strong>
+            </div>
+            <div class="product-spec-item">
+                <span>Количество семян</span>
+                <strong class="product-copy-block">${escapeHtml(seedsPerBag)}</strong>
+            </div>
+        `;
+    }
+    return `
+        <div class="product-spec-item">
+            <span>Производитель</span>
+            <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
+        </div>
+        <div class="product-spec-item">
+            <span>Технология возделывания</span>
+            <strong class="product-copy-block">${escapeHtml(technologyLine || "Технология возделывания")}</strong>
+        </div>
+        <div class="product-spec-item">
+            <span>Количество семян</span>
+            <strong class="product-copy-block">${escapeHtml(seedsPerBag)}</strong>
+        </div>
+        <div class="product-spec-item">
+            <span>${escapeHtml(vegetationLabel)}</span>
+            <strong class="product-copy-block">${escapeHtml(vegetationValue)}</strong>
+        </div>
+    `;
 }
 
 function buildCategoriesTree(products) {
@@ -4438,7 +4487,7 @@ function renderStepper(productId, quantity, variant) {
     return `
         <div class="qty-stepper">
             <button type="button" data-action="cart-minus" data-product-id="${productId}">−</button>
-            <span>${formatQuantityWithUnit(quantity, product?.unitName || "шт")}</span>
+            <span>${formatQuantityWithUnit(quantity, getProductOrderDisplayUnit(product))}</span>
             <button type="button" data-action="cart-plus" data-product-id="${productId}">+</button>
         </div>
     `;
@@ -5110,6 +5159,10 @@ function formatQuantity(value) {
 
 function formatQuantityWithUnit(value, unitName) {
     return `${formatQuantity(value)} ${String(unitName || "шт").trim()}`.trim();
+}
+
+function getProductOrderDisplayUnit(product) {
+    return String(product?.orderDisplayUnit || product?.unitName || "шт").trim() || "шт";
 }
 
 function roundQuantity(value) {

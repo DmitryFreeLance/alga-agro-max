@@ -465,7 +465,7 @@ public class MiniAppApiController {
         response.put("quantity", quantity);
         response.put("name", product == null ? ("Товар #" + productId) : product.getName());
         response.put("brand", product == null ? "" : product.getBrand());
-        response.put("unitName", product == null ? "шт" : product.getUnitName());
+        response.put("unitName", product == null ? "шт" : productService.resolveDisplayUnit(product));
         response.put("packageDescription", product == null ? "" : product.getPackageDescription());
         response.put("unitPrice", unitPrice);
         response.put("priceOnRequest", unitPrice == null);

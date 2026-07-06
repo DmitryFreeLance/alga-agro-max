@@ -197,7 +197,7 @@ public class OrderService {
 
     private String resolveOrderItemUnitName(CatalogOrderItem item) {
         return productService.findById(item.getProductId())
-                .map(product -> product.getUnitName() == null || product.getUnitName().isBlank() ? "ед." : product.getUnitName())
+                .map(product -> productService.resolveDisplayUnit(product))
                 .orElse("ед.");
     }
 
