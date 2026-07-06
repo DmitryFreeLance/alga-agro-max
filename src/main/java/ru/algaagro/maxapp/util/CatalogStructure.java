@@ -12,6 +12,7 @@ public final class CatalogStructure {
     public static final String PAVS = "ПАВы";
     public static final String DEFOAMERS = "Пеногасители";
     public static final String SPECIAL = "Спецпрепараты";
+    public static final String PLANT_GLUE = "Клей для сельхоз растений";
     public static final String OTHER = "Прочее";
 
     public static final List<String> SECTIONS = List.of(
@@ -22,7 +23,8 @@ public final class CatalogStructure {
             CLOSED_GROUND,
             PAVS,
             DEFOAMERS,
-            SPECIAL
+            SPECIAL,
+            PLANT_GLUE
     );
 
     public static final List<String> SEED_SUBCATEGORIES = List.of(
@@ -50,7 +52,7 @@ public final class CatalogStructure {
             "Фунгициды",
             "Гербициды",
             "Инсектициды",
-            "Защита семян",
+            "Защита семян (протравители)",
             "Десиканты",
             "Нематоциды",
             "Регуляторы роста",
@@ -83,6 +85,7 @@ public final class CatalogStructure {
         if (normalized.contains("закрыт") || normalized.contains("теплиц")) return CLOSED_GROUND;
         if (normalized.contains("пеногас")) return DEFOAMERS;
         if (normalized.contains("спец")) return SPECIAL;
+        if (normalized.contains("клей для сельхоз") || normalized.contains("клей для с х") || normalized.contains("клей для сх") || normalized.contains("клей")) return PLANT_GLUE;
         return value == null ? "" : value.trim();
     }
 
@@ -121,6 +124,9 @@ public final class CatalogStructure {
         if (normalized.contains("роденти") || normalized.contains("репелент") || normalized.contains("амбарн")
                 || normalized.contains("склад") || normalized.contains("мыш") || normalized.contains("крыс")) {
             return SPECIAL;
+        }
+        if (normalized.contains("клей")) {
+            return PLANT_GLUE;
         }
         if (normalized.contains("удобр") || normalized.contains("микроудобр") || normalized.contains("биостим")
                 || normalized.contains("инокулянт") || normalized.contains("подкорм") || normalized.contains("npk")
@@ -175,7 +181,7 @@ public final class CatalogStructure {
         if (normalized.contains("зооцид")) return "Зооциды";
         if (normalized.contains("альгицид")) return "Альгициды";
         if (normalized.contains("протрав") || normalized.contains("защита семян")) {
-            return "Защита семян";
+            return "Защита семян (протравители)";
         }
         return "";
     }

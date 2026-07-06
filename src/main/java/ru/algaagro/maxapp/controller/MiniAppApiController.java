@@ -665,6 +665,9 @@ public class MiniAppApiController {
         if (CatalogStructure.SPECIAL.equals(normalized)) {
             return "Специальные препараты";
         }
+        if (CatalogStructure.PLANT_GLUE.equals(normalized)) {
+            return "Клеевые составы для сельхозкультур";
+        }
         return "Товары каталога";
     }
 }

@@ -46,7 +46,7 @@ const FIXED_SECTION_DEFINITIONS = [
             "Фунгициды",
             "Гербициды",
             "Инсектициды",
-            "Защита семян",
+            "Защита семян (протравители)",
             "Десиканты",
             "Нематоциды",
             "Регуляторы роста",
@@ -114,6 +114,15 @@ const FIXED_SECTION_DEFINITIONS = [
             "От крыс и мышей",
             "Обработка складских помещений",
         ],
+    },
+    {
+        name: "Клей для сельхоз растений",
+        key: "plant-glue",
+        icon: assetUrl("./assets/category-plant-glue.png"),
+        palette: ["#eef0f3", "#d8dde4"],
+        description: "Клеевые составы для сельхозкультур",
+        aliases: ["клей", "клеев", "адгез"],
+        subcategories: [],
     },
 ];
 
@@ -690,7 +699,7 @@ function resolveSectionSubcategory(rawValue, sectionName) {
         if (normalized.includes("фунгиц")) return "Фунгициды";
         if (normalized.includes("гербиц")) return "Гербициды";
         if (normalized.includes("инсекти")) return "Инсектициды";
-        if (normalized.includes("протрав") || normalized.includes("защита семян")) return "Защита семян";
+        if (normalized.includes("протрав") || normalized.includes("защита семян")) return "Защита семян (протравители)";
         if (normalized.includes("десикант") || normalized.includes("дикват")) return "Десиканты";
         if (normalized.includes("нематоцид")) return "Нематоциды";
         if (normalized.includes("бактерицид")) return "Бактерициды";
@@ -876,7 +885,7 @@ function getPesticideCategoryFromContext(context) {
     if (context.includes("альгицид")) return "Альгициды";
     if (context.includes("зооцид") || context.includes("родентицид")) return "Зооциды";
     if (context.includes("протрав") || context.includes("защита семян") || context.includes("обработка семян")) {
-        return "Защита семян";
+        return "Защита семян (протравители)";
     }
     if (context.includes("регулятор рост") || context.includes("хлормекват") || context.includes("тринексапак") || context.includes("мепикват") || context.includes("этефон")) {
         return "Регуляторы роста";
@@ -2251,7 +2260,7 @@ function getPesticideTreeGroup(product) {
     const subcategory = String(product?.subcategory || product?.itemType || "").trim();
     const normalizedSubcategory = normalize(subcategory);
     if (normalizedSubcategory.includes("протрав") || normalizedSubcategory.includes("защита семян")) {
-        return "Защита семян";
+        return "Защита семян (протравители)";
     }
     if (normalizedSubcategory.includes("регулятор рост")) {
         return "Регуляторы роста";
@@ -4152,6 +4161,7 @@ function isSpecificSectionName(name) {
     return Boolean(resolveSectionSubcategory(name, "Пестициды"))
         || Boolean(resolveSectionSubcategory(name, "Агрохимикаты"))
         || Boolean(resolveSectionSubcategory(name, "Спецпрепараты"))
+        || Boolean(resolveSectionSubcategory(name, "Клей для сельхоз растений"))
         || Boolean(resolveSectionSubcategory(name, "ПАВы"))
         || Boolean(resolveSectionSubcategory(name, "Пеногасители"))
         || Boolean(resolveSectionSubcategory(name, "Мелиоранты"))
@@ -4233,6 +4243,13 @@ function isDefoamersSectionName(name) {
     return normalize(name).includes("пеногас");
 }
 
+function isPlantGlueSectionName(name) {
+    const normalized = normalize(name);
+    return normalized.includes("клей")
+        || normalized.includes("клеев")
+        || normalized.includes("адгез");
+}
+
 function isSpecialSectionName(name) {
     const normalized = normalize(name);
     return normalized.includes("спец")
@@ -4276,6 +4293,9 @@ function getProductSectionName(product) {
     }
     if (isDefoamersSectionName(context)) {
         return "Пеногасители";
+    }
+    if (isPlantGlueSectionName(context)) {
+        return "Клей для сельхоз растений";
     }
     if (isSpecialSectionName(context)) {
         return "Спецпрепараты";
@@ -5159,7 +5179,7 @@ function normalizeFilterLabel(value) {
     if (normalized.includes("моллюскоцид")) return "Моллюскоциды";
     if (normalized.includes("зооцид")) return "Зооциды";
     if (normalized.includes("альгицид")) return "Альгициды";
-    if (normalized.includes("протрав") || normalized.includes("защита семян")) return "Защита семян";
+    if (normalized.includes("протрав") || normalized.includes("защита семян")) return "Защита семян (протравители)";
     if (normalized.includes("роденти")) return "Зооциды";
     if (normalized.includes("репелент")) return "Зооциды";
     if (normalized.includes("регулятор рост")) return "Регуляторы роста";
@@ -5171,6 +5191,7 @@ function normalizeFilterLabel(value) {
     if (normalized.includes("микроудобр")) return "Микроудобрения";
     if (normalized.includes("удобр")) return "Удобрения";
     if (normalized.includes("пеногас")) return "Пеногасители";
+    if (normalized.includes("клей")) return "Клей для сельхоз растений";
     return raw;
 }
 
