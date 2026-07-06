@@ -409,13 +409,13 @@ public class ProductService {
         }
         String unitName = firstNonBlank(product.getUnitName(), "шт");
         String normalizedUnit = TextUtils.normalizeToken(unitName);
-        String packageDescription = firstNonBlank(product.getPackageDescription(), "");
-        String packageType = firstNonBlank(product.getPackageType(), "");
+        String packageDescription = blankToNull(product.getPackageDescription());
+        String packageType = blankToNull(product.getPackageType());
         boolean volumeUnit = normalizedUnit.equals("л")
                 || normalizedUnit.contains("лит")
                 || normalizedUnit.equals("кг")
                 || normalizedUnit.contains("кил");
-        boolean boxLike = BOX_MULTIPLIER_PATTERN.matcher(packageDescription).find()
+        boolean boxLike = BOX_MULTIPLIER_PATTERN.matcher(packageDescription == null ? "" : packageDescription).find()
                 || TextUtils.normalizeToken(packageType).contains("короб");
         if (volumeUnit && boxLike) {
             return "шт";
