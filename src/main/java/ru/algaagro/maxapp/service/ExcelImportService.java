@@ -141,7 +141,7 @@ public class ExcelImportService {
 
             AnalyzedImport analyzedImport = analyze(job);
             job.setStatus(ImportStatus.PREVIEW_READY);
-            job.setPreviewJson(jsonHelper.writeValue(analyzedImport.stagedProducts()));
+            job.setPreviewJson(jsonHelper.writeValue(new ImportPreviewPayload(analyzedImport.stagedProducts(), analyzedImport.previewItems())));
             job.setSummary(buildPreviewSummary(analyzedImport));
             importJobRepository.save(job);
         } catch (RuntimeException e) {
@@ -160,17 +160,14 @@ public class ExcelImportService {
             if (job.getStatus() != ImportStatus.PREVIEW_READY) {
                 throw new IllegalStateException("Импорт уже применен, отменен или еще не готов к подтверждению.");
             }
-            List<StagedImportProduct> stagedProducts = jsonHelper.readValue(
-                    job.getPreviewJson(),
-                    new com.fasterxml.jackson.core.type.TypeReference<>() { },
-                    List.of()
-            );
+            ImportPreviewPayload previewPayload = readPreviewPayload(job.getPreviewJson());
+            List<StagedImportProduct> stagedProducts = previewPayload.stagedProducts();
             if (stagedProducts.isEmpty()) {
                 throw new IllegalStateException("Нет подготовленных данных для применения.");
             }
             AppliedImportResult result = applyStagedProducts(stagedProducts);
             job.setStatus(ImportStatus.COMPLETED);
-            job.setSummary(buildAppliedSummary(job, stagedProducts, result));
+            job.setSummary(buildAppliedSummary(job, stagedProducts, previewPayload.previewItems(), result));
             importJobRepository.save(job);
         } catch (RuntimeException e) {
             job.setStatus(ImportStatus.FAILED);
@@ -205,6 +202,7 @@ public class ExcelImportService {
         Set<String> detectedCultures = new LinkedHashSet<>();
         Set<String> detectedPurposes = new LinkedHashSet<>();
         List<StagedImportProduct> stagedProducts = new ArrayList<>();
+        List<ImportPreviewItem> previewItems = new ArrayList<>();
         int extractedNames = 0;
         int extractedSections = 0;
         int extractedComposition = 0;
@@ -225,7 +223,7 @@ public class ExcelImportService {
                     row.columns(),
                     result.filterMap()
             );
-            ProductService.ImportedProduct product = new ProductService.ImportedProduct(
+            ProductService.ImportedProduct product = productService.prepareImportedProduct(new ProductService.ImportedProduct(
                     buildExternalId(row),
                     row.sourceFile(),
                     extractSku(row.columns()),
@@ -247,7 +245,11 @@ public class ExcelImportService {
                     result.tags(),
                     result.filterMap(),
                     row.columns()
-            );
+            ));
+            ProductService.ImportMatch importMatch = productService.findExistingProductForImport(product);
+            List<ProductService.ImportFieldChange> fieldChanges = importMatch.product() == null
+                    ? List.of()
+                    : productService.previewImportedChanges(importMatch.product(), product);
             stagedProducts.add(new StagedImportProduct(
                     product.externalId(),
                     product.sourceFile(),
@@ -274,6 +276,14 @@ public class ExcelImportService {
                     firstPresent(row.columns(), "состав", "composition"),
                     firstPresent(row.columns(), "норма расхода", "расход", "дозиров"),
                     firstPresent(row.columns(), "цена", "price")
+            ));
+            previewItems.add(new ImportPreviewItem(
+                    product.name(),
+                    importMatch.product() == null ? "create" : (fieldChanges.isEmpty() ? "unchanged" : "update"),
+                    importMatch.matchedBy(),
+                    product.category(),
+                    product.subcategory(),
+                    fieldChanges
             ));
             if (resolvedCategory != null && !resolvedCategory.isBlank()) {
                 detectedCategories.add(resolvedCategory);
@@ -306,6 +316,7 @@ public class ExcelImportService {
                 files,
                 rows,
                 stagedProducts,
+                previewItems,
                 detectedCategories,
                 detectedCultures,
                 detectedPurposes,
@@ -333,6 +344,14 @@ public class ExcelImportService {
         summary.append("• Состав: <b>").append(analyzedImport.extractedComposition()).append("/").append(analyzedImport.rows().size()).append("</b>\n");
         summary.append("• Норма расхода: <b>").append(analyzedImport.extractedRate()).append("/").append(analyzedImport.rows().size()).append("</b>\n");
         summary.append("• Цена: <b>").append(analyzedImport.extractedPrice()).append("/").append(analyzedImport.rows().size()).append("</b>\n");
+
+        long creates = analyzedImport.previewItems().stream().filter(item -> "create".equals(item.action())).count();
+        long updates = analyzedImport.previewItems().stream().filter(item -> "update".equals(item.action())).count();
+        long unchanged = analyzedImport.previewItems().stream().filter(item -> "unchanged".equals(item.action())).count();
+        summary.append("\n<b>Сопоставление с текущим каталогом</b>\n");
+        summary.append("• Новых товаров: <b>").append(creates).append("</b>\n");
+        summary.append("• Будут обновлены: <b>").append(updates).append("</b>\n");
+        summary.append("• Без изменений: <b>").append(unchanged).append("</b>\n");
 
         Map<String, Long> categoryDistribution = countByCategory(analyzedImport.stagedProducts());
         if (!categoryDistribution.isEmpty()) {
@@ -373,12 +392,25 @@ public class ExcelImportService {
                         .append(item.composition() == null || item.composition().isBlank() ? "" : " • Состав: " + TextUtils.trimTo(item.composition(), 55))
                         .append(item.dosage() == null || item.dosage().isBlank() ? "" : " • Расход: " + TextUtils.trimTo(item.dosage(), 32))
                         .append("\n"));
+        List<ImportPreviewItem> updatedItems = analyzedImport.previewItems().stream()
+                .filter(item -> "update".equals(item.action()))
+                .limit(12)
+                .toList();
+        if (!updatedItems.isEmpty()) {
+            summary.append("\n<b>Какие товары будут обновлены</b>\n");
+            updatedItems.forEach(item -> summary.append("• ")
+                    .append(TextUtils.trimTo(item.name(), 42))
+                    .append(item.matchedBy().isBlank() ? "" : " (" + formatMatchSource(item.matchedBy()) + ")")
+                    .append(": ")
+                    .append(formatFieldChanges(item.changedFields(), 4))
+                    .append("\n"));
+        }
         summary.append("\nДанные <b>еще не добавлены</b> в каталог.\n");
         summary.append("Нажмите <b>«Подтвердить импорт»</b>, чтобы записать товары в базу, или <b>«Отменить импорт»</b>, чтобы ничего не добавлять.");
         return summary.toString().trim();
     }
 
-    private String buildAppliedSummary(ImportJob job, List<StagedImportProduct> stagedProducts, AppliedImportResult result) {
+    private String buildAppliedSummary(ImportJob job, List<StagedImportProduct> stagedProducts, List<ImportPreviewItem> previewItems, AppliedImportResult result) {
         StringBuilder summary = new StringBuilder();
         summary.append("✅ <b>Импорт подтвержден и применен</b>\n\n");
         summary.append("• Файлов обработано: <b>").append(jsonHelper.readValue(job.getSourceFilesJson(), new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { }, List.of()).size()).append("</b>\n");
@@ -388,7 +420,61 @@ public class ExcelImportService {
         summary.append("• Скрыто старых позиций: <b>").append(result.deactivated()).append("</b>\n");
         summary.append("• Всего применено: <b>").append(stagedProducts.size()).append("</b>\n");
         summary.append("• Категории: ").append(formatCountMap(countByCategory(stagedProducts), 6));
+        List<ImportPreviewItem> updatedItems = previewItems == null ? List.of() : previewItems.stream()
+                .filter(item -> "update".equals(item.action()))
+                .limit(10)
+                .toList();
+        if (!updatedItems.isEmpty()) {
+            summary.append("\n\n<b>Обновлены существующие товары</b>\n");
+            updatedItems.forEach(item -> summary.append("• ")
+                    .append(TextUtils.trimTo(item.name(), 42))
+                    .append(": ")
+                    .append(formatFieldChanges(item.changedFields(), 4))
+                    .append("\n"));
+        }
         return summary.toString();
+    }
+
+    private ImportPreviewPayload readPreviewPayload(String previewJson) {
+        ImportPreviewPayload payload = jsonHelper.readValue(
+                previewJson,
+                new com.fasterxml.jackson.core.type.TypeReference<>() { },
+                new ImportPreviewPayload(List.of(), List.of())
+        );
+        if (payload.stagedProducts() != null && !payload.stagedProducts().isEmpty()) {
+            return payload;
+        }
+        List<StagedImportProduct> stagedProducts = jsonHelper.readValue(
+                previewJson,
+                new com.fasterxml.jackson.core.type.TypeReference<>() { },
+                List.of()
+        );
+        return new ImportPreviewPayload(stagedProducts, List.of());
+    }
+
+    private String formatMatchSource(String matchedBy) {
+        return switch (matchedBy) {
+            case "externalId" -> "по externalId";
+            case "name" -> "по названию";
+            default -> "совпадение";
+        };
+    }
+
+    private String formatFieldChanges(List<ProductService.ImportFieldChange> changes, int limit) {
+        if (changes == null || changes.isEmpty()) {
+            return "без изменений";
+        }
+        int safeLimit = Math.max(1, limit);
+        List<String> formatted = changes.stream()
+                .limit(safeLimit)
+                .map(change -> change.fieldLabel() + " (" + TextUtils.trimTo(change.beforeValue(), 22) + " → " + TextUtils.trimTo(change.afterValue(), 22) + ")")
+                .toList();
+        String result = String.join(", ", formatted);
+        int hidden = changes.size() - formatted.size();
+        if (hidden > 0) {
+            result += " и еще " + hidden;
+        }
+        return result;
     }
 
     private String formatPreviewList(Set<String> values, int limit) {
@@ -2214,6 +2300,7 @@ public class ExcelImportService {
             List<Map<String, Object>> files,
             List<ImportRow> rows,
             List<StagedImportProduct> stagedProducts,
+            List<ImportPreviewItem> previewItems,
             Set<String> detectedCategories,
             Set<String> detectedCultures,
             Set<String> detectedPurposes,
@@ -2224,6 +2311,22 @@ public class ExcelImportService {
             int extractedComposition,
             int extractedRate,
             int extractedPrice
+    ) {
+    }
+
+    private record ImportPreviewPayload(
+            List<StagedImportProduct> stagedProducts,
+            List<ImportPreviewItem> previewItems
+    ) {
+    }
+
+    private record ImportPreviewItem(
+            String name,
+            String action,
+            String matchedBy,
+            String category,
+            String subcategory,
+            List<ProductService.ImportFieldChange> changedFields
     ) {
     }
 
