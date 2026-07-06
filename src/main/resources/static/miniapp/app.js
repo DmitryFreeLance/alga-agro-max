@@ -4901,7 +4901,7 @@ function applyPendingCatalogScroll() {
     }
     state.catalog.scrollToProductsPending = false;
     requestAnimationFrame(() => {
-        const top = Math.max(0, window.scrollY + anchor.getBoundingClientRect().top - 136);
+        const top = Math.max(0, window.scrollY + anchor.getBoundingClientRect().top - 184);
         window.scrollTo({ top, behavior: "smooth" });
     });
 }
