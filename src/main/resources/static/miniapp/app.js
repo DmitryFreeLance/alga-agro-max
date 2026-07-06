@@ -3,6 +3,7 @@ const maxBridge = window.WebApp || window.Telegram?.WebApp || null;
 const initDataUnsafe = maxBridge?.initDataUnsafe || {};
 const bridgeUserId = parseMaxUserIdFromBridgeInitData();
 const queryUserId = new URLSearchParams(window.location.search).get("maxUserId");
+const APP_ASSET_VERSION = "@asset.version@";
 let clientStateSyncTimer = null;
 let noticeTimer = null;
 
@@ -10,7 +11,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Семена",
         key: "seeds",
-        icon: "./assets/category-seeds-flaticon.png",
+        icon: assetUrl("./assets/category-seeds-flaticon.png"),
         palette: ["#fff2b7", "#ffd681"],
         description: "Полевые культуры, травы и травосмеси",
         aliases: ["семен", "seed"],
@@ -37,7 +38,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Пестициды",
         key: "pesticides",
-        icon: "./assets/category-pesticides-ref.png",
+        icon: assetUrl("./assets/category-pesticides-ref.png"),
         palette: ["#dff3d8", "#eaf7d8"],
         description: "Средства защиты растений по категориям действия",
         aliases: ["пестиц", "сзр"],
@@ -59,7 +60,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Агрохимикаты",
         key: "agrochemicals",
-        icon: "./assets/category-nutrition-flaticon.png",
+        icon: assetUrl("./assets/category-nutrition-flaticon.png"),
         palette: ["#c8eff6", "#a8e0ee"],
         description: "Питание растений и агрохимические решения",
         aliases: ["агрохим", "агропитан", "удобр", "питан"],
@@ -68,7 +69,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Мелиоранты",
         key: "meliorants",
-        icon: "./assets/category-meliorants-fixed.png",
+        icon: assetUrl("./assets/category-meliorants-fixed.png"),
         palette: ["#d9e9cf", "#cce3bc"],
         description: "Материалы для улучшения свойств почвы",
         aliases: ["мелиор"],
@@ -77,7 +78,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Препараты для закрытого грунта",
         key: "closed-ground",
-        icon: "./assets/category-closed-ground-fixed.png",
+        icon: assetUrl("./assets/category-closed-ground-fixed.png"),
         palette: ["#d8f1d9", "#c7ebc5"],
         description: "Решения для теплиц и закрытого грунта",
         aliases: ["закрыт", "теплиц"],
@@ -86,7 +87,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "ПАВы",
         key: "pavs",
-        icon: "./assets/category-pavs-fixed.png",
+        icon: assetUrl("./assets/category-pavs-fixed.png"),
         palette: ["#d9edf0", "#d3f4e1"],
         description: "Прилипатели и поверхностно-активные вещества",
         aliases: ["пав", "адъюв", "адьюв", "прилип", "смачив", "сурфакт"],
@@ -95,7 +96,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Пеногасители",
         key: "defoamers",
-        icon: "./assets/category-defoamers-fixed.png",
+        icon: assetUrl("./assets/category-defoamers-fixed.png"),
         palette: ["#d9e4f6", "#cedcf2"],
         description: "Технологические добавки для подавления пены",
         aliases: ["пеногас"],
@@ -104,7 +105,7 @@ const FIXED_SECTION_DEFINITIONS = [
     {
         name: "Спецпрепараты",
         key: "special",
-        icon: "./assets/category-special-fixed.png",
+        icon: assetUrl("./assets/category-special-fixed.png"),
         palette: ["#ece4fd", "#ddd1f6"],
         description: "Складская защита и специальные составы",
         aliases: ["спец", "специальн", "роденти", "репелент", "красител", "амбарн", "склад"],
@@ -259,6 +260,11 @@ const state = {
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
     },
 };
+
+function assetUrl(path) {
+    const separator = path.includes("?") ? "&" : "?";
+    return `${path}${separator}v=${encodeURIComponent(APP_ASSET_VERSION)}`;
+}
 
 if (maxBridge?.ready) {
     try {
@@ -460,7 +466,7 @@ function renderTopbar() {
     return `
         <header class="topbar">
             <div class="topbar-row">
-                <div class="topbar-logo"><img src="./assets/logo.png" alt="ООО Алга Агро Групп"></div>
+                <div class="topbar-logo"><img src="${assetUrl("./assets/logo.png")}" alt="ООО Алга Агро Групп"></div>
                 <div class="topbar-title">
                     <h1>${escapeHtml(state.meta?.company || "ООО «Алга Агро Групп»")}</h1>
                     <p>Только вперёд!</p>
@@ -1322,7 +1328,7 @@ function renderAdminPage() {
             <div class="admin-shell">
                 <aside class="admin-sidebar">
                     <div class="admin-brand">
-                        <img src="./assets/logo-green-bg.png" alt="Алга Агро">
+                        <img src="${assetUrl("./assets/logo-green-bg.png")}" alt="Алга Агро">
                         <div class="admin-brand-text">
                             <strong>${escapeHtml(state.meta?.company || "ООО «Алга Агро Групп»")}</strong>
                             <span>Панель управления</span>
@@ -4120,7 +4126,7 @@ function getSectionVisual(name) {
     }
     return {
         key: "other",
-        icon: "./assets/category-other.svg",
+        icon: assetUrl("./assets/category-other.svg"),
         palette: ["#e1f1de", "#d7e9f6"],
         description: getSectionDescription(name),
     };
@@ -4895,7 +4901,7 @@ function applyPendingCatalogScroll() {
     }
     state.catalog.scrollToProductsPending = false;
     requestAnimationFrame(() => {
-        const top = Math.max(0, window.scrollY + anchor.getBoundingClientRect().top - 88);
+        const top = Math.max(0, window.scrollY + anchor.getBoundingClientRect().top - 136);
         window.scrollTo({ top, behavior: "smooth" });
     });
 }
