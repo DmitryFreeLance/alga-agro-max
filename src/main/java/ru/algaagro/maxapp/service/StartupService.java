@@ -14,11 +14,13 @@ public class StartupService {
     private final AppProperties appProperties;
     private final UserService userService;
     private final PostButtonService postButtonService;
+    private final ProductService productService;
 
-    public StartupService(AppProperties appProperties, UserService userService, PostButtonService postButtonService) {
+    public StartupService(AppProperties appProperties, UserService userService, PostButtonService postButtonService, ProductService productService) {
         this.appProperties = appProperties;
         this.userService = userService;
         this.postButtonService = postButtonService;
+        this.productService = productService;
     }
 
     @PostConstruct
@@ -31,5 +33,9 @@ public class StartupService {
         }
         postButtonService.ensureDefaultButtons();
         log.info("Default post buttons ensured");
+        int normalizedSeedPackages = productService.normalizeExistingSeedPackageDescriptions();
+        if (normalizedSeedPackages > 0) {
+            log.info("Normalized seed package descriptions to Big Bag for {} products", normalizedSeedPackages);
+        }
     }
 }

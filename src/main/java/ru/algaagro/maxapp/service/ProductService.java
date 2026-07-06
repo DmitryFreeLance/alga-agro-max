@@ -185,6 +185,38 @@ public class ProductService {
         return normalizeImportedProduct(importedProduct);
     }
 
+    @Transactional
+    public int normalizeExistingSeedPackageDescriptions() {
+        List<CatalogProduct> changedProducts = new ArrayList<>();
+        for (CatalogProduct product : catalogProductRepository.findAll()) {
+            if (!shouldDefaultBigBagForSeed(product.getCategory(), product.getSubcategory(), getStringList(product.getCulturesJson()), product.getName(), product.getDescription())) {
+                continue;
+            }
+            boolean changed = false;
+            if (!Objects.equals(blankToNull(product.getPackageType()), "биг-бэг")) {
+                product.setPackageType("биг-бэг");
+                changed = true;
+            }
+            if (!Objects.equals(blankToNull(product.getPackageDescription()), "Биг-бэг")) {
+                product.setPackageDescription("Биг-бэг");
+                changed = true;
+            }
+            Map<String, Object> rawData = new LinkedHashMap<>(jsonHelper.readMap(product.getRawDataJson()));
+            if (!Objects.equals(blankToNull(Objects.toString(rawData.get("Фасовка"), "")), "Биг-бэг")) {
+                rawData.put("Фасовка", "Биг-бэг");
+                product.setRawDataJson(jsonHelper.writeValue(rawData));
+                changed = true;
+            }
+            if (changed) {
+                changedProducts.add(product);
+            }
+        }
+        if (!changedProducts.isEmpty()) {
+            catalogProductRepository.saveAll(changedProducts);
+        }
+        return changedProducts.size();
+    }
+
     private ImportMatch findExistingProductMatch(ImportedProduct importedProduct) {
         CatalogProduct product = importedProduct.externalId() == null || importedProduct.externalId().isBlank()
                 ? null
@@ -270,8 +302,8 @@ public class ProductService {
         String packageType = firstNonBlank(explicitPackageType, inferredPackageType);
         String packageDescription = firstNonBlank(explicitPackageDescription, inferredPackageDescription);
         if (shouldDefaultBigBagForSeed(product.getCategory(), product.getSubcategory(), getStringList(product.getCulturesJson()), product.getName(), product.getDescription())) {
-            packageType = firstNonBlank(packageType, "биг-бэг");
-            packageDescription = firstNonBlank(packageDescription, "Биг-бэг");
+            packageType = "биг-бэг";
+            packageDescription = "Биг-бэг";
         }
         return new OrderRules(unitName, minOrderQuantity, orderStep, packageType, packageDescription);
     }
@@ -344,8 +376,8 @@ public class ProductService {
                 name,
                 description
         )) {
-            inferredPackageType = firstNonBlank(inferredPackageType, "биг-бэг");
-            inferredPackageDescription = firstNonBlank(inferredPackageDescription, "Биг-бэг");
+            inferredPackageType = "биг-бэг";
+            inferredPackageDescription = "Биг-бэг";
         }
 
         return new OrderRules(resolvedUnitName, inferredMin, inferredStep, inferredPackageType, inferredPackageDescription);
@@ -651,8 +683,8 @@ public class ProductService {
         String packageType = blankToNull(payload.packageType());
         String packageDescription = blankToNull(payload.packageDescription());
         if (shouldDefaultBigBagForSeed(normalizedCategory, normalizedSubcategory, cultures, payload.name(), payload.description())) {
-            packageType = firstNonBlank(packageType, "биг-бэг");
-            packageDescription = firstNonBlank(packageDescription, "Биг-бэг");
+            packageType = "биг-бэг";
+            packageDescription = "Биг-бэг";
         }
         product.setPackageType(packageType);
         product.setPackageDescription(packageDescription);
@@ -1196,8 +1228,8 @@ public class ProductService {
         String packageType = blankToNull(imported.packageType());
         String packageDescription = blankToNull(imported.packageDescription());
         if (shouldDefaultBigBagForSeed(imported.category(), imported.subcategory(), imported.cultures(), imported.name(), imported.description())) {
-            packageType = firstNonBlank(packageType, "биг-бэг");
-            packageDescription = firstNonBlank(packageDescription, "Биг-бэг");
+            packageType = "биг-бэг";
+            packageDescription = "Биг-бэг";
         }
         Map<String, String> rawData = new LinkedHashMap<>(imported.rawData());
         if (packageDescription != null && !packageDescription.isBlank()) {
