@@ -528,6 +528,30 @@ public class AiClassificationService {
                     return nestedRows;
                 }
             }
+            for (String wrapperKey : List.of("result", "response", "payload", "body")) {
+                JsonNode wrapperNode = root.path(wrapperKey);
+                if (wrapperNode.isArray()) {
+                    return wrapperNode;
+                }
+                if (wrapperNode.isObject()) {
+                    JsonNode nestedRows = wrapperNode.path("rows");
+                    if (nestedRows.isArray()) {
+                        return nestedRows;
+                    }
+                    JsonNode nestedItems = wrapperNode.path("items");
+                    if (nestedItems.isArray()) {
+                        return nestedItems;
+                    }
+                    JsonNode nestedProducts = wrapperNode.path("products");
+                    if (nestedProducts.isArray()) {
+                        return nestedProducts;
+                    }
+                    JsonNode nestedData = wrapperNode.path("data");
+                    if (nestedData.isArray()) {
+                        return nestedData;
+                    }
+                }
+            }
             JsonNode choicesContent = root.path("choices").path(0).path("message").path("content");
             if (choicesContent.isTextual()) {
                 return extractRowsNode(choicesContent.asText());

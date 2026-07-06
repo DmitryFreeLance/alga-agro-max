@@ -196,7 +196,23 @@ public class ExcelImportService {
                 .filter(Objects::nonNull)
                 .filter(value -> !value.isBlank())
                 .forEach(knownCategories::add);
-        List<AiClassificationService.ClassificationResult> classified = aiClassificationService.classify(rows, new ArrayList<>(knownCultures));
+        Map<String, ProductService.ImportedProduct> localProductsByRowId = new LinkedHashMap<>();
+        List<ImportRow> rowsForAi = new ArrayList<>();
+        for (ImportRow row : rows) {
+            Optional<ProductService.ImportedProduct> localProduct = tryBuildLocalWorkbookProduct(row);
+            if (localProduct.isPresent()) {
+                localProductsByRowId.put(row.rowId(), localProduct.get());
+            } else {
+                rowsForAi.add(row);
+            }
+        }
+        Map<String, AiClassificationService.ClassificationResult> classifiedByRowId = new LinkedHashMap<>();
+        if (!rowsForAi.isEmpty()) {
+            List<AiClassificationService.ClassificationResult> classified = aiClassificationService.classify(rowsForAi, new ArrayList<>(knownCultures));
+            for (AiClassificationService.ClassificationResult result : classified) {
+                classifiedByRowId.put(result.rowId(), result);
+            }
+        }
 
         Set<String> detectedCategories = new LinkedHashSet<>();
         Set<String> detectedCultures = new LinkedHashSet<>();
@@ -208,44 +224,56 @@ public class ExcelImportService {
         int extractedComposition = 0;
         int extractedRate = 0;
         int extractedPrice = 0;
-        for (int i = 0; i < rows.size(); i++) {
-            ImportRow row = rows.get(i);
-            AiClassificationService.ClassificationResult result = classified.get(i);
-            String resolvedName = !result.normalizedName().isBlank() ? result.normalizedName() : row.nameGuess();
-            String resolvedCategory = resolveCategory(result, row);
-            String resolvedSubcategory = resolveSubcategory(result, row);
-            String resolvedItemType = resolveItemType(result, resolvedCategory, resolvedSubcategory, row);
-            String resolvedDescription = resolveDescription(result, row);
-            ProductService.OrderRules orderRules = productService.inferOrderRules(
-                    resolvedName,
-                    extractUnit(row.columns()),
-                    resolvedDescription,
-                    row.columns(),
-                    result.filterMap()
-            );
-            ProductService.ImportedProduct product = productService.prepareImportedProduct(new ProductService.ImportedProduct(
-                    buildExternalId(row),
-                    row.sourceFile(),
-                    extractSku(row.columns()),
-                    resolvedName,
-                    resolvedDescription,
-                    result.brand(),
-                    resolvedCategory,
-                    resolvedSubcategory,
-                    resolvedItemType,
-                    extractUnit(row.columns()),
-                    extractPrice(row.columns()),
-                    extractStock(row.columns()),
-                    orderRules.packageType(),
-                    orderRules.packageDescription(),
-                    orderRules.minOrderQuantity(),
-                    orderRules.orderStep(),
-                    result.cultures(),
-                    result.purposes(),
-                    result.tags(),
-                    result.filterMap(),
-                    row.columns()
-            ));
+        for (ImportRow row : rows) {
+            ProductService.ImportedProduct localProduct = localProductsByRowId.get(row.rowId());
+            ProductService.ImportedProduct product;
+            String resolvedCategory;
+            String resolvedSubcategory;
+            if (localProduct != null) {
+                product = localProduct;
+                resolvedCategory = blankToEmpty(product.category());
+                resolvedSubcategory = blankToEmpty(product.subcategory());
+            } else {
+                AiClassificationService.ClassificationResult result = classifiedByRowId.get(row.rowId());
+                if (result == null) {
+                    throw new IllegalStateException("Не удалось классифицировать строку Excel: " + TextUtils.trimTo(row.nameGuess(), 120));
+                }
+                String resolvedName = !result.normalizedName().isBlank() ? result.normalizedName() : row.nameGuess();
+                resolvedCategory = resolveCategory(result, row);
+                resolvedSubcategory = resolveSubcategory(result, row);
+                String resolvedItemType = resolveItemType(result, resolvedCategory, resolvedSubcategory, row);
+                String resolvedDescription = resolveDescription(result, row);
+                ProductService.OrderRules orderRules = productService.inferOrderRules(
+                        resolvedName,
+                        extractUnit(row.columns()),
+                        resolvedDescription,
+                        row.columns(),
+                        result.filterMap()
+                );
+                product = productService.prepareImportedProduct(new ProductService.ImportedProduct(
+                        buildExternalId(row),
+                        row.sourceFile(),
+                        extractSku(row.columns()),
+                        resolvedName,
+                        resolvedDescription,
+                        result.brand(),
+                        resolvedCategory,
+                        resolvedSubcategory,
+                        resolvedItemType,
+                        extractUnit(row.columns()),
+                        extractPrice(row.columns()),
+                        extractStock(row.columns()),
+                        orderRules.packageType(),
+                        orderRules.packageDescription(),
+                        orderRules.minOrderQuantity(),
+                        orderRules.orderStep(),
+                        result.cultures(),
+                        result.purposes(),
+                        result.tags(),
+                        result.filterMap(),
+                        row.columns()
+                ));
+            }
             ProductService.ImportMatch importMatch = productService.findExistingProductForImport(product);
             List<ProductService.ImportFieldChange> fieldChanges = importMatch.product() == null
                     ? List.of()
@@ -290,7 +318,7 @@ public class ExcelImportService {
             }
             detectedCultures.addAll(product.cultures());
             detectedPurposes.addAll(product.purposes());
-            if (!resolvedName.isBlank()) {
+            if (product.name() != null && !product.name().isBlank()) {
                 extractedNames++;
             }
             if (row.section() != null && !row.section().isBlank()) {
@@ -583,6 +611,9 @@ public class ExcelImportService {
             rows = parseWorkbookFile(bytes, fileName);
         }
         List<ImportRow> filteredRows = filterNoiseRows(rows);
+        if (isWorkbookFileName(fileName) && hasStructuredWorkbookCoverage(filteredRows)) {
+            return filteredRows;
+        }
         if (shouldUseAiFileFallback(fileName, filteredRows)) {
             log.info("Local parsing looks weak for {}. Trying direct AI file extraction. localRows={}, localScore={}",
                     fileName,
@@ -613,6 +644,13 @@ public class ExcelImportService {
         return normalized.endsWith(".docx") || normalized.endsWith(".doc");
     }
 
+    private boolean isWorkbookFileName(String fileName) {
+        if (fileName == null) {
+            return false;
+        }
+        return fileName.toLowerCase(Locale.ROOT).matches(".*\\.(xlsx|xlsm|xls)$");
+    }
+
     private boolean shouldUseAiFileFallback(String fileName, List<ImportRow> rows) {
         if (!appProperties.getAi().isDirectFileFallbackEnabled()) {
             return false;
@@ -621,7 +659,7 @@ public class ExcelImportService {
             return true;
         }
         boolean documentLike = isPdfFileName(fileName) || isWordFileName(fileName);
-        boolean workbookLike = fileName != null && fileName.toLowerCase(Locale.ROOT).matches(".*\\.(xlsx|xlsm|xls)$");
+        boolean workbookLike = isWorkbookFileName(fileName);
         if (!documentLike && !workbookLike) {
             return false;
         }
@@ -865,6 +903,33 @@ public class ExcelImportService {
             }
             if (values.size() == 1 && !looksLikeLoosePrice(values.get(0)) && values.get(0).length() < 80) {
                 currentSection = values.get(0);
+                continue;
+            }
+            if (values.size() == 2 && !looksLikeLoosePrice(values.get(0)) && looksLikeLoosePrice(values.get(1))) {
+                String name = values.get(0);
+                String price = values.get(1);
+                String normalizedName = TextUtils.normalizeToken(name);
+                String normalizedPrice = TextUtils.normalizeToken(price);
+                if (normalizedName.contains("назван") && normalizedPrice.contains("цен")) {
+                    continue;
+                }
+                Map<String, String> columns = new LinkedHashMap<>();
+                columns.put("Позиция", name);
+                columns.put("Цена", price);
+                columns.put("Сырой текст", String.join(" | ", values));
+                if (!currentSection.isBlank()) {
+                    columns.put("Раздел", currentSection);
+                }
+                rowNumber++;
+                rows.add(new ImportRow(
+                        fileName + "#" + sheetName + "#" + rowIndex,
+                        fileName,
+                        sheetName,
+                        rowNumber,
+                        columns,
+                        name,
+                        currentSection
+                ));
                 continue;
             }
             if (values.size() < 3) {
@@ -2007,6 +2072,16 @@ public class ExcelImportService {
         for (String value : values) {
             String normalized = TextUtils.normalizeToken(value);
             if (normalized.contains("позиция")
+                    || normalized.contains("назван")
+                    || normalized.contains("наименован")
+                    || normalized.contains("раздел")
+                    || normalized.contains("подкатег")
+                    || normalized.contains("культура")
+                    || normalized.contains("производител")
+                    || normalized.contains("фасовк")
+                    || normalized.contains("упаковк")
+                    || normalized.contains("фао")
+                    || normalized.contains("репродукц")
                     || normalized.contains("состав")
                     || normalized.contains("норма расхода")
                     || normalized.contains("цена")) {
@@ -2057,7 +2132,7 @@ public class ExcelImportService {
     }
 
     private BigDecimal extractPrice(Map<String, String> columns) {
-        return findFirst(columns, "цена", "price")
+        return findFirst(columns, "цена", "стоим", "прайс", "price", "руб")
                 .map(this::parseDecimal)
                 .orElse(null);
     }
@@ -2172,6 +2247,407 @@ public class ExcelImportService {
             return null;
         }
         return new BigDecimal(candidate);
+    }
+
+    private Optional<ProductService.ImportedProduct> tryBuildLocalWorkbookProduct(ImportRow row) {
+        if (row == null || !isWorkbookFileName(row.sourceFile()) || row.columns() == null || row.columns().isEmpty()) {
+            return Optional.empty();
+        }
+        if (countStructuredWorkbookHeaders(row.columns()) < 2) {
+            return Optional.empty();
+        }
+
+        String name = firstNonBlank(
+                readColumn(row.columns(), "назван", "наименован", "позиция", "товар", "номенклат", "product", "name"),
+                row.nameGuess()
+        );
+        if (name.isBlank()) {
+            return Optional.empty();
+        }
+
+        String explicitSection = readColumn(row.columns(), "раздел", "section");
+        String explicitCategoryValue = readColumn(row.columns(), "категор", "category");
+        String explicitSubcategory = readColumn(row.columns(), "подкатегор", "subcategory");
+        String explicitCulture = readColumn(row.columns(), "культура", "cultures", "culture");
+        String itemType = readColumn(row.columns(), "тип товара", "товарная группа", "item type", "itemtype");
+        String brand = readColumn(row.columns(), "производител", "бренд", "manufacturer", "brand");
+        String activeIngredient = readColumn(row.columns(), "действующ", "active ingredient", "activeingredient");
+        String description = readColumn(row.columns(), "описан", "description");
+        String composition = readColumn(row.columns(), "состав", "composition");
+        String rate = firstNonBlank(
+                readColumn(row.columns(), "норма расхода"),
+                readColumn(row.columns(), "расход"),
+                readColumn(row.columns(), "дозиров")
+        );
+        String unitName = firstNonBlank(
+                readColumn(row.columns(), "единица заказа", "ед заказа", "единица", "ед.", "unitname", "unit"),
+                inferUnit(row.columns()).orElse("")
+        );
+        BigDecimal price = firstPositive(
+                parseStructuredDecimal(row.columns(), "цена", "стоим", "прайс", "price", "руб"),
+                extractPrice(row.columns())
+        );
+        BigDecimal stockQuantity = firstPositive(
+                parseStructuredDecimal(row.columns(), "остат", "налич", "stock", "колич"),
+                extractStock(row.columns())
+        );
+        String packageType = readColumn(row.columns(), "тип упаков", "packagetype");
+        String packageDescription = firstNonBlank(
+                readColumn(row.columns(), "фасовк", "упаковк", "тара", "package description", "packagedescription"),
+                readColumn(row.columns(), "объем", "объём", "package volume", "packagevolume")
+        );
+        BigDecimal minOrderQuantity = parseStructuredDecimal(row.columns(), "мин", "минимальн", "minimum", "minorderquantity");
+        BigDecimal orderStep = parseStructuredDecimal(row.columns(), "кратност", "шаг заказа", "order step", "orderstep");
+        String discountPercent = readColumn(row.columns(), "скидк", "discount");
+        String oldPrice = readColumn(row.columns(), "старая цена", "old price", "oldprice");
+        boolean forGreenhouse = parseBooleanValue(readColumn(row.columns(), "теплиц", "закрыт", "greenhouse"));
+        String seedFao = readColumn(row.columns(), "фао", "fao");
+        String seedsPerBag = firstNonBlank(
+                readColumn(row.columns(), "семян в мешке"),
+                readColumn(row.columns(), "штук в мешке"),
+                readColumn(row.columns(), "количество семян"),
+                readColumn(row.columns(), "seedsperbag"),
+                readColumn(row.columns(), "bagseedcount")
+        );
+        String seedMaturityGroup = firstNonBlank(
+                readColumn(row.columns(), "группа спелости"),
+                readColumn(row.columns(), "seedmaturitygroup"),
+                readColumn(row.columns(), "maturitygroup")
+        );
+        String seedReproduction = firstNonBlank(
+                readColumn(row.columns(), "репродукц"),
+                readColumn(row.columns(), "seedreproduction"),
+                readColumn(row.columns(), "reproduction")
+        );
+        String seedVegetationPeriod = firstNonBlank(
+                readColumn(row.columns(), "срок вегетац"),
+                readColumn(row.columns(), "срок созреван"),
+                readColumn(row.columns(), "дни вегетац"),
+                readColumn(row.columns(), "seedvegetationperiod"),
+                readColumn(row.columns(), "vegetationperiod")
+        );
+        String cultivationTechnology = firstNonBlank(
+                readColumn(row.columns(), "технология возделыв"),
+                readColumn(row.columns(), "технология обработк"),
+                readColumn(row.columns(), "cultivationtechnology")
+        );
+
+        if (description.isBlank()) {
+            description = buildLocalDescription(row, composition, rate);
+        }
+
+        String normalizedCategoryFromCategoryColumn = normalizeStructuredSection(explicitCategoryValue);
+        String category = firstNonBlank(normalizeStructuredSection(explicitSection), normalizedCategoryFromCategoryColumn);
+        String subcategoryCandidate = firstNonBlank(
+                explicitSubcategory,
+                normalizedCategoryFromCategoryColumn.isBlank() ? explicitCategoryValue : "",
+                explicitCulture
+        );
+        if (category.isBlank()) {
+            category = inferStructuredCategory(row, subcategoryCandidate, activeIngredient, description, forGreenhouse, seedFao, seedsPerBag, cultivationTechnology);
+        }
+        if (forGreenhouse) {
+            category = CatalogStructure.CLOSED_GROUND;
+        }
+        String subcategory = inferStructuredSubcategory(category, row, subcategoryCandidate, description);
+        if (itemType.isBlank()) {
+            itemType = firstNonBlank(subcategory, category, row.section());
+        }
+
+        List<String> cultures = splitMultiValue(firstNonBlank(explicitCulture, CatalogStructure.SEEDS.equals(category) ? subcategory : ""));
+        List<String> purposes = splitMultiValue(readColumn(row.columns(), "назначен", "purpose", "purposes"));
+        List<String> tags = splitMultiValue(firstNonBlank(
+                readColumn(row.columns(), "тег", "tags"),
+                readColumn(row.columns(), "назначен", "purpose", "purposes")
+        ));
+
+        Map<String, Object> filterMap = new LinkedHashMap<>();
+        putIfNotBlank(filterMap, "activeIngredient", activeIngredient);
+        putIfNotBlank(filterMap, "discountPercent", discountPercent);
+        putIfNotBlank(filterMap, "oldPrice", oldPrice);
+        putIfNotBlank(filterMap, "seedFao", seedFao);
+        putIfNotBlank(filterMap, "seedsPerBag", seedsPerBag);
+        putIfNotBlank(filterMap, "seedMaturityGroup", seedMaturityGroup);
+        putIfNotBlank(filterMap, "seedReproduction", seedReproduction);
+        putIfNotBlank(filterMap, "seedVegetationPeriod", seedVegetationPeriod);
+        putIfNotBlank(filterMap, "cultivationTechnology", cultivationTechnology);
+        if (forGreenhouse) {
+            filterMap.put("forGreenhouse", true);
+        }
+
+        Map<String, String> rawData = new LinkedHashMap<>();
+        row.columns().forEach((key, value) -> {
+            if (key != null && !key.isBlank() && value != null && !value.isBlank()) {
+                rawData.put(key.trim(), value.trim());
+            }
+        });
+        putIfNotBlank(rawData, "Действующее вещество", activeIngredient);
+        putIfNotBlank(rawData, "ФАО", seedFao);
+        putIfNotBlank(rawData, "Семян в мешке", seedsPerBag);
+        putIfNotBlank(rawData, "Группа спелости", seedMaturityGroup);
+        putIfNotBlank(rawData, "Репродукция", seedReproduction);
+        putIfNotBlank(rawData, "Технология возделывания", cultivationTechnology);
+        putIfNotBlank(rawData, "Срок вегетации", seedVegetationPeriod);
+        putIfNotBlank(rawData, "Фасовка", packageDescription);
+        putIfNotBlank(rawData, "Культура", firstNonBlank(explicitCulture, subcategory));
+        putIfNotBlank(rawData, "Подкатегория", subcategory);
+        putIfNotBlank(rawData, "Раздел", category);
+        putIfNotBlank(rawData, "Минимальный заказ", formatDecimal(minOrderQuantity));
+        putIfNotBlank(rawData, "Кратность", formatDecimal(orderStep));
+
+        ProductService.OrderRules orderRules = productService.inferOrderRules(
+                name,
+                unitName,
+                description,
+                rawData,
+                filterMap
+        );
+        String resolvedUnitName = firstNonBlank(
+                unitName,
+                CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
+                orderRules.unitName(),
+                "шт"
+        );
+        String resolvedPackageType = firstNonBlank(packageType, orderRules.packageType());
+        String resolvedPackageDescription = firstNonBlank(packageDescription, orderRules.packageDescription());
+        BigDecimal resolvedMinOrder = firstPositive(minOrderQuantity, orderRules.minOrderQuantity());
+        BigDecimal resolvedOrderStep = firstPositive(orderStep, orderRules.orderStep(), resolvedMinOrder);
+
+        return Optional.of(productService.prepareImportedProduct(new ProductService.ImportedProduct(
+                buildExternalId(row),
+                row.sourceFile(),
+                firstNonBlank(readColumn(row.columns(), "артикул", "sku", "код"), extractSku(row.columns())),
+                name,
+                description,
+                brand,
+                category,
+                subcategory,
+                itemType,
+                resolvedUnitName,
+                price,
+                stockQuantity,
+                resolvedPackageType,
+                resolvedPackageDescription,
+                resolvedMinOrder,
+                resolvedOrderStep,
+                cultures,
+                purposes,
+                tags,
+                filterMap,
+                rawData
+        )));
+    }
+
+    private String buildLocalDescription(ImportRow row, String composition, String rate) {
+        List<String> parts = new ArrayList<>();
+        if (row.section() != null && !row.section().isBlank()) {
+            parts.add(row.section());
+        }
+        if (composition != null && !composition.isBlank()) {
+            parts.add("Состав: " + TextUtils.trimTo(composition, 180));
+        }
+        if (rate != null && !rate.isBlank()) {
+            parts.add("Расход: " + TextUtils.trimTo(rate, 80));
+        }
+        return String.join(". ", parts);
+    }
+
+    private String inferStructuredCategory(
+            ImportRow row,
+            String subcategoryCandidate,
+            String activeIngredient,
+            String description,
+            boolean forGreenhouse,
+            String seedFao,
+            String seedsPerBag,
+            String cultivationTechnology
+    ) {
+        if (forGreenhouse) {
+            return CatalogStructure.CLOSED_GROUND;
+        }
+        String context = TextUtils.normalizeToken(String.join(" ",
+                Objects.toString(row.section(), ""),
+                Objects.toString(row.nameGuess(), ""),
+                Objects.toString(subcategoryCandidate, ""),
+                Objects.toString(activeIngredient, ""),
+                Objects.toString(description, ""),
+                Objects.toString(seedFao, ""),
+                Objects.toString(seedsPerBag, ""),
+                Objects.toString(cultivationTechnology, "")
+        ));
+        if (!activeIngredient.isBlank()
+                || context.contains("фунгиц")
+                || context.contains("гербиц")
+                || context.contains("инсектиц")
+                || context.contains("десикан")
+                || context.contains("бактериц")
+                || context.contains("акариц")
+                || context.contains("защита семян")) {
+            return CatalogStructure.PESTICIDES;
+        }
+        if (!seedFao.isBlank() || !seedsPerBag.isBlank() || !cultivationTechnology.isBlank()) {
+            return CatalogStructure.SEEDS;
+        }
+        if (!subcategoryCandidate.isBlank()) {
+            String normalizedSeedSubcategory = CatalogStructure.inferSubcategory(CatalogStructure.SEEDS, subcategoryCandidate);
+            if (!normalizedSeedSubcategory.isBlank()) {
+                return CatalogStructure.SEEDS;
+            }
+        }
+        return CatalogStructure.inferSection(context, subcategoryCandidate);
+    }
+
+    private String inferStructuredSubcategory(String category, ImportRow row, String candidate, String description) {
+        String normalized = CatalogStructure.inferSubcategory(category, firstNonBlank(candidate, row.section(), row.nameGuess(), description));
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        return blankToEmpty(candidate);
+    }
+
+    private int countStructuredWorkbookHeaders(Map<String, String> columns) {
+        int matches = 0;
+        if (hasHeader(columns, "назван", "наименован", "позиция", "товар", "номенклат", "product", "name")) {
+            matches++;
+        }
+        if (hasHeader(columns, "цена", "стоим", "прайс", "price", "руб")) {
+            matches++;
+        }
+        if (hasHeader(columns, "раздел", "section", "категор", "category")) {
+            matches++;
+        }
+        if (hasHeader(columns, "подкатегор", "subcategory", "культура", "cultures", "culture")) {
+            matches++;
+        }
+        if (hasHeader(columns, "производител", "бренд", "manufacturer", "brand")) {
+            matches++;
+        }
+        if (hasHeader(columns, "описан", "состав", "действующ", "description", "composition")) {
+            matches++;
+        }
+        if (hasHeader(columns, "фасовк", "упаковк", "тара", "единица", "unit")) {
+            matches++;
+        }
+        if (hasHeader(columns, "остат", "налич", "stock", "колич")) {
+            matches++;
+        }
+        if (hasHeader(columns, "фао", "репродукц", "группа спелости", "семян в мешке", "технология возделыв", "срок вегетац")) {
+            matches++;
+        }
+        return matches;
+    }
+
+    private boolean hasStructuredWorkbookCoverage(List<ImportRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return false;
+        }
+        long structuredRows = rows.stream()
+                .filter(row -> countStructuredWorkbookHeaders(row.columns()) >= 2)
+                .count();
+        return structuredRows * 10 >= rows.size() * 8;
+    }
+
+    private boolean hasHeader(Map<String, String> columns, String... needles) {
+        for (String header : columns.keySet()) {
+            String normalized = TextUtils.normalizeToken(header);
+            for (String needle : needles) {
+                if (normalized.contains(TextUtils.normalizeToken(needle))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private String readColumn(Map<String, String> columns, String... needles) {
+        for (Map.Entry<String, String> entry : columns.entrySet()) {
+            String normalized = TextUtils.normalizeToken(entry.getKey());
+            for (String needle : needles) {
+                if (normalized.contains(TextUtils.normalizeToken(needle))) {
+                    return Objects.toString(entry.getValue(), "").trim();
+                }
+            }
+        }
+        return "";
+    }
+
+    private BigDecimal parseStructuredDecimal(Map<String, String> columns, String... needles) {
+        String value = readColumn(columns, needles);
+        return value.isBlank() ? null : parseDecimal(value);
+    }
+
+    private List<String> splitMultiValue(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split("[,;\\n]+"))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private String normalizeStructuredSection(String value) {
+        String normalized = CatalogStructure.normalizeSectionName(value);
+        if (normalized.isBlank() || CatalogStructure.OTHER.equalsIgnoreCase(normalized)) {
+            return "";
+        }
+        return normalized;
+    }
+
+    private boolean parseBooleanValue(String value) {
+        String normalized = TextUtils.normalizeToken(value);
+        return normalized.equals("true")
+                || normalized.equals("1")
+                || normalized.equals("да")
+                || normalized.equals("yes")
+                || normalized.equals("y")
+                || normalized.contains("теплиц")
+                || normalized.contains("закрыт");
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private BigDecimal firstPositive(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null && value.compareTo(BigDecimal.ZERO) > 0) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private void putIfNotBlank(Map<String, Object> map, String key, Object value) {
+        if (map == null || key == null || key.isBlank()) {
+            return;
+        }
+        String text = Objects.toString(value, "").trim();
+        if (text.isBlank()) {
+            return;
+        }
+        map.put(key, value);
+    }
+
+    private void putIfNotBlank(Map<String, String> map, String key, String value) {
+        if (map == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        map.put(key, value.trim());
+    }
+
+    private String formatDecimal(BigDecimal value) {
+        return value == null ? "" : value.stripTrailingZeros().toPlainString();
+    }
+
+    private String blankToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private String resolveCategory(AiClassificationService.ClassificationResult result, ImportRow row) {
