@@ -3116,7 +3116,11 @@ function handleClick(event) {
     }
     if (action === "cart-minus" || action === "cart-plus") {
         adjustCartQuantity(Number(button.dataset.productId), action === "cart-plus" ? 1 : -1, button.dataset.reproduction || "");
-        render();
+        if (state.productModal.open) {
+            renderPreservingScrollPosition();
+        } else {
+            render();
+        }
         return;
     }
     if (action === "remove-cart") {
@@ -3920,8 +3924,7 @@ async function saveAdminProduct(formData) {
             packageDescription = hasManualPackageDescription ? packageDescriptionInput : unitName;
         }
     }
-    if (normalize(category) === normalize("Семена")) {
-        unitName = "п.е.";
+    if (normalize(category) === normalize("Семена") && orderMode === "pe") {
         packageType = packageType || "п.е.";
         packageDescription = hasManualPackageDescription ? packageDescriptionInput : "1 п.е.";
     }

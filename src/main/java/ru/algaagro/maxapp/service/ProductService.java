@@ -307,7 +307,9 @@ public class ProductService {
         BigDecimal orderStep = firstPositive(explicitStep, inferredStep, minOrderQuantity, DEFAULT_ORDER_QUANTITY);
         String packageType = firstNonBlank(explicitPackageType, inferredPackageType);
         String packageDescription = firstNonBlank(explicitPackageDescription, inferredPackageDescription);
-        if (shouldDefaultBigBagForSeed(product.getCategory(), product.getSubcategory(), getStringList(product.getCulturesJson()), product.getName(), product.getDescription())) {
+        if ((packageType == null || packageType.isBlank())
+                && (packageDescription == null || packageDescription.isBlank())
+                && shouldDefaultBigBagForSeed(product.getCategory(), product.getSubcategory(), getStringList(product.getCulturesJson()), product.getName(), product.getDescription())) {
             packageType = "биг-бэг";
             packageDescription = "Биг-бэг";
         }
@@ -731,7 +733,9 @@ public class ProductService {
         List<String> tags = payload.tags() == null ? List.of() : payload.tags();
         String packageType = blankToNull(payload.packageType());
         String packageDescription = blankToNull(payload.packageDescription());
-        if (shouldDefaultBigBagForSeed(normalizedCategory, normalizedSubcategory, cultures, payload.name(), payload.description())) {
+        if ((packageType == null || packageType.isBlank())
+                && (packageDescription == null || packageDescription.isBlank())
+                && shouldDefaultBigBagForSeed(normalizedCategory, normalizedSubcategory, cultures, payload.name(), payload.description())) {
             packageType = "биг-бэг";
             packageDescription = "Биг-бэг";
         }

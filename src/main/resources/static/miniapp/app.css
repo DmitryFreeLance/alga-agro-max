@@ -714,6 +714,8 @@ img {
 .price-block {
     display: grid;
     gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .price-block strong {
@@ -763,10 +765,11 @@ img {
 }
 
 .qty-stepper-card {
-    grid-template-columns: 28px minmax(56px, auto) 28px;
-    min-height: 32px;
-    max-width: 118px;
-    flex: 0 0 auto;
+    grid-template-columns: 24px minmax(0, 1fr) 24px;
+    min-height: 30px;
+    width: min(100%, 104px);
+    max-width: 104px;
+    flex: 0 1 104px;
 }
 
 .qty-stepper button {
@@ -776,7 +779,8 @@ img {
 }
 
 .qty-stepper-card button {
-    font-size: 0.92rem;
+    font-size: 0.84rem;
+    min-width: 24px;
 }
 
 .qty-stepper span {
@@ -789,9 +793,11 @@ img {
 
 .qty-stepper-card span {
     min-width: 0;
-    font-size: 0.72rem;
-    padding: 0 4px;
+    font-size: 0.66rem;
+    padding: 0 3px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .empty-box,
