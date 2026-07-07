@@ -64,6 +64,10 @@ public class ProductService {
         return catalogProductRepository.findAllByActiveTrueOrderByNameAsc();
     }
 
+    public List<CatalogProduct> getAllProducts() {
+        return catalogProductRepository.findAll();
+    }
+
     public Optional<CatalogProduct> findById(Long id) {
         return catalogProductRepository.findById(id);
     }
@@ -601,6 +605,13 @@ public class ProductService {
         CatalogProduct product = catalogProductRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
         product.setBrand(blankToNull(manufacturerName));
+        Map<String, Object> filterMap = new LinkedHashMap<>(jsonHelper.readMap(product.getFilterMapJson()));
+        if (product.getBrand() != null && !product.getBrand().isBlank()) {
+            filterMap.put("manufacturer", List.of(product.getBrand()));
+        } else {
+            filterMap.remove("manufacturer");
+        }
+        product.setFilterMapJson(jsonHelper.writeValue(filterMap));
         CatalogProduct saved = catalogProductRepository.save(product);
         ensureManufacturerExists(saved.getBrand());
         syncProductWithBitrix(saved.getId());

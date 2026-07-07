@@ -336,7 +336,7 @@ public class MiniAppApiController {
     @GetMapping("/admin/manufacturers")
     public List<Map<String, Object>> adminManufacturers(@RequestParam Long maxUserId) {
         ensureAdmin(maxUserId);
-        return manufacturerService.listManufacturers(productService.getActiveProducts());
+        return manufacturerService.listManufacturers(productService.getAllProducts());
     }
 
     @PostMapping("/admin/manufacturers")
@@ -349,14 +349,14 @@ public class MiniAppApiController {
     @PutMapping("/admin/manufacturers/{id}")
     public Map<String, Object> updateManufacturer(@RequestParam Long maxUserId, @PathVariable Long id, @RequestBody ManufacturerRequest request) {
         ensureAdmin(maxUserId);
-        manufacturerService.renameManufacturer(id, request.name(), productService.getActiveProducts(), productService);
+        manufacturerService.renameManufacturer(id, request.name(), productService.getAllProducts(), productService);
         return Map.of("updated", true, "id", id);
     }
 
     @DeleteMapping("/admin/manufacturers/{id}")
     public Map<String, Object> deleteManufacturer(@RequestParam Long maxUserId, @PathVariable Long id) {
         ensureAdmin(maxUserId);
-        manufacturerService.deleteManufacturer(id, productService.getActiveProducts());
+        manufacturerService.deleteManufacturer(id, productService.getAllProducts(), productService);
         return Map.of("deleted", true, "id", id);
     }
 

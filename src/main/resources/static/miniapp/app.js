@@ -1054,7 +1054,7 @@ function renderProductCardDetails(product) {
         const vegetation = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
         if (isCorn) {
             return `
-                <p class="product-card-subtitle">${escapeHtml(product?.brand || "Производитель")}</p>
+                ${product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : ""}
                 <div class="product-card-detail-list">
                     <p class="product-card-detail">${escapeHtml(getSeedFaoDisplay(product) || "ФАО")}</p>
                     <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
@@ -1065,7 +1065,7 @@ function renderProductCardDetails(product) {
             return `<p class="product-card-subtitle">${escapeHtml(cultureLabel || getSeedPrimarySubcategory(product) || "Культура")}</p>`;
         }
         return `
-            <p class="product-card-subtitle">${escapeHtml(product?.brand || "Производитель")}</p>
+            ${product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : ""}
             <div class="product-card-detail-list">
                 <p class="product-card-detail">${escapeHtml(technologyLine || "Технология возделывания")}</p>
                 <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
@@ -1073,11 +1073,10 @@ function renderProductCardDetails(product) {
             </div>
         `;
     }
-    const manufacturer = product?.brand || "Производитель";
     const category = getAdminCatalogChildName(product) || getProductSectionName(product) || "Категория";
     const activeIngredient = product?.activeIngredient || "Действующее вещество";
     return `
-        <p class="product-card-subtitle">${escapeHtml(manufacturer)}</p>
+        ${product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : ""}
         <div class="product-card-detail-list">
             <p class="product-card-detail">${escapeHtml(category)}</p>
             <p class="product-card-detail">${escapeHtml(activeIngredient)}</p>
@@ -1086,7 +1085,7 @@ function renderProductCardDetails(product) {
 }
 
 function getProductCardSubtitle(product) {
-    return product.brand || "Производитель";
+    return product.brand || "";
 }
 
 function getProductCardPreview(product) {
@@ -1863,7 +1862,7 @@ function renderProductModal() {
     const isSeedRapeseed = normalize(seedPrimarySubcategory) === normalize("Рапс");
     const seedHeaderSubtitle = isSeedsSection && !isSeedCorn && !isSeedSunflower && !isSeedRapeseed
         ? (getSeedCardCultureLabel(product) || seedPrimarySubcategory || "Культура")
-        : (product.brand || "Производитель");
+        : (product.brand || "");
     const displayPrice = product.price == null ? 10 : product.price;
     return `
         <div class="modal">
@@ -1889,7 +1888,7 @@ function renderProductModal() {
                     </div>
                     <div>
                         <h3>${escapeHtml(product.name)}</h3>
-                        <div class="product-brand">${escapeHtml(seedHeaderSubtitle)}</div>
+                        ${seedHeaderSubtitle ? `<div class="product-brand">${escapeHtml(seedHeaderSubtitle)}</div>` : ""}
                     </div>
                     <div class="detail-price">
                         ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
@@ -1899,10 +1898,12 @@ function renderProductModal() {
                         ${isSeedsSection ? `
                             ${renderSeedProductSpecs(product)}
                         ` : `
-                            <div class="product-spec-item">
-                                <span>Производитель</span>
-                                <strong class="product-copy-block">${escapeHtml(product.brand || "Производитель")}</strong>
-                            </div>
+                            ${product.brand ? `
+                                <div class="product-spec-item">
+                                    <span>Производитель</span>
+                                    <strong class="product-copy-block">${escapeHtml(product.brand)}</strong>
+                                </div>
+                            ` : ""}
                             <div class="product-spec-item">
                                 <span>Категория</span>
                                 <strong class="product-copy-block">${escapeHtml(subcategoryName || sectionName || product.category || "Категория")}</strong>
@@ -3851,13 +3852,18 @@ async function saveManufacturer(formData) {
     });
     state.admin.manufacturerModal = { open: false, id: null, name: "" };
     state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
+    await refreshCatalogData();
     showNotice(id ? "Производитель сохранен." : "Производитель добавлен.");
     render();
 }
 
 async function deleteManufacturer(id) {
+    showNotice("Удаление производителя запущено...");
+    render();
     await fetchJson(`/api/admin/manufacturers/${id}?maxUserId=${state.maxUserId}`, { method: "DELETE" });
     state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
+    await refreshCatalogData();
+    showNotice("Производитель удален.");
     render();
 }
 
@@ -4378,7 +4384,7 @@ function getSeedSpecificCultureLabel(product) {
 }
 
 function renderSeedProductSpecs(product) {
-    const manufacturer = product?.brand || "Производитель";
+    const manufacturer = product?.brand || "";
     const primarySubcategory = normalize(getSeedPrimarySubcategory(product));
     const isCorn = primarySubcategory === normalize("Кукуруза");
     const isSunflower = primarySubcategory === normalize("Подсолнечник");
@@ -4393,10 +4399,12 @@ function renderSeedProductSpecs(product) {
     const packageDisplay = String(product?.packageDescription || "").trim();
     if (isCorn) {
         return `
-            <div class="product-spec-item">
-                <span>Производитель</span>
-                <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
-            </div>
+            ${manufacturer ? `
+                <div class="product-spec-item">
+                    <span>Производитель</span>
+                    <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
+                </div>
+            ` : ""}
             <div class="product-spec-item">
                 <span>ФАО</span>
                 <strong class="product-copy-block">${escapeHtml(getSeedFaoDisplay(product) || "ФАО")}</strong>
@@ -4428,10 +4436,12 @@ function renderSeedProductSpecs(product) {
         `;
     }
     return `
-        <div class="product-spec-item">
-            <span>Производитель</span>
-            <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
-        </div>
+        ${manufacturer ? `
+            <div class="product-spec-item">
+                <span>Производитель</span>
+                <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
+            </div>
+        ` : ""}
         <div class="product-spec-item">
             <span>Технология возделывания</span>
             <strong class="product-copy-block">${escapeHtml(technologyLine || "Технология возделывания")}</strong>

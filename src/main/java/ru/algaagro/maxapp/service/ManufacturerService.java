@@ -81,14 +81,13 @@ public class ManufacturerService {
     }
 
     @Transactional
-    public void deleteManufacturer(Long id, List<CatalogProduct> products) {
+    public void deleteManufacturer(Long id, List<CatalogProduct> products, ProductService productService) {
         Manufacturer manufacturer = manufacturerRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Производитель не найден"));
-        boolean hasProducts = products.stream()
-                .anyMatch(product -> product.getBrand() != null && product.getBrand().equalsIgnoreCase(manufacturer.getName()));
-        if (hasProducts) {
-            throw new IllegalArgumentException("Нельзя удалить производителя, пока к нему привязаны товары");
-        }
+        products.stream()
+                .filter(product -> product.getBrand() != null && product.getBrand().equalsIgnoreCase(manufacturer.getName()))
+                .sorted(Comparator.comparing(CatalogProduct::getId))
+                .forEach(product -> productService.updateManufacturerName(product.getId(), ""));
         manufacturerRepository.delete(manufacturer);
     }
 
