@@ -465,7 +465,8 @@ function renderPreservingFocus() {
     const drawerScrollTop = getFilterScrollContainer()?.scrollTop ?? 0;
     const pageScrollTop = window.scrollY;
     const adminProductModalScrollTop = root.querySelector(".modal-sheet-admin-product")?.scrollTop ?? 0;
-    const shouldPreserveAdminProductForm = field === "admin-product-seed-reproduction";
+    const isAdminProductField = Boolean(field && field.startsWith("admin-product-"));
+    const shouldPreserveAdminProductForm = isAdminProductField || Boolean(active?.closest?.('[data-form="admin-product"]'));
     const adminProductFormSnapshot = shouldPreserveAdminProductForm
         ? captureNamedFormState(root.querySelector('[data-form="admin-product"]'))
         : null;
@@ -481,6 +482,9 @@ function renderPreservingFocus() {
     }
     if (shouldPreserveAdminProductForm) {
         restoreNamedFormState(root.querySelector('[data-form="admin-product"]'), adminProductFormSnapshot);
+    }
+    if (active instanceof HTMLSelectElement && isAdminProductField) {
+        return;
     }
     if (!field) {
         return;
@@ -1079,8 +1083,8 @@ function renderProductsGrid(products) {
 function renderProductCard(product) {
     const visual = getProductVisual(product);
     const favorite = isFavorite(product.id);
-    const hasMultipleReproductionVariants = normalize(getProductSectionName(product)) === normalize("Семена")
-        && hasMultipleSeedReproductionVariants(product);
+    const isSeedCard = normalize(getProductSectionName(product)) === normalize("Семена");
+    const hasMultipleReproductionVariants = isSeedCard && hasMultipleSeedReproductionVariants(product);
     const selectedReproduction = hasMultipleReproductionVariants
         ? getCatalogSelectedReproduction(product)
         : getSeedSelectedReproduction(product);
@@ -1094,10 +1098,11 @@ function renderProductCard(product) {
                 <button type="button" class="favorite-fab ${favorite ? "active" : ""}" data-action="toggle-favorite" data-product-id="${product.id}">${favorite ? "♥" : "♡"}</button>
             </div>
             <div class="product-card-body">
-                <div class="product-card-heading">
+                <div class="product-card-heading ${isSeedCard ? "product-card-heading-seed" : ""}">
                     <p class="product-card-title">${escapeHtml(product.name)}</p>
-                    ${badge}
+                    ${isSeedCard ? "" : badge}
                 </div>
+                ${isSeedCard ? `<div class="product-card-badge-row">${badge}</div>` : ""}
                 ${renderProductCardDetails(product)}
                 <div class="price-line">
                     ${price}
