@@ -179,6 +179,7 @@ const SEED_TREATMENT_TECHNOLOGIES = [
 ];
 const SEED_REPRODUCTION_ORDER = [
     "ОС",
+    "СЭ",
     "ЭС",
     "РС",
     "РС1",
@@ -203,6 +204,8 @@ function emptyAdminProductEditorState() {
         open: false,
         productId: null,
         categoryDraft: "",
+        subcategoryDraft: "",
+        orderModeDraft: "",
         priceDraft: "",
         discountDraft: "",
         seedReproductionDraft: null,
@@ -2461,6 +2464,29 @@ function getAdminPackageVolumeLabel(orderMode) {
     }
 }
 
+function getAdminSeedEditorProfile(subcategory) {
+    const normalized = normalize(subcategory);
+    const isCorn = normalized === normalize("Кукуруза");
+    const isSunflower = normalized === normalize("Подсолнечник");
+    const isRapeseed = normalized === normalize("Рапс");
+    const isSugarBeet = normalized === normalize("Сахарная свекла");
+    const isSimpleSeed = Boolean(normalized) && !isCorn && !isSunflower && !isRapeseed && !isSugarBeet;
+    return {
+        isCorn,
+        isSunflower,
+        isRapeseed,
+        isSugarBeet,
+        isSimpleSeed,
+        showBrand: isCorn || isSunflower || isRapeseed || isSugarBeet,
+        showFao: isCorn,
+        showSeedsPerBag: isCorn || isSunflower || isRapeseed,
+        showTechnology: isSunflower || isRapeseed || isSugarBeet,
+        showVegetation: isSunflower,
+        showReproduction: true,
+        showSeedTreatment: isSugarBeet,
+    };
+}
+
 function inferAdminOrderConfig(product) {
     const preset = inferAdminOrderPreset(product);
     const description = String(product?.packageDescription || "").trim();
@@ -2498,13 +2524,14 @@ function renderAdminProductModal() {
     const product = state.admin.productEditor.productId ? state.admin.products.find(item => item.id === state.admin.productEditor.productId) : null;
     const categories = getAdminPrimarySections();
     const selectedCategory = state.admin.productEditor.categoryDraft || (product ? getProductSectionName(product) : (state.admin.catalogSection || categories[0] || ""));
-    const selectedSubcategory = product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || "");
+    const selectedSubcategory = state.admin.productEditor.subcategoryDraft || (product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""));
     const subcategoryOptions = getAdminSubcategoryOptions(selectedCategory);
     const subcategorySelectOptions = selectedSubcategory && !subcategoryOptions.includes(selectedSubcategory)
         ? [selectedSubcategory, ...subcategoryOptions]
         : subcategoryOptions;
     const isSeedsCategory = normalize(selectedCategory) === normalize("Семена");
     const isSugarBeetSeed = isSeedsCategory && normalize(selectedSubcategory) === normalize("Сахарная свекла");
+    const seedEditorProfile = getAdminSeedEditorProfile(selectedSubcategory);
     const brandOptions = getAdminBrandOptions();
     const activeIngredientOptions = getAdminFieldOptions("activeIngredient");
     const seedTreatmentOptions = getAdminFieldOptions("seedTreatment");
@@ -2519,9 +2546,10 @@ function renderAdminProductModal() {
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproductionValue);
     const savedSeedReproductionPrices = getSeedReproductionPriceMap(product);
     const draftSeedReproductionPrices = state.admin.productEditor.seedReproductionPriceDrafts || {};
-    const orderMode = product?.unitName
-        ? getAdminOrderMode(product)
-        : (isSeedsCategory ? "pe" : getAdminOrderMode(product));
+    const orderMode = state.admin.productEditor.orderModeDraft
+        || (product?.unitName
+            ? getAdminOrderMode(product)
+            : (isSeedsCategory ? "pe" : getAdminOrderMode(product)));
     const orderConfig = inferAdminOrderConfig(product);
     const priceValue = state.admin.productEditor.priceDraft !== ""
         ? state.admin.productEditor.priceDraft
@@ -2565,11 +2593,11 @@ function renderAdminProductModal() {
                         </div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Раздел</label><select name="category" data-field="admin-product-category">${renderOptions(categories.map(item => [item, getSectionDisplayName(item)]), selectedCategory)}</select></div>
-                            <div class="admin-field"><label>Подкатегория</label><select name="subcategory" ${subcategorySelectOptions.length ? "" : "disabled"}>${renderOptions((subcategorySelectOptions.length ? subcategorySelectOptions : [""]).map(item => [item, item || "Без подкатегории"]), selectedSubcategory || subcategorySelectOptions[0] || "")}</select></div>
-                            <div class="admin-field"><label>Производитель</label><input name="brand" autocomplete="off" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
+                            <div class="admin-field"><label>Подкатегория</label><select name="subcategory" data-field="admin-product-subcategory" ${subcategorySelectOptions.length ? "" : "disabled"}>${renderOptions((subcategorySelectOptions.length ? subcategorySelectOptions : [""]).map(item => [item, item || "Без подкатегории"]), selectedSubcategory || subcategorySelectOptions[0] || "")}</select></div>
+                            ${!isSeedsCategory || seedEditorProfile.showBrand ? `<div class="admin-field"><label>Производитель</label><input name="brand" autocomplete="off" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>` : `<input type="hidden" name="brand" value="${escapeAttr(product?.brand || "")}">`}
                         </div>
                         <div class="admin-form-row admin-form-row-3">
-                            <div class="admin-field"><label>Единица заказа</label><select name="orderMode">${renderOptions([["liters", "Литры"], ["kg", "Килограммы"], ["pe", "П.е."], ["ton", "Тонны"]], orderMode)}</select></div>
+                            <div class="admin-field"><label>Единица заказа</label><select name="orderMode" data-field="admin-product-order-mode">${renderOptions([["liters", "Литры"], ["kg", "Килограммы"], ["pe", "П.е."], ["ton", "Тонны"]], orderMode)}</select></div>
                             <div class="admin-field"><label>${escapeHtml(getAdminPackageVolumeLabel(orderMode))}</label><input name="packageVolume" type="number" min="0.001" step="0.001" autocomplete="off" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
                             <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" autocomplete="off" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
                         </div>
@@ -2595,28 +2623,31 @@ function renderAdminProductModal() {
                         <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                             <div class="admin-field admin-field-span-2"><label>Описание</label><textarea name="description" rows="2">${escapeHtml(product?.description || "")}</textarea></div>
                         </div>
-                        <div class="admin-form-row admin-form-row-compact">
-                            <div class="admin-field admin-field-span-full"><label>Действующее вещество</label><input name="activeIngredient" autocomplete="off" data-field="admin-product-active-ingredient" data-options-id="admin-active-ingredient-options" data-suggest-mode="single" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-active-ingredient")}</div>
-                        </div>
+                        ${isSeedsCategory ? "" : `
+                            <div class="admin-form-row admin-form-row-compact">
+                                <div class="admin-field admin-field-span-full"><label>Действующее вещество</label><input name="activeIngredient" autocomplete="off" data-field="admin-product-active-ingredient" data-options-id="admin-active-ingredient-options" data-suggest-mode="single" value="${escapeAttr(product?.activeIngredient || "")}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-active-ingredient")}</div>
+                            </div>
+                        `}
                         ${isSeedsCategory ? `
                             <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
-                                <div class="admin-field"><label>ФАО</label><input name="seedFao" value="${escapeAttr(product?.seedFao || "")}" placeholder="150"></div>
-                                <div class="admin-field"><label>Штук в мешке</label><input name="seedsPerBag" value="${escapeAttr(product?.seedsPerBag || "")}" placeholder="80000"></div>
-                                <div class="admin-field"><label>Группа спелости</label><input name="seedMaturityGroup" value="${escapeAttr(product?.filterMap?.seedMaturityGroup || product?.filterMap?.maturityGroup || "")}" placeholder="Среднеспелые"></div>
-                                <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" data-field="admin-product-seed-reproduction" value="${escapeAttr(seedReproductionValue)}" placeholder="ЭС, РС1, РС2"></div>
+                                ${seedEditorProfile.showFao ? `<div class="admin-field"><label>ФАО</label><input name="seedFao" value="${escapeAttr(product?.seedFao || "")}" placeholder="150"></div>` : `<input type="hidden" name="seedFao" value="">`}
+                                ${seedEditorProfile.showSeedsPerBag ? `<div class="admin-field"><label>Штук в мешке</label><input name="seedsPerBag" value="${escapeAttr(product?.seedsPerBag || "")}" placeholder="80000"></div>` : `<input type="hidden" name="seedsPerBag" value="">`}
+                                ${seedEditorProfile.showReproduction ? `<div class="admin-field"><label>Репродукция</label><input name="seedReproduction" data-field="admin-product-seed-reproduction" value="${escapeAttr(seedReproductionValue)}" placeholder="ЭС, РС1, РС2"></div>` : `<input type="hidden" name="seedReproduction" value="">`}
                             </div>
-                            <div class="admin-form-row admin-form-row-2-compact">
-                                <div class="admin-field"><label>Технология возделывания</label>${isSugarBeetSeed
+                            ${seedEditorProfile.showTechnology || seedEditorProfile.showVegetation ? `
+                                <div class="admin-form-row admin-form-row-2-compact">
+                                ${seedEditorProfile.showTechnology ? `<div class="admin-field"><label>Технология возделывания</label>${isSugarBeetSeed
                                     ? `<select name="cultivationTechnology">${renderOptions([["Классическая", "Классическая"], ["Конвизо", "Конвизо"]], product?.cultivationTechnology || "")}</select>`
                                     : `<input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield">`
-                                }</div>
-                                <div class="admin-field"><label>Срок созревания</label><input name="seedVegetationPeriod" value="${escapeAttr(product?.seedVegetationPeriod || product?.rawData?.["Срок вегетации"] || product?.rawData?.["Срок созревания"] || product?.rawData?.["Дни вегетации"] || "")}" placeholder="105-110 дней"></div>
-                            </div>
+                                }</div>` : `<input type="hidden" name="cultivationTechnology" value="">`}
+                                ${seedEditorProfile.showVegetation ? `<div class="admin-field"><label>Срок созревания</label><input name="seedVegetationPeriod" value="${escapeAttr(product?.seedVegetationPeriod || product?.rawData?.["Срок вегетации"] || product?.rawData?.["Срок созревания"] || product?.rawData?.["Дни вегетации"] || "")}" placeholder="105-110 дней"></div>` : `<input type="hidden" name="seedVegetationPeriod" value="">`}
+                                </div>
+                            ` : `<input type="hidden" name="cultivationTechnology" value=""><input type="hidden" name="seedVegetationPeriod" value="">`}
                             ${isSugarBeetSeed ? `
                                 <div class="admin-form-row admin-form-row-2-compact">
                                     <div class="admin-field"><label>Протравка</label><input name="seedTreatment" autocomplete="off" list="admin-seed-treatment-options" value="${escapeAttr(firstNonBlank(product?.seedTreatment, product?.filterMap?.seedTreatment, product?.rawData?.["Протравка"], product?.rawData?.["Протравитель"]))}" placeholder="Выберите или введите"></div>
                                 </div>
-                            ` : ""}
+                            ` : `<input type="hidden" name="seedTreatment" value="">`}
                             ${seedReproductionVariants.length > 1 ? `
                                 <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
                                     ${seedReproductionVariants.map(value => {
@@ -2638,17 +2669,16 @@ function renderAdminProductModal() {
                                     }).join("")}
                                 </div>
                             ` : ""}
-                            <div class="admin-form-row admin-form-row-2-compact">
-                                <div class="admin-field"><label>Культуры для поиска</label><input name="cultures" autocomplete="off" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
-                            </div>
                         ` : `
                             <div class="admin-form-row admin-form-row-compact">
                                 <div class="admin-field"><label>Культуры</label><input name="cultures" autocomplete="off" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                             </div>
                         `}
-                        <div class="admin-form-row">
-                            <div class="admin-field"><label>Теги / назначение</label><input name="tags" autocomplete="off" data-field="admin-product-tags" data-options-id="admin-tag-options" data-suggest-mode="multi" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-tags")}</div>
-                        </div>
+                        ${isSeedsCategory ? `<input type="hidden" name="cultures" value="${escapeAttr((product?.cultures || []).join(", "))}"><input type="hidden" name="tags" value="${escapeAttr((product?.tags || []).join(", "))}">` : `
+                            <div class="admin-form-row">
+                                <div class="admin-field"><label>Теги / назначение</label><input name="tags" autocomplete="off" data-field="admin-product-tags" data-options-id="admin-tag-options" data-suggest-mode="multi" value="${escapeAttr((product?.tags || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-tags")}</div>
+                            </div>
+                        `}
                         <div class="admin-form-row">
                             <label class="checkbox-row checkbox-row-admin">
                                 <input type="checkbox" name="forGreenhouse" ${product?.forGreenhouse || normalize(selectedCategory) === normalize("Препараты для закрытого грунта") ? "checked" : ""}>
@@ -3242,6 +3272,8 @@ function handleClick(event) {
             open: true,
             productId,
             categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
+            subcategoryDraft: product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""),
+            orderModeDraft: product ? getAdminOrderMode(product) : (state.admin.catalogSection === "Семена" ? "pe" : "liters"),
             priceDraft: product?.price != null ? String(product.price) : "",
             discountDraft: product?.discountPercent != null ? String(product.discountPercent) : "",
             seedReproductionDraft: product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "",
@@ -3365,6 +3397,21 @@ function handleInput(event) {
     }
     if (field === "admin-product-category") {
         state.admin.productEditor.categoryDraft = event.target.value;
+        const nextOptions = getAdminSubcategoryOptions(event.target.value);
+        state.admin.productEditor.subcategoryDraft = nextOptions[0] || "";
+        if (!state.admin.productEditor.orderModeDraft) {
+            state.admin.productEditor.orderModeDraft = normalize(event.target.value) === normalize("Семена") ? "pe" : "liters";
+        }
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-subcategory") {
+        state.admin.productEditor.subcategoryDraft = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-order-mode") {
+        state.admin.productEditor.orderModeDraft = event.target.value;
         renderPreservingFocus();
         return;
     }
@@ -3520,6 +3567,26 @@ function handleChange(event) {
     if (field === "admin-product-status") {
         state.admin.catalogStatus = event.target.value;
         render();
+        return;
+    }
+    if (field === "admin-product-category") {
+        state.admin.productEditor.categoryDraft = event.target.value;
+        const nextOptions = getAdminSubcategoryOptions(event.target.value);
+        state.admin.productEditor.subcategoryDraft = nextOptions[0] || "";
+        if (!state.admin.productEditor.orderModeDraft) {
+            state.admin.productEditor.orderModeDraft = normalize(event.target.value) === normalize("Семена") ? "pe" : "liters";
+        }
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-subcategory") {
+        state.admin.productEditor.subcategoryDraft = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-order-mode") {
+        state.admin.productEditor.orderModeDraft = event.target.value;
+        renderPreservingFocus();
         return;
     }
     if (field === "admin-order-status") {
@@ -3883,7 +3950,9 @@ async function saveAdminProduct(formData) {
         packageDescription,
         minOrderQuantity,
         orderStep,
-        cultures: String(formData.get("cultures") || "").trim() || (normalize(category) === normalize("Семена") ? subcategory : ""),
+        cultures: normalize(category) === normalize("Семена")
+            ? subcategory
+            : String(formData.get("cultures") || "").trim(),
         tags: String(formData.get("tags") || "").trim(),
         filterMap: mergedFilterMap,
         rawData: mergedRawData,
@@ -5221,10 +5290,13 @@ function normalizeSeedReproductionValue(value) {
         .replace(/\//g, "")
         .replace(/\s+/g, "");
     normalized = normalized.replace(/РСT/g, "РСт");
+    if (normalized === "CE" || normalized === "CЭ" || normalized === "СE") {
+        normalized = "СЭ";
+    }
     if (normalized === "РС0") {
         normalized = "РС";
     }
-    return /^(ОС|ЭС|РС|РС\d|РСт)$/.test(normalized) ? normalized : "";
+    return /^(ОС|СЭ|ЭС|РС|РС\d|РСт)$/.test(normalized) ? normalized : "";
 }
 
 function sortSeedReproductionValues(values) {
@@ -5245,13 +5317,19 @@ function extractSeedReproductionValuesFromText(source) {
     if (!text) {
         return [];
     }
-    const matches = text.match(/(?:^|[^А-ЯA-Z])(ОС|ЭС|РС(?:\s*\/?\s*\d)?|RS(?:\s*\/?\s*\d)?|PC(?:\s*\/?\s*\d)?|РСт)(?=$|[^А-ЯA-Z0-9])/gimu) || [];
+    const matches = text.match(/(?:^|[^А-ЯA-Z])(ОС|СЭ|ЭС|РС(?:\s*\/?\s*\d)?|RS(?:\s*\/?\s*\d)?|PC(?:\s*\/?\s*\d)?|РСт)(?=$|[^А-ЯA-Z0-9])/gimu) || [];
     matches.forEach(match => {
         const cleaned = normalizeSeedReproductionValue(match.replace(/^[^А-ЯA-Z]+/u, ""));
         if (cleaned) {
             values.add(cleaned);
         }
     });
+    if (!values.size) {
+        text.split(/[,;\n]+/u)
+            .map(item => normalizeSeedReproductionValue(item))
+            .filter(Boolean)
+            .forEach(value => values.add(value));
+    }
     return sortSeedReproductionValues([...values]);
 }
 
