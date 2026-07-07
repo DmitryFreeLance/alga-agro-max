@@ -31,6 +31,7 @@ public final class CatalogStructure {
             "Подсолнечник",
             "Кукуруза",
             "Рапс",
+            "Сахарная свекла",
             "Горох",
             "Соя",
             "Озимая пшеница",
@@ -99,6 +100,7 @@ public final class CatalogStructure {
             return PESTICIDES;
         }
         if (normalized.contains("подсолнеч") || normalized.contains("кукуруз") || normalized.contains("рапс")
+                || normalized.contains("свекл")
                 || normalized.contains("горох") || normalized.contains("соя") || normalized.contains("пшениц")
                 || normalized.contains("ячмен") || normalized.contains("гречих") || normalized.contains("овес")
                 || normalized.contains("люцерн") || normalized.contains("клевер") || normalized.contains("вика")
@@ -194,6 +196,7 @@ public final class CatalogStructure {
         if (normalized.contains("подсолнеч")) return "Подсолнечник";
         if (normalized.contains("кукуруз")) return "Кукуруза";
         if (normalized.contains("рапс")) return "Рапс";
+        if (normalized.contains("свекл")) return "Сахарная свекла";
         if (normalized.contains("горох")) return "Горох";
         if (normalized.contains("соя")) return "Соя";
         if (normalized.contains("озим") && normalized.contains("пшениц")) return "Озимая пшеница";

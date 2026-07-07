@@ -644,10 +644,11 @@ img {
 }
 
 .product-card-badge-reproduction {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0 10px;
+    min-width: clamp(28px, 8vw, 30px);
+    min-height: clamp(28px, 8vw, 30px);
+    padding: 0 clamp(6px, 1.8vw, 8px);
     border-radius: 999px;
+    font-size: clamp(0.58rem, 2.4vw, 0.64rem);
     transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
@@ -707,6 +708,7 @@ img {
     align-items: end;
     justify-content: space-between;
     gap: 8px;
+    min-width: 0;
 }
 
 .price-block {
@@ -760,10 +762,21 @@ img {
     overflow: hidden;
 }
 
+.qty-stepper-card {
+    grid-template-columns: 28px minmax(56px, auto) 28px;
+    min-height: 32px;
+    max-width: 118px;
+    flex: 0 0 auto;
+}
+
 .qty-stepper button {
     color: inherit;
     font-weight: 900;
     font-size: 1rem;
+}
+
+.qty-stepper-card button {
+    font-size: 0.92rem;
 }
 
 .qty-stepper span {
@@ -772,6 +785,13 @@ img {
     font-size: 0.82rem;
     font-weight: 800;
     padding: 0 6px;
+}
+
+.qty-stepper-card span {
+    min-width: 0;
+    font-size: 0.72rem;
+    padding: 0 4px;
+    white-space: nowrap;
 }
 
 .empty-box,

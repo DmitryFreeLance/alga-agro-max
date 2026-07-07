@@ -19,6 +19,7 @@ const FIXED_SECTION_DEFINITIONS = [
             "Подсолнечник",
             "Кукуруза",
             "Рапс",
+            "Сахарная свекла",
             "Горох",
             "Соя",
             "Озимая пшеница",
@@ -285,7 +286,7 @@ const state = {
         productEditor: emptyAdminProductEditorState(),
         orderModal: { open: false, orderId: null },
         customerModal: { open: false, maxUserId: null },
-        manufacturerModal: { open: false, id: null, name: "" },
+        manufacturerModal: { open: false, id: null, name: "", saving: false },
         broadcastForm: { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", imageFile: null, sending: false, uploading: false, uploadError: "" },
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
     },
@@ -1906,25 +1907,21 @@ function renderProductModal() {
     const favorite = isFavorite(product.id);
     const canBuy = true;
     const isSeedsSection = normalize(getProductSectionName(product)) === normalize("Семена");
-    const hasMultipleReproductionVariants = isSeedsSection && hasMultipleSeedReproductionVariants(product);
     const seedPrimarySubcategory = getSeedPrimarySubcategory(product);
     const isSeedCorn = normalize(seedPrimarySubcategory) === normalize("Кукуруза");
     const isSeedSunflower = normalize(seedPrimarySubcategory) === normalize("Подсолнечник");
     const isSeedRapeseed = normalize(seedPrimarySubcategory) === normalize("Рапс");
     const isSeedSugarBeet = normalize(seedPrimarySubcategory) === normalize("Сахарная свекла");
     const selectedReproduction = isSeedsSection
-        ? (hasMultipleReproductionVariants
-            ? getExplicitSeedSelectedReproduction(product, state.productModal.selectedReproduction)
-            : getSeedSelectedReproduction(product, state.productModal.selectedReproduction))
+        ? getSeedSelectedReproduction(product, state.productModal.selectedReproduction)
         : "";
     const reproductionOptions = isSeedsSection ? getSeedReproductionValues(product) : [];
     const seedHeaderSubtitle = isSeedsSection && !isSeedCorn && !isSeedSunflower && !isSeedRapeseed && !isSeedSugarBeet
         ? (getSeedCardCultureLabel(product) || seedPrimarySubcategory || "Культура")
         : (product.brand || "");
-    const cartItem = selectedReproduction ? getCartItem(product.id, selectedReproduction) : null;
+    const cartItem = getCartItem(product.id, selectedReproduction);
     const currentQty = cartItem?.quantity || state.productModal.quantity;
     const displayPrice = resolveProductUnitPrice(product, selectedReproduction);
-    const canConfirmProductCart = !hasMultipleReproductionVariants || Boolean(selectedReproduction);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-product"></div>
@@ -1997,9 +1994,9 @@ function renderProductModal() {
                     </div>
                     ${canBuy ? `
                         <div class="detail-footer detail-footer-sticky">
-                            ${canConfirmProductCart ? renderStepper(product.id, currentQty, "modal", selectedReproduction) : ""}
-                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}" data-reproduction="${escapeAttr(selectedReproduction)}" ${canConfirmProductCart ? "" : "disabled"}>
-                                ${canConfirmProductCart ? (cartItem ? "✓ В корзине" : "В корзину") : "Выберите репродукцию"}
+                            ${renderStepper(product.id, currentQty, "modal", selectedReproduction)}
+                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}" data-reproduction="${escapeAttr(selectedReproduction)}">
+                                ${cartItem ? "✓ В корзине" : "В корзину"}
                             </button>
                         </div>
                     ` : `<button class="secondary-btn" data-action="open-manager">Связаться с менеджером</button>`}
@@ -2719,23 +2716,24 @@ function renderAdminProductModal() {
 
 function renderAdminManufacturerModal() {
     if (!state.admin.manufacturerModal.open) return "";
+    const isSaving = Boolean(state.admin.manufacturerModal.saving);
     return `
         <div class="modal">
-            <div class="modal-backdrop" data-action="close-manufacturer-modal"></div>
+            <div class="modal-backdrop" ${isSaving ? "" : 'data-action="close-manufacturer-modal"'}></div>
             <div class="modal-sheet modal-sheet-compact">
                 <div class="modal-head">
                     <div class="modal-title-wrap"><div class="modal-title">${state.admin.manufacturerModal.id ? "Редактировать производителя" : "Добавить производителя"}</div></div>
-                    <button class="modal-close" data-action="close-manufacturer-modal">×</button>
+                    <button class="modal-close" ${isSaving ? "disabled" : 'data-action="close-manufacturer-modal"'}>×</button>
                 </div>
                 <form class="admin-form-grid" data-form="manufacturer">
                     <input type="hidden" name="id" value="${state.admin.manufacturerModal.id || ""}">
                     <div class="admin-field">
                         <label>Название</label>
-                        <input name="name" required value="${escapeAttr(state.admin.manufacturerModal.name || "")}">
+                        <input name="name" required value="${escapeAttr(state.admin.manufacturerModal.name || "")}" ${isSaving ? "disabled" : ""}>
                     </div>
                     <div class="admin-actions">
-                        <button type="button" class="ghost-btn" data-action="close-manufacturer-modal">Отмена</button>
-                        <button type="submit" class="primary-btn">Сохранить</button>
+                        <button type="button" class="ghost-btn" ${isSaving ? "disabled" : 'data-action="close-manufacturer-modal"'}>Отмена</button>
+                        <button type="submit" class="primary-btn" ${isSaving ? "disabled" : ""}>${isSaving ? "Сохраняем..." : "Сохранить"}</button>
                     </div>
                 </form>
             </div>
@@ -3100,13 +3098,7 @@ function handleClick(event) {
     if (action === "add-product") {
         const productId = Number(button.dataset.productId);
         const product = getProductById(productId);
-        const selectedReproduction = getCatalogSelectedReproduction(product)
-            || getExplicitSeedSelectedReproduction(product, state.productModal.selectedReproduction);
-        if (hasMultipleSeedReproductionVariants(product) && !selectedReproduction) {
-            openProductModal(productId, { selectedReproduction: "" });
-            render();
-            return;
-        }
+        const selectedReproduction = getCatalogSelectedReproduction(product);
         addToCart(productId, getInitialQuantity(product), selectedReproduction);
         render();
         return;
@@ -3327,17 +3319,20 @@ function handleClick(event) {
         return;
     }
     if (action === "open-manufacturer-modal") {
-        state.admin.manufacturerModal = { open: true, id: null, name: "" };
+        state.admin.manufacturerModal = { open: true, id: null, name: "", saving: false };
         render();
         return;
     }
     if (action === "edit-manufacturer") {
-        state.admin.manufacturerModal = { open: true, id: button.dataset.id ? Number(button.dataset.id) : null, name: button.dataset.name || "" };
+        state.admin.manufacturerModal = { open: true, id: button.dataset.id ? Number(button.dataset.id) : null, name: button.dataset.name || "", saving: false };
         render();
         return;
     }
     if (action === "close-manufacturer-modal") {
-        state.admin.manufacturerModal = { open: false, id: null, name: "" };
+        if (state.admin.manufacturerModal.saving) {
+            return;
+        }
+        state.admin.manufacturerModal = { open: false, id: null, name: "", saving: false };
         render();
         return;
     }
@@ -3863,7 +3858,10 @@ async function saveAdminProduct(formData) {
     }
     let unitName = "л";
     let packageType = "упаковка";
-    let packageDescription = String(formData.get("packageDescription") || "").trim();
+    const packageDescriptionInput = String(formData.get("packageDescription") || "").trim();
+    const existingPackageDescription = String(existingProduct?.packageDescription || "").trim();
+    const hasManualPackageDescription = Boolean(packageDescriptionInput) && packageDescriptionInput !== existingPackageDescription;
+    let packageDescription = packageDescriptionInput;
     let orderStep = parseOptionalNumber(formData.get("orderStep")) || 1;
     const packageVolume = parseOptionalNumber(formData.get("packageVolume"));
     const unitsPerPackage = parseOptionalNumber(formData.get("unitsPerPackage"));
@@ -3900,32 +3898,32 @@ async function saveAdminProduct(formData) {
     } else if (orderMode === "pe") {
         unitName = "п.е.";
         packageType = "п.е.";
-        packageDescription = packageDescription || "1 п.е.";
+        packageDescription = hasManualPackageDescription ? packageDescriptionInput : "1 п.е.";
     } else if (orderMode === "ton") {
         unitName = "т";
         packageType = "тонна";
-        packageDescription = "Тонна";
+        packageDescription = hasManualPackageDescription ? packageDescriptionInput : "Тонна";
     }
 
     if (orderMode === "liters" || orderMode === "kg") {
         if (unitsPerPackage != null && unitsPerPackage > 1 && packageVolume != null && packageVolume > 0) {
             packageType = "коробка";
-            packageDescription = packageDescription || (category === "Пестициды"
+            packageDescription = hasManualPackageDescription ? packageDescriptionInput : (category === "Пестициды"
                 ? `${formatAdminNumber(packageVolume)}x${formatAdminNumber(unitsPerPackage)}`
                 : `Коробка ${formatAdminNumber(unitsPerPackage)} × ${formatAdminNumber(packageVolume)} ${unitName}`);
         } else if (packageVolume != null && packageVolume > 0) {
             packageType = "упаковка";
-            packageDescription = packageDescription || (category === "Пестициды"
+            packageDescription = hasManualPackageDescription ? packageDescriptionInput : (category === "Пестициды"
                 ? `${formatAdminNumber(packageVolume)}${unitName}`
                 : `${formatAdminNumber(packageVolume)} ${unitName}`);
         } else {
-            packageDescription = packageDescription || unitName;
+            packageDescription = hasManualPackageDescription ? packageDescriptionInput : unitName;
         }
     }
     if (normalize(category) === normalize("Семена")) {
         unitName = "п.е.";
         packageType = packageType || "п.е.";
-        packageDescription = packageDescription || "1 п.е.";
+        packageDescription = hasManualPackageDescription ? packageDescriptionInput : "1 п.е.";
     }
 
     const explicitPrice = parseOptionalNumber(formData.get("price"));
@@ -4104,16 +4102,32 @@ async function saveManufacturer(formData) {
     const payload = { name: String(formData.get("name") || "").trim() };
     const url = id ? `/api/admin/manufacturers/${id}?maxUserId=${state.maxUserId}` : `/api/admin/manufacturers?maxUserId=${state.maxUserId}`;
     const method = id ? "PUT" : "POST";
-    await fetchJson(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    state.admin.manufacturerModal = { open: false, id: null, name: "" };
-    state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
-    await refreshCatalogData();
-    showNotice(id ? "Производитель сохранен." : "Производитель добавлен.");
+    state.admin.manufacturerModal = {
+        ...state.admin.manufacturerModal,
+        saving: true,
+        name: payload.name,
+    };
+    showNotice(id ? "Сохраняем производителя..." : "Добавляем производителя...");
     render();
+    try {
+        await fetchJson(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        state.admin.manufacturerModal = { open: false, id: null, name: "", saving: false };
+        state.admin.manufacturers = await fetchJson(`/api/admin/manufacturers?maxUserId=${state.maxUserId}`);
+        await refreshCatalogData();
+        showNotice(id ? "Производитель сохранен." : "Производитель добавлен.");
+        render();
+    } catch (error) {
+        state.admin.manufacturerModal = {
+            ...state.admin.manufacturerModal,
+            saving: false,
+        };
+        render();
+        throw error;
+    }
 }
 
 async function deleteManufacturer(id) {
@@ -4881,8 +4895,9 @@ function profileStatusLabel(status) {
 function renderStepper(productId, quantity, variant, selectedReproduction = "") {
     const product = getProductById(productId);
     const reproduction = normalizeSeedReproductionValue(selectedReproduction);
+    const variantClass = variant ? ` qty-stepper-${variant}` : "";
     return `
-        <div class="qty-stepper">
+        <div class="qty-stepper${variantClass}">
             <button type="button" data-action="cart-minus" data-product-id="${productId}" data-reproduction="${escapeAttr(reproduction)}">−</button>
             <span>${formatQuantityWithUnit(quantity, getProductOrderDisplayUnit(product))}</span>
             <button type="button" data-action="cart-plus" data-product-id="${productId}" data-reproduction="${escapeAttr(reproduction)}">+</button>
@@ -5020,10 +5035,7 @@ function openProductModal(productId, options = {}) {
     if (!product) {
         return false;
     }
-    const hasMultipleReproductionVariants = hasMultipleSeedReproductionVariants(product);
-    const normalizedSelection = hasMultipleReproductionVariants
-        ? getExplicitSeedSelectedReproduction(product, selectedReproduction ?? getCatalogSelectedReproduction(product))
-        : getSeedSelectedReproduction(product, selectedReproduction ?? getCatalogSelectedReproduction(product));
+    const normalizedSelection = getSeedSelectedReproduction(product, selectedReproduction ?? getCatalogSelectedReproduction(product));
     state.productModal = {
         ...emptyProductModalState(),
         open: true,
@@ -5431,7 +5443,7 @@ function getCatalogSelectedReproduction(product) {
     if (!product?.id) {
         return "";
     }
-    return getExplicitSeedSelectedReproduction(product, state.catalog.selectedReproductions?.[product.id]);
+    return getSeedSelectedReproduction(product, state.catalog.selectedReproductions?.[product.id]);
 }
 
 function setCatalogSelectedReproduction(productId, reproduction) {
