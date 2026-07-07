@@ -58,9 +58,9 @@ public class OrderService {
             productService.validateOrderQuantity(product, itemCommand.quantity());
             CatalogOrderItem item = new CatalogOrderItem();
             item.setProductId(product.getId());
-            item.setProductName(product.getName());
+            item.setProductName(productService.buildVariantProductName(product, itemCommand.selectedReproduction()));
             item.setQuantity(itemCommand.quantity());
-            item.setUnitPrice(product.getPrice() == null ? BigDecimal.ZERO : product.getPrice());
+            item.setUnitPrice(productService.resolveUnitPrice(product, itemCommand.selectedReproduction()));
             total = total.add(item.getUnitPrice().multiply(item.getQuantity()));
             order.addItem(item);
         }
@@ -268,6 +268,6 @@ public class OrderService {
     ) {
     }
 
-    public record CreateOrderItem(Long productId, BigDecimal quantity) {
+    public record CreateOrderItem(Long productId, BigDecimal quantity, String selectedReproduction) {
     }
 }

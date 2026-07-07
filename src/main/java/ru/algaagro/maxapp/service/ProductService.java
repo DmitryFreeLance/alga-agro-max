@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -284,6 +285,7 @@ public class ProductService {
         addMapFieldChange(changes, "Группа спелости", existingFilterMap, mergedFilterMap, "seedMaturityGroup");
         addMapFieldChange(changes, "Репродукция", existingFilterMap, mergedFilterMap, "seedReproduction");
         addMapFieldChange(changes, "Срок вегетации", existingFilterMap, mergedFilterMap, "seedVegetationPeriod");
+        addMapFieldChange(changes, "Протравка", existingFilterMap, mergedFilterMap, "seedTreatment");
         addBooleanMapFieldChange(changes, "Для теплицы", existingFilterMap, mergedFilterMap, "forGreenhouse");
         return changes;
     }
@@ -510,6 +512,12 @@ public class ProductService {
                 Objects.toString(rawData.getOrDefault("Срок созревания", ""), ""),
                 Objects.toString(rawData.getOrDefault("Дни вегетации", ""), "")
         ));
+        dto.put("seedTreatment", firstNonBlank(
+                Objects.toString(filterMap.getOrDefault("seedTreatment", ""), ""),
+                Objects.toString(rawData.getOrDefault("Протравка", ""), ""),
+                Objects.toString(rawData.getOrDefault("Протравитель", ""), "")
+        ));
+        dto.put("seedReproductionPrices", readSeedReproductionPriceMap(filterMap));
         return dto;
     }
 
@@ -547,6 +555,36 @@ public class ProductService {
         dto.put("active", product.isActive());
         dto.put("updatedAt", product.getUpdatedAt());
         return dto;
+    }
+
+    public BigDecimal resolveUnitPrice(CatalogProduct product, String selectedReproduction) {
+        if (product == null) {
+            return DEFAULT_CATALOG_PRICE;
+        }
+        Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
+        Map<String, BigDecimal> reproductionPrices = readSeedReproductionPriceMap(filterMap);
+        String normalizedReproduction = normalizeSeedReproduction(selectedReproduction);
+        if (!normalizedReproduction.isBlank()) {
+            BigDecimal variantPrice = reproductionPrices.get(normalizedReproduction);
+            if (variantPrice != null && variantPrice.compareTo(BigDecimal.ZERO) > 0) {
+                return variantPrice;
+            }
+        }
+        if (!reproductionPrices.isEmpty()) {
+            return reproductionPrices.values().iterator().next();
+        }
+        return firstPositive(product.getPrice(), DEFAULT_CATALOG_PRICE);
+    }
+
+    public String buildVariantProductName(CatalogProduct product, String selectedReproduction) {
+        if (product == null) {
+            return "";
+        }
+        String normalizedReproduction = normalizeSeedReproduction(selectedReproduction);
+        if (normalizedReproduction.isBlank()) {
+            return product.getName();
+        }
+        return product.getName() + " (" + normalizedReproduction + ")";
     }
 
     private BigDecimal applyDiscount(BigDecimal basePrice, BigDecimal discountPercent) {
@@ -731,6 +769,7 @@ public class ProductService {
         copyStructuredValue(filterMap, "seedMaturityGroup", "maturityGroup");
         copyStructuredValue(filterMap, "seedReproduction", "reproduction");
         copyStructuredValue(filterMap, "seedVegetationPeriod", "vegetationPeriod");
+        copyStructuredValue(filterMap, "seedTreatment", "treatment");
         product.setFilterMapJson(jsonHelper.writeValue(filterMap));
         Map<String, Object> rawData = payload.rawData() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload.rawData());
         putOrRemove(rawData, "Действующее вещество", filterMap.get("activeIngredient"));
@@ -740,6 +779,7 @@ public class ProductService {
         putOrRemove(rawData, "Репродукция", filterMap.get("seedReproduction"));
         putOrRemove(rawData, "Технология возделывания", filterMap.get("cultivationTechnology"));
         putOrRemove(rawData, "Срок вегетации", filterMap.get("seedVegetationPeriod"));
+        putOrRemove(rawData, "Протравка", filterMap.get("seedTreatment"));
         putOrRemove(rawData, "Фасовка", product.getPackageDescription());
         product.setRawDataJson(jsonHelper.writeValue(rawData));
     }
@@ -766,6 +806,35 @@ public class ProductService {
             return;
         }
         map.remove(key);
+    }
+
+    private Map<String, BigDecimal> readSeedReproductionPriceMap(Map<String, Object> filterMap) {
+        Object rawValue = filterMap == null ? null : filterMap.get("seedReproductionPrices");
+        if (!(rawValue instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> {
+            String normalizedKey = normalizeSeedReproduction(Objects.toString(key, ""));
+            BigDecimal numericValue = parseFlexibleDecimal(Objects.toString(value, ""));
+            if (!normalizedKey.isBlank() && numericValue != null && numericValue.compareTo(BigDecimal.ZERO) > 0) {
+                result.put(normalizedKey, numericValue);
+            }
+        });
+        return result;
+    }
+
+    private String normalizeSeedReproduction(String value) {
+        String normalized = Objects.toString(value, "")
+                .trim()
+                .toUpperCase(Locale.ROOT)
+                .replace("PC", "РС")
+                .replace("RS", "РС")
+                .replaceAll("\\s+", "");
+        if ("РС0".equals(normalized)) {
+            normalized = "РС";
+        }
+        return normalized.matches("^(ОС|ЭС|РС|РС\\d|РСТ)$") ? normalized.replace("РСТ", "РСт") : "";
     }
 
     private boolean isSunflowerSeedProduct(CatalogProduct product) {

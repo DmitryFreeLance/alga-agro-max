@@ -188,6 +188,28 @@ const SEED_REPRODUCTION_ORDER = [
     "РСт",
 ];
 
+function emptyProductModalState() {
+    return {
+        open: false,
+        productId: null,
+        quantity: 1,
+        imageIndex: 0,
+        selectedReproduction: "",
+    };
+}
+
+function emptyAdminProductEditorState() {
+    return {
+        open: false,
+        productId: null,
+        categoryDraft: "",
+        priceDraft: "",
+        discountDraft: "",
+        seedReproductionDraft: null,
+        seedReproductionPriceDrafts: {},
+    };
+}
+
 const state = {
     maxUserId: resolveMaxUserId(),
     meta: null,
@@ -223,12 +245,7 @@ const state = {
         draft: null,
         applied: emptyFilters(),
     },
-    productModal: {
-        open: false,
-        productId: null,
-        quantity: 1,
-        imageIndex: 0,
-    },
+    productModal: emptyProductModalState(),
     checkout: {
         open: false,
         submitting: false,
@@ -261,7 +278,7 @@ const state = {
         catalogSection: "",
         catalogCategory: "",
         customerSearch: "",
-        productEditor: { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" },
+        productEditor: emptyAdminProductEditorState(),
         orderModal: { open: false, orderId: null },
         customerModal: { open: false, maxUserId: null },
         manufacturerModal: { open: false, id: null, name: "" },
@@ -687,6 +704,7 @@ function resolveSectionSubcategory(rawValue, sectionName) {
         if (normalized.includes("тритикал")) return "Тритикале";
         if (normalized.includes("гречих")) return "Гречиха";
         if (normalized.includes("овес")) return "Овес";
+        if (normalized.includes("свекл")) return "Сахарная свекла";
         if (normalized.includes("люцерн")) return "Люцерна";
         if (normalized.includes("клевер") || normalized.includes("вика") || normalized.includes("лядвен")) return "Бобовые травы";
         if (normalized.includes("лен") || normalized.includes("рыжик")) return "Масличные травы";
@@ -1002,8 +1020,11 @@ function renderProductsGrid(products) {
 function renderProductCard(product) {
     const visual = getProductVisual(product);
     const favorite = isFavorite(product.id);
-    const cartItem = getCartItem(product.id);
-    const price = renderProductPrice(product);
+    const defaultReproduction = getSeedSelectedReproduction(product);
+    const hasMultipleReproductionVariants = normalize(getProductSectionName(product)) === normalize("Семена")
+        && hasMultipleSeedReproductionVariants(product);
+    const cartItem = hasMultipleReproductionVariants ? null : getCartItem(product.id, defaultReproduction);
+    const price = renderProductPrice(product, defaultReproduction);
     const badge = renderProductCardBadge(product);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
@@ -1019,7 +1040,9 @@ function renderProductCard(product) {
                 ${renderProductCardDetails(product)}
                 <div class="price-line">
                     ${price}
-                    ${cartItem
+                    ${hasMultipleReproductionVariants
+                        ? `<button type="button" class="card-cart-btn" data-action="open-product" data-product-id="${product.id}">Выбрать</button>`
+                        : cartItem
                         ? renderStepper(product.id, cartItem.quantity, "card")
                         : `<button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>`}
                 </div>
@@ -1046,8 +1069,10 @@ function renderProductCardDetails(product) {
         const isCorn = primarySubcategory === normalize("Кукуруза");
         const isSunflower = primarySubcategory === normalize("Подсолнечник");
         const isRapeseed = primarySubcategory === normalize("Рапс");
+        const isSugarBeet = primarySubcategory === normalize("Сахарная свекла");
         const cultureLabel = getSeedCardCultureLabel(product);
         const technology = getSeedTechnologyDisplay(product);
+        const seedTreatment = getSeedTreatmentDisplay(product);
         const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
         const technologyLine = [technology, fao].filter(Boolean).join(" • ");
         const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
@@ -1058,6 +1083,15 @@ function renderProductCardDetails(product) {
                 <div class="product-card-detail-list">
                     <p class="product-card-detail">${escapeHtml(getSeedFaoDisplay(product) || "ФАО")}</p>
                     <p class="product-card-detail">${escapeHtml(seedsPerBag)}</p>
+                </div>
+            `;
+        }
+        if (isSugarBeet) {
+            return `
+                ${product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : ""}
+                <div class="product-card-detail-list">
+                    <p class="product-card-detail">${escapeHtml(technology || "Технология")}</p>
+                    <p class="product-card-detail">${escapeHtml(seedTreatment || "Протравка")}</p>
                 </div>
             `;
         }
@@ -1116,9 +1150,9 @@ function formatCompactPackageDisplay(product) {
     return String(product?.packageDescription || "").trim();
 }
 
-function renderProductPrice(product) {
+function renderProductPrice(product, selectedReproduction = "") {
     const oldPrice = normalizePrice(product.oldPrice);
-    const safePrice = product.price == null ? 10 : product.price;
+    const safePrice = resolveProductUnitPrice(product, selectedReproduction);
     return `
         <div class="price-block ${oldPrice ? "discounted" : ""}">
             <div class="old-price">${oldPrice ? `${formatPrice(oldPrice)}` : "&nbsp;"}</div>
@@ -1159,19 +1193,19 @@ function renderCartPage() {
 
 function renderCartItem(item) {
     const visual = getProductVisual(item.product);
-    const lineTotal = Number(item.product.price ?? 10) * Number(item.quantity || 0);
+    const lineTotal = Number(item.unitPrice ?? resolveProductUnitPrice(item.product, item.selectedReproduction)) * Number(item.quantity || 0);
     return `
         <article class="cart-item">
             <div class="cart-thumb" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
                 <img src="${visual.icon}" alt="${escapeAttr(item.product.name)}">
             </div>
             <div class="cart-main">
-                <h3>${escapeHtml(item.product.name)}</h3>
-                <div class="cart-meta">${escapeHtml(item.product.brand || item.product.packageDescription || item.product.unitName || "")}</div>
-                ${renderStepper(item.product.id, item.quantity, "cart")}
+                <h3>${escapeHtml(item.displayName || item.product.name)}</h3>
+                <div class="cart-meta">${escapeHtml([item.selectedReproduction, item.product.brand || item.product.packageDescription || item.product.unitName || ""].filter(Boolean).join(" • "))}</div>
+                ${renderStepper(item.product.id, item.quantity, "cart", item.selectedReproduction)}
             </div>
             <div class="cart-end">
-                <button class="delete-btn" data-action="remove-cart" data-product-id="${item.product.id}">×</button>
+                <button class="delete-btn" data-action="remove-cart" data-product-id="${item.product.id}" data-reproduction="${escapeAttr(item.selectedReproduction || "")}">×</button>
                 <strong>${formatPrice(lineTotal)}</strong>
             </div>
         </article>
@@ -1224,7 +1258,7 @@ function renderCheckoutPage() {
                     <div class="field">
                         <label>Состав заявки</label>
                         <div class="summary-card">
-                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.product.name)}</span><span>${formatQuantity(item.quantity)} ${escapeHtml(item.product.unitName || "ед.")}</span></div>`).join("")}
+                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.displayName || item.product.name)}</span><span>${formatQuantity(item.quantity)} ${escapeHtml(item.product.unitName || "ед.")}</span></div>`).join("")}
                             <div class="summary-row"><strong>Итого позиций</strong><strong>${getCartProducts().length}</strong></div>
                         </div>
                     </div>
@@ -1854,16 +1888,20 @@ function renderProductModal() {
     const currentImage = galleryItems[state.productModal.imageIndex] || visual.icon;
     const favorite = isFavorite(product.id);
     const canBuy = true;
-    const currentQty = getCartItem(product.id)?.quantity || state.productModal.quantity;
     const isSeedsSection = normalize(getProductSectionName(product)) === normalize("Семена");
     const seedPrimarySubcategory = getSeedPrimarySubcategory(product);
     const isSeedCorn = normalize(seedPrimarySubcategory) === normalize("Кукуруза");
     const isSeedSunflower = normalize(seedPrimarySubcategory) === normalize("Подсолнечник");
     const isSeedRapeseed = normalize(seedPrimarySubcategory) === normalize("Рапс");
-    const seedHeaderSubtitle = isSeedsSection && !isSeedCorn && !isSeedSunflower && !isSeedRapeseed
+    const isSeedSugarBeet = normalize(seedPrimarySubcategory) === normalize("Сахарная свекла");
+    const selectedReproduction = isSeedsSection ? getSeedSelectedReproduction(product, state.productModal.selectedReproduction) : "";
+    const reproductionOptions = isSeedsSection ? getSeedReproductionValues(product) : [];
+    const seedHeaderSubtitle = isSeedsSection && !isSeedCorn && !isSeedSunflower && !isSeedRapeseed && !isSeedSugarBeet
         ? (getSeedCardCultureLabel(product) || seedPrimarySubcategory || "Культура")
         : (product.brand || "");
-    const displayPrice = product.price == null ? 10 : product.price;
+    const cartItem = getCartItem(product.id, selectedReproduction);
+    const currentQty = cartItem?.quantity || state.productModal.quantity;
+    const displayPrice = resolveProductUnitPrice(product, selectedReproduction);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-product"></div>
@@ -1890,6 +1928,16 @@ function renderProductModal() {
                         <h3>${escapeHtml(product.name)}</h3>
                         ${seedHeaderSubtitle ? `<div class="product-brand">${escapeHtml(seedHeaderSubtitle)}</div>` : ""}
                     </div>
+                    ${reproductionOptions.length > 1 ? `
+                        <div class="drawer-section">
+                            <h4>Репродукция</h4>
+                            <div class="filter-chips-row">
+                                ${reproductionOptions.map(value => `
+                                    <button type="button" class="filter-chip ${value === selectedReproduction ? "active" : ""}" data-action="set-product-reproduction" data-product-id="${product.id}" data-reproduction="${escapeAttr(value)}">${escapeHtml(value)}</button>
+                                `).join("")}
+                            </div>
+                        </div>
+                    ` : ""}
                     <div class="detail-price">
                         ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
                         <strong class="${product.oldPrice ? "price-current-discount" : ""}">${formatPrice(displayPrice)}</strong>
@@ -1926,9 +1974,9 @@ function renderProductModal() {
                     </div>
                     ${canBuy ? `
                         <div class="detail-footer detail-footer-sticky">
-                            ${renderStepper(product.id, currentQty, "modal")}
-                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}">
-                                ${getCartItem(product.id) ? "✓ В корзине" : "В корзину"}
+                            ${renderStepper(product.id, currentQty, "modal", selectedReproduction)}
+                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}" data-reproduction="${escapeAttr(selectedReproduction)}">
+                                ${cartItem ? "✓ В корзине" : "В корзину"}
                             </button>
                         </div>
                     ` : `<button class="secondary-btn" data-action="open-manager">Связаться с менеджером</button>`}
@@ -2344,6 +2392,14 @@ function getAdminFieldOptions(field) {
     if (field === "activeIngredient") {
         return uniqueValues((state.admin.products || []).map(item => item.activeIngredient || item.filterMap?.activeIngredient).filter(Boolean));
     }
+    if (field === "seedTreatment") {
+        return uniqueValues((state.admin.products || []).map(item => firstNonBlank(
+            item.seedTreatment,
+            item.filterMap?.seedTreatment,
+            item.rawData?.["Протравка"],
+            item.rawData?.["Протравитель"]
+        )).filter(Boolean));
+    }
     if (field === "cultures") {
         return uniqueValues((state.admin.products || []).flatMap(item => item.cultures || []).filter(Boolean));
     }
@@ -2444,14 +2500,25 @@ function renderAdminProductModal() {
     const selectedCategory = state.admin.productEditor.categoryDraft || (product ? getProductSectionName(product) : (state.admin.catalogSection || categories[0] || ""));
     const selectedSubcategory = product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || "");
     const subcategoryOptions = getAdminSubcategoryOptions(selectedCategory);
+    const subcategorySelectOptions = selectedSubcategory && !subcategoryOptions.includes(selectedSubcategory)
+        ? [selectedSubcategory, ...subcategoryOptions]
+        : subcategoryOptions;
     const isSeedsCategory = normalize(selectedCategory) === normalize("Семена");
+    const isSugarBeetSeed = isSeedsCategory && normalize(selectedSubcategory) === normalize("Сахарная свекла");
     const brandOptions = getAdminBrandOptions();
     const activeIngredientOptions = getAdminFieldOptions("activeIngredient");
+    const seedTreatmentOptions = getAdminFieldOptions("seedTreatment");
     const cultureOptions = getAdminFieldOptions("cultures");
     const tagOptions = getAdminFieldOptions("tags");
     const packageDescriptionOptions = getAdminFieldOptions("packageDescription");
     const packageVolumeOptions = getAdminFieldOptions("packageVolume");
     const unitsPerPackageOptions = getAdminFieldOptions("unitsPerPackage");
+    const seedReproductionValue = state.admin.productEditor.seedReproductionDraft != null
+        ? state.admin.productEditor.seedReproductionDraft
+        : (product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "");
+    const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproductionValue);
+    const savedSeedReproductionPrices = getSeedReproductionPriceMap(product);
+    const draftSeedReproductionPrices = state.admin.productEditor.seedReproductionPriceDrafts || {};
     const orderMode = product?.unitName
         ? getAdminOrderMode(product)
         : (isSeedsCategory ? "pe" : getAdminOrderMode(product));
@@ -2484,6 +2551,7 @@ function renderAdminProductModal() {
                     ${renderDatalist("admin-subcategory-options", subcategoryOptions)}
                     ${renderDatalist("admin-brand-options", brandOptions)}
                     ${renderDatalist("admin-active-ingredient-options", activeIngredientOptions)}
+                    ${renderDatalist("admin-seed-treatment-options", seedTreatmentOptions)}
                     ${renderDatalist("admin-culture-options", cultureOptions)}
                     ${renderDatalist("admin-tag-options", tagOptions)}
                     ${renderDatalist("admin-package-description-options", packageDescriptionOptions)}
@@ -2497,7 +2565,7 @@ function renderAdminProductModal() {
                         </div>
                         <div class="admin-form-row admin-form-row-3">
                             <div class="admin-field"><label>Раздел</label><select name="category" data-field="admin-product-category">${renderOptions(categories.map(item => [item, getSectionDisplayName(item)]), selectedCategory)}</select></div>
-                            <div class="admin-field"><label>Подкатегория</label><select name="subcategory" ${subcategoryOptions.length ? "" : "disabled"}>${renderOptions((subcategoryOptions.length ? subcategoryOptions : [""]).map(item => [item, item || "Без подкатегории"]), selectedSubcategory || subcategoryOptions[0] || "")}</select></div>
+                            <div class="admin-field"><label>Подкатегория</label><select name="subcategory" ${subcategorySelectOptions.length ? "" : "disabled"}>${renderOptions((subcategorySelectOptions.length ? subcategorySelectOptions : [""]).map(item => [item, item || "Без подкатегории"]), selectedSubcategory || subcategorySelectOptions[0] || "")}</select></div>
                             <div class="admin-field"><label>Производитель</label><input name="brand" autocomplete="off" data-field="admin-product-brand" data-options-id="admin-brand-options" data-suggest-mode="single" value="${escapeAttr(product?.brand || "")}" placeholder="Выберите или введите нового">${renderAdminSuggestionBox("admin-product-brand")}</div>
                         </div>
                         <div class="admin-form-row admin-form-row-3">
@@ -2535,12 +2603,41 @@ function renderAdminProductModal() {
                                 <div class="admin-field"><label>ФАО</label><input name="seedFao" value="${escapeAttr(product?.seedFao || "")}" placeholder="150"></div>
                                 <div class="admin-field"><label>Штук в мешке</label><input name="seedsPerBag" value="${escapeAttr(product?.seedsPerBag || "")}" placeholder="80000"></div>
                                 <div class="admin-field"><label>Группа спелости</label><input name="seedMaturityGroup" value="${escapeAttr(product?.filterMap?.seedMaturityGroup || product?.filterMap?.maturityGroup || "")}" placeholder="Среднеспелые"></div>
-                                <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" value="${escapeAttr(product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "")}" placeholder="ЭС, РС1, РС2"></div>
+                                <div class="admin-field"><label>Репродукция</label><input name="seedReproduction" data-field="admin-product-seed-reproduction" value="${escapeAttr(seedReproductionValue)}" placeholder="ЭС, РС1, РС2"></div>
                             </div>
                             <div class="admin-form-row admin-form-row-2-compact">
-                                <div class="admin-field"><label>Технология возделывания</label><input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield"></div>
+                                <div class="admin-field"><label>Технология возделывания</label>${isSugarBeetSeed
+                                    ? `<select name="cultivationTechnology">${renderOptions([["Классическая", "Классическая"], ["Конвизо", "Конвизо"]], product?.cultivationTechnology || "")}</select>`
+                                    : `<input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield">`
+                                }</div>
                                 <div class="admin-field"><label>Срок созревания</label><input name="seedVegetationPeriod" value="${escapeAttr(product?.seedVegetationPeriod || product?.rawData?.["Срок вегетации"] || product?.rawData?.["Срок созревания"] || product?.rawData?.["Дни вегетации"] || "")}" placeholder="105-110 дней"></div>
                             </div>
+                            ${isSugarBeetSeed ? `
+                                <div class="admin-form-row admin-form-row-2-compact">
+                                    <div class="admin-field"><label>Протравка</label><input name="seedTreatment" autocomplete="off" list="admin-seed-treatment-options" value="${escapeAttr(firstNonBlank(product?.seedTreatment, product?.filterMap?.seedTreatment, product?.rawData?.["Протравка"], product?.rawData?.["Протравитель"]))}" placeholder="Выберите или введите"></div>
+                                </div>
+                            ` : ""}
+                            ${seedReproductionVariants.length > 1 ? `
+                                <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
+                                    ${seedReproductionVariants.map(value => {
+                                        const hasDraft = Object.prototype.hasOwnProperty.call(draftSeedReproductionPrices, value);
+                                        const fieldValue = hasDraft ? draftSeedReproductionPrices[value] : (savedSeedReproductionPrices[value] ?? "");
+                                        return `
+                                            <div class="admin-field">
+                                                <label>Цена ${escapeHtml(value)}</label>
+                                                <input
+                                                    name="seedReproductionPrice_${escapeAttr(value)}"
+                                                    data-field="admin-product-seed-reproduction-price"
+                                                    data-reproduction="${escapeAttr(value)}"
+                                                    type="text"
+                                                    inputmode="decimal"
+                                                    value="${escapeAttr(fieldValue === "" ? "" : String(fieldValue))}"
+                                                    placeholder="2239">
+                                            </div>
+                                        `;
+                                    }).join("")}
+                                </div>
+                            ` : ""}
                             <div class="admin-form-row admin-form-row-2-compact">
                                 <div class="admin-field"><label>Культуры для поиска</label><input name="cultures" autocomplete="off" data-field="admin-product-cultures" data-options-id="admin-culture-options" data-suggest-mode="multi" value="${escapeAttr((product?.cultures || []).join(", "))}" placeholder="Выберите или введите">${renderAdminSuggestionBox("admin-product-cultures")}</div>
                             </div>
@@ -2915,6 +3012,17 @@ function handleClick(event) {
         render();
         return;
     }
+    if (action === "set-product-reproduction") {
+        const product = getProductById(Number(button.dataset.productId));
+        if (!product) {
+            return;
+        }
+        const selectedReproduction = getSeedSelectedReproduction(product, button.dataset.reproduction || "");
+        state.productModal.selectedReproduction = selectedReproduction;
+        state.productModal.quantity = getCartItem(product.id, selectedReproduction)?.quantity || getInitialQuantity(product);
+        render();
+        return;
+    }
     if (action === "close-product") {
         closeProductModal();
         render();
@@ -2937,14 +3045,16 @@ function handleClick(event) {
     if (action === "add-product") {
         const productId = Number(button.dataset.productId);
         const product = getProductById(productId);
-        addToCart(productId, getInitialQuantity(product));
+        const selectedReproduction = getSeedSelectedReproduction(product);
+        addToCart(productId, getInitialQuantity(product), selectedReproduction);
         render();
         return;
     }
     if (action === "confirm-product-cart") {
         const product = getProductById(Number(button.dataset.productId));
         if (product) {
-            setCartQuantity(product.id, getSanitizedQuantityForProduct(product, getCartItem(product.id)?.quantity || state.productModal.quantity));
+            const selectedReproduction = getSeedSelectedReproduction(product, button.dataset.reproduction || state.productModal.selectedReproduction);
+            setCartQuantity(product.id, getSanitizedQuantityForProduct(product, getCartItem(product.id, selectedReproduction)?.quantity || state.productModal.quantity), selectedReproduction);
             saveCart();
         }
         closeProductModal();
@@ -2952,12 +3062,12 @@ function handleClick(event) {
         return;
     }
     if (action === "cart-minus" || action === "cart-plus") {
-        adjustCartQuantity(Number(button.dataset.productId), action === "cart-plus" ? 1 : -1);
+        adjustCartQuantity(Number(button.dataset.productId), action === "cart-plus" ? 1 : -1, button.dataset.reproduction || "");
         render();
         return;
     }
     if (action === "remove-cart") {
-        removeFromCart(Number(button.dataset.productId));
+        removeFromCart(Number(button.dataset.productId), button.dataset.reproduction || "");
         render();
         return;
     }
@@ -3128,17 +3238,20 @@ function handleClick(event) {
         const productId = button.dataset.productId ? Number(button.dataset.productId) : null;
         const product = productId ? state.admin.products.find(item => item.id === productId) : null;
         state.admin.productEditor = {
+            ...emptyAdminProductEditorState(),
             open: true,
             productId,
             categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
             priceDraft: product?.price != null ? String(product.price) : "",
             discountDraft: product?.discountPercent != null ? String(product.discountPercent) : "",
+            seedReproductionDraft: product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "",
+            seedReproductionPriceDrafts: getSeedReproductionPriceMap(product),
         };
         render();
         return;
     }
     if (action === "close-admin-product") {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
+        state.admin.productEditor = emptyAdminProductEditorState();
         render();
         return;
     }
@@ -3258,6 +3371,21 @@ function handleInput(event) {
     if (field === "admin-product-price") {
         state.admin.productEditor.priceDraft = event.target.value;
         updateAdminPricePreview();
+        return;
+    }
+    if (field === "admin-product-seed-reproduction") {
+        state.admin.productEditor.seedReproductionDraft = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-product-seed-reproduction-price") {
+        const reproduction = normalizeSeedReproductionValue(event.target.dataset.reproduction || "");
+        if (reproduction) {
+            state.admin.productEditor.seedReproductionPriceDrafts = {
+                ...(state.admin.productEditor.seedReproductionPriceDrafts || {}),
+                [reproduction]: event.target.value,
+            };
+        }
         return;
     }
     if (field === "admin-product-discount") {
@@ -3529,6 +3657,7 @@ async function submitOrder() {
     const items = state.cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
+        selectedReproduction: item.selectedReproduction || "",
     }));
     const contactName = state.checkout.form.organization.trim();
     const farmName = state.checkout.form.farmName.trim();
@@ -3647,6 +3776,19 @@ async function saveAdminProduct(formData) {
     const seedReproduction = String(formData.get("seedReproduction") || "").trim();
     const seedVegetationPeriod = String(formData.get("seedVegetationPeriod") || "").trim();
     let cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
+    const seedTreatment = String(formData.get("seedTreatment") || "").trim();
+    const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproduction);
+    const seedReproductionPrices = {};
+    seedReproductionVariants.forEach(value => {
+        const draftValue = state.admin.productEditor.seedReproductionPriceDrafts?.[value];
+        const parsedValue = parseOptionalNumber(draftValue);
+        if (parsedValue != null && parsedValue > 0) {
+            seedReproductionPrices[value] = parsedValue;
+        }
+    });
+    if (normalize(category) === normalize("Семена") && normalize(subcategory) === normalize("Сахарная свекла")) {
+        cultivationTechnology = cultivationTechnology === "Конвизо" ? "Конвизо" : "Классическая";
+    }
     if (forGreenhouse) {
         category = "Препараты для закрытого грунта";
         subcategory = "";
@@ -3688,6 +3830,15 @@ async function saveAdminProduct(formData) {
         packageDescription = packageDescription || "1 п.е.";
     }
 
+    const explicitPrice = parseOptionalNumber(formData.get("price"));
+    const effectiveBasePrice = (() => {
+        const firstVariant = seedReproductionVariants[0] || "";
+        if (firstVariant && Number(seedReproductionPrices[firstVariant]) > 0) {
+            return seedReproductionPrices[firstVariant];
+        }
+        return explicitPrice ?? 10;
+    })();
+
     const mergedFilterMap = {
         ...(existingProduct?.filterMap || {}),
         activeIngredient,
@@ -3700,7 +3851,12 @@ async function saveAdminProduct(formData) {
         seedReproduction,
         seedVegetationPeriod,
         cultivationTechnology,
+        seedTreatment,
+        seedReproductionPrices,
     };
+    if (!seedReproductionVariants.length || Object.keys(seedReproductionPrices).length === 0) {
+        delete mergedFilterMap.seedReproductionPrices;
+    }
     const mergedRawData = {
         ...(existingProduct?.rawData || {}),
         "Действующее вещество": activeIngredient,
@@ -3710,6 +3866,7 @@ async function saveAdminProduct(formData) {
         "Репродукция": seedReproduction,
         "Технология возделывания": cultivationTechnology,
         "Срок вегетации": seedVegetationPeriod,
+        "Протравка": seedTreatment,
     };
 
     const payload = {
@@ -3720,7 +3877,7 @@ async function saveAdminProduct(formData) {
         brand: String(formData.get("brand") || "").trim(),
         description: String(formData.get("description") || "").trim(),
         unitName,
-        price: parseOptionalNumber(formData.get("price")) ?? 10,
+        price: effectiveBasePrice,
         stockQuantity: parseOptionalNumber(formData.get("stockQuantity")),
         packageType,
         packageDescription,
@@ -3734,7 +3891,7 @@ async function saveAdminProduct(formData) {
     };
     const url = id ? `/api/admin/products/${id}?maxUserId=${state.maxUserId}` : `/api/admin/products?maxUserId=${state.maxUserId}`;
     const method = id ? "PUT" : "POST";
-    state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
+    state.admin.productEditor = emptyAdminProductEditorState();
     showNotice(id ? "Сохранение товара запущено..." : "Добавление товара запущено...");
     render();
     await fetchJson(url, {
@@ -3796,8 +3953,10 @@ function buildAdminProductPayload(product, overrides = {}) {
             seedsPerBag: product.seedsPerBag || product.filterMap?.seedsPerBag || "",
             seedMaturityGroup: product.seedMaturityGroup || product.filterMap?.seedMaturityGroup || product.filterMap?.maturityGroup || "",
             seedReproduction: product.seedReproduction || product.filterMap?.seedReproduction || product.filterMap?.reproduction || "",
+            seedReproductionPrices: product.seedReproductionPrices || product.filterMap?.seedReproductionPrices || {},
             seedVegetationPeriod: product.seedVegetationPeriod || product.filterMap?.seedVegetationPeriod || product.filterMap?.vegetationPeriod || "",
             cultivationTechnology: product.cultivationTechnology || product.filterMap?.cultivationTechnology || "",
+            seedTreatment: product.seedTreatment || product.filterMap?.seedTreatment || product.rawData?.["Протравка"] || product.rawData?.["Протравитель"] || "",
         },
         rawData: product.rawData || {},
         active: Boolean(product.active),
@@ -3808,7 +3967,7 @@ function buildAdminProductPayload(product, overrides = {}) {
 async function deleteAdminProduct(productId) {
     const wasEditingCurrent = state.admin.productEditor.open && state.admin.productEditor.productId === productId;
     if (wasEditingCurrent) {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
+        state.admin.productEditor = emptyAdminProductEditorState();
     }
     showNotice("Удаление товара запущено...");
     render();
@@ -3826,7 +3985,7 @@ async function toggleAdminProductVisibility(productId) {
     const nextActive = !product.active;
     const wasEditingCurrent = state.admin.productEditor.open && state.admin.productEditor.productId === productId;
     if (wasEditingCurrent) {
-        state.admin.productEditor = { open: false, productId: null, categoryDraft: "", priceDraft: "", discountDraft: "" };
+        state.admin.productEditor = emptyAdminProductEditorState();
     }
     showNotice(nextActive ? "Публикация товара обновляется..." : "Скрытие товара запущено...");
     render();
@@ -4360,6 +4519,15 @@ function getSeedVegetationPeriodDisplay(product) {
     return String(rawValue || "").trim();
 }
 
+function getSeedTreatmentDisplay(product) {
+    return String(firstNonBlank(
+        product?.seedTreatment,
+        product?.filterMap?.seedTreatment,
+        getProductFilterRawValue(product, ["Протравка", "Протравитель", "seedTreatment"]),
+        product?.activeIngredient
+    ) || "").trim();
+}
+
 function getSeedReproductionDisplay(product) {
     return getSeedReproductionValues(product)[0] || "";
 }
@@ -4389,8 +4557,10 @@ function renderSeedProductSpecs(product) {
     const isCorn = primarySubcategory === normalize("Кукуруза");
     const isSunflower = primarySubcategory === normalize("Подсолнечник");
     const isRapeseed = primarySubcategory === normalize("Рапс");
+    const isSugarBeet = primarySubcategory === normalize("Сахарная свекла");
     const cultureLabel = getSeedCardCultureLabel(product) || getSeedPrimarySubcategory(product) || "Культура";
     const technology = getSeedTechnologyDisplay(product);
+    const seedTreatment = getSeedTreatmentDisplay(product);
     const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
     const technologyLine = [technology, fao].filter(Boolean).join(" • ");
     const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
@@ -4412,6 +4582,34 @@ function renderSeedProductSpecs(product) {
             <div class="product-spec-item">
                 <span>Количество семян</span>
                 <strong class="product-copy-block">${escapeHtml(seedsPerBag)}</strong>
+            </div>
+            ${packageDisplay ? `
+                <div class="product-spec-item">
+                    <span>Фасовка</span>
+                    <strong class="product-copy-block">${escapeHtml(packageDisplay)}</strong>
+                </div>
+            ` : ""}
+        `;
+    }
+    if (isSugarBeet) {
+        return `
+            ${manufacturer ? `
+                <div class="product-spec-item">
+                    <span>Производитель</span>
+                    <strong class="product-copy-block">${escapeHtml(manufacturer)}</strong>
+                </div>
+            ` : ""}
+            <div class="product-spec-item">
+                <span>Технология</span>
+                <strong class="product-copy-block">${escapeHtml(technology || "Технология")}</strong>
+            </div>
+            <div class="product-spec-item">
+                <span>Название гибрида</span>
+                <strong class="product-copy-block">${escapeHtml(product?.name || "Название гибрида")}</strong>
+            </div>
+            <div class="product-spec-item">
+                <span>Протравка</span>
+                <strong class="product-copy-block">${escapeHtml(seedTreatment || "Протравка")}</strong>
             </div>
             ${packageDisplay ? `
                 <div class="product-spec-item">
@@ -4580,54 +4778,64 @@ function profileStatusLabel(status) {
     }[status] || status;
 }
 
-function renderStepper(productId, quantity, variant) {
+function renderStepper(productId, quantity, variant, selectedReproduction = "") {
     const product = getProductById(productId);
+    const reproduction = normalizeSeedReproductionValue(selectedReproduction);
     return `
         <div class="qty-stepper">
-            <button type="button" data-action="cart-minus" data-product-id="${productId}">−</button>
+            <button type="button" data-action="cart-minus" data-product-id="${productId}" data-reproduction="${escapeAttr(reproduction)}">−</button>
             <span>${formatQuantityWithUnit(quantity, getProductOrderDisplayUnit(product))}</span>
-            <button type="button" data-action="cart-plus" data-product-id="${productId}">+</button>
+            <button type="button" data-action="cart-plus" data-product-id="${productId}" data-reproduction="${escapeAttr(reproduction)}">+</button>
         </div>
     `;
 }
 
-function addToCart(productId, quantity) {
+function resolveCartItemReproduction(item, product = null) {
+    const targetProduct = product || getProductById(item?.productId);
+    return targetProduct ? getSeedSelectedReproduction(targetProduct, item?.selectedReproduction) : normalizeSeedReproductionValue(item?.selectedReproduction);
+}
+
+function addToCart(productId, quantity, selectedReproduction = "") {
     const product = getProductById(productId);
     if (!product) return;
-    const existing = getCartItem(productId);
+    const normalizedReproduction = getSeedSelectedReproduction(product, selectedReproduction);
+    const existing = getCartItem(productId, normalizedReproduction);
     const base = existing ? existing.quantity : 0;
     const next = getSanitizedQuantityForProduct(product, base + quantity);
-    setCartQuantity(productId, next);
+    setCartQuantity(productId, next, normalizedReproduction);
     saveCart();
 }
 
-function setCartQuantity(productId, quantity) {
+function setCartQuantity(productId, quantity, selectedReproduction = "") {
     const nextQuantity = Math.max(0, Number(quantity) || 0);
-    const existing = state.cart.find(item => item.productId === productId);
+    const product = getProductById(productId);
+    const normalizedReproduction = product ? getSeedSelectedReproduction(product, selectedReproduction) : normalizeSeedReproductionValue(selectedReproduction);
+    const existing = state.cart.find(item => item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction);
     if (nextQuantity <= 0) {
-        state.cart = state.cart.filter(item => item.productId !== productId);
+        state.cart = state.cart.filter(item => !(item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction));
         return;
     }
     if (existing) {
         existing.quantity = nextQuantity;
     } else {
-        state.cart.push({ productId, quantity: nextQuantity });
+        state.cart.push({ productId, quantity: nextQuantity, selectedReproduction: normalizedReproduction });
     }
 }
 
-function adjustCartQuantity(productId, direction) {
+function adjustCartQuantity(productId, direction, selectedReproduction = "") {
     const product = getProductById(productId);
     if (!product) return;
-    const current = getCartItem(productId)?.quantity || 0;
+    const normalizedReproduction = getSeedSelectedReproduction(product, selectedReproduction);
+    const current = getCartItem(productId, normalizedReproduction)?.quantity || 0;
     const step = Number(product.orderStep || 1);
     const min = Number(product.minOrderQuantity || 1);
     const next = direction > 0
         ? (current > 0 ? current + step : min)
         : current - step;
     if (next < min) {
-        removeFromCart(productId);
+        removeFromCart(productId, normalizedReproduction);
     } else {
-        setCartQuantity(productId, getSanitizedQuantityForProduct(product, next));
+        setCartQuantity(productId, getSanitizedQuantityForProduct(product, next), normalizedReproduction);
     }
     saveCart();
 }
@@ -4644,19 +4852,36 @@ function getInitialQuantity(product) {
     return roundQuantity(Math.max(0.001, Number(product.minOrderQuantity || 1)));
 }
 
-function removeFromCart(productId) {
-    state.cart = state.cart.filter(item => item.productId !== productId);
+function removeFromCart(productId, selectedReproduction = "") {
+    const product = getProductById(productId);
+    const normalizedReproduction = normalizeSeedReproductionValue(selectedReproduction);
+    state.cart = state.cart.filter(item => !(item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction));
     saveCart();
 }
 
-function getCartItem(productId) {
-    return state.cart.find(item => item.productId === productId) || null;
+function getCartItem(productId, selectedReproduction = "") {
+    const product = getProductById(productId);
+    const normalizedReproduction = normalizeSeedReproductionValue(selectedReproduction);
+    return state.cart.find(item => item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction) || null;
 }
 
 function getCartProducts() {
     return state.cart
-        .map(item => ({ ...item, product: getProductById(item.productId) }))
-        .filter(item => item.product);
+        .map(item => {
+            const product = getProductById(item.productId);
+            if (!product) {
+                return null;
+            }
+            const selectedReproduction = getSeedSelectedReproduction(product, item.selectedReproduction);
+            return {
+                ...item,
+                selectedReproduction,
+                product,
+                displayName: getVariantProductName(product, selectedReproduction),
+                unitPrice: resolveProductUnitPrice(product, selectedReproduction),
+            };
+        })
+        .filter(item => item && item.product);
 }
 
 function sumCartUnits() {
@@ -4664,7 +4889,7 @@ function sumCartUnits() {
 }
 
 function formatApproximateTotal(items) {
-    const total = items.reduce((sum, item) => sum + Number(item.product.price ?? 10) * Number(item.quantity || 0), 0);
+    const total = items.reduce((sum, item) => sum + Number(item.unitPrice ?? resolveProductUnitPrice(item.product, item.selectedReproduction)) * Number(item.quantity || 0), 0);
     return formatPrice(total || 10);
 }
 
@@ -4683,7 +4908,7 @@ function isFavorite(productId) {
 
 function closeProductModal(options = {}) {
     const { syncUrl = true } = options;
-    state.productModal = { open: false, productId: null, quantity: 1, imageIndex: 0 };
+    state.productModal = emptyProductModalState();
     if (syncUrl) {
         updateBrowserProductUrl(null);
     }
@@ -4696,10 +4921,12 @@ function openProductModal(productId, options = {}) {
         return false;
     }
     state.productModal = {
+        ...emptyProductModalState(),
         open: true,
         productId: product.id,
         quantity: getInitialQuantity(product),
         imageIndex: 0,
+        selectedReproduction: getSeedSelectedReproduction(product),
     };
     if (syncUrl) {
         updateBrowserProductUrl(product.id);
@@ -5012,6 +5239,22 @@ function sortSeedReproductionValues(values) {
     });
 }
 
+function extractSeedReproductionValuesFromText(source) {
+    const values = new Set();
+    const text = String(source || "");
+    if (!text) {
+        return [];
+    }
+    const matches = text.match(/(?:^|[^А-ЯA-Z])(ОС|ЭС|РС(?:\s*\/?\s*\d)?|RS(?:\s*\/?\s*\d)?|PC(?:\s*\/?\s*\d)?|РСт)(?=$|[^А-ЯA-Z0-9])/gimu) || [];
+    matches.forEach(match => {
+        const cleaned = normalizeSeedReproductionValue(match.replace(/^[^А-ЯA-Z]+/u, ""));
+        if (cleaned) {
+            values.add(cleaned);
+        }
+    });
+    return sortSeedReproductionValues([...values]);
+}
+
 function getSeedReproductionValues(product) {
     const values = new Set();
     const sources = [
@@ -5021,23 +5264,69 @@ function getSeedReproductionValues(product) {
         getProductSeedSearchText(product),
     ];
     sources.forEach(source => {
-        const text = String(source || "");
-        if (!text) {
-            return;
+        extractSeedReproductionValuesFromText(source).forEach(value => values.add(value));
+    });
+    Object.keys(getSeedReproductionPriceMap(product)).forEach(value => {
+        const cleaned = normalizeSeedReproductionValue(value);
+        if (cleaned) {
+            values.add(cleaned);
         }
-        const matches = text.match(/(?:^|[^А-ЯA-Z])(ОС|ЭС|РС(?:\s*\/?\s*\d)?|RS(?:\s*\/?\s*\d)?|PC(?:\s*\/?\s*\d)?|РСт)(?=$|[^А-ЯA-Z0-9])/gimu) || [];
-        matches.forEach(match => {
-            const cleaned = normalizeSeedReproductionValue(match.replace(/^[^А-ЯA-Z]+/u, ""));
-            if (cleaned) {
-                values.add(cleaned);
-            }
-        });
     });
     return sortSeedReproductionValues([...values]);
 }
 
 function getSeedReproductionOptions(products) {
     return sortSeedReproductionValues(uniqueValues(products.flatMap(item => getSeedReproductionValues(item)).filter(Boolean)));
+}
+
+function getSeedReproductionPriceMap(product) {
+    const rawMap = product?.seedReproductionPrices || product?.filterMap?.seedReproductionPrices || {};
+    if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) {
+        return {};
+    }
+    const result = {};
+    Object.entries(rawMap).forEach(([key, value]) => {
+        const normalizedKey = normalizeSeedReproductionValue(key);
+        const numericValue = parseOptionalNumber(value);
+        if (normalizedKey && numericValue != null && numericValue > 0) {
+            result[normalizedKey] = numericValue;
+        }
+    });
+    return Object.fromEntries(sortSeedReproductionValues(Object.keys(result)).map(key => [key, result[key]]));
+}
+
+function getSeedSelectedReproduction(product, preferredValue = "") {
+    const values = getSeedReproductionValues(product);
+    const preferred = normalizeSeedReproductionValue(preferredValue);
+    if (preferred && values.includes(preferred)) {
+        return preferred;
+    }
+    return values[0] || "";
+}
+
+function hasMultipleSeedReproductionVariants(product) {
+    return getSeedReproductionValues(product).length > 1;
+}
+
+function resolveProductUnitPrice(product, selectedReproduction = "") {
+    const priceMap = getSeedReproductionPriceMap(product);
+    const normalizedReproduction = normalizeSeedReproductionValue(selectedReproduction);
+    if (normalizedReproduction && Number(priceMap[normalizedReproduction]) > 0) {
+        return Number(priceMap[normalizedReproduction]);
+    }
+    const fallbackKey = getSeedSelectedReproduction(product, normalizedReproduction);
+    if (fallbackKey && Number(priceMap[fallbackKey]) > 0) {
+        return Number(priceMap[fallbackKey]);
+    }
+    return product?.price == null ? 10 : Number(product.price);
+}
+
+function getVariantProductName(product, selectedReproduction = "") {
+    const reproduction = normalizeSeedReproductionValue(selectedReproduction);
+    if (!reproduction) {
+        return product?.name || "";
+    }
+    return `${product?.name || ""} (${reproduction})`;
 }
 
 function getProductById(productId) {
@@ -5425,6 +5714,7 @@ function buildClientStatePayload() {
         cartItems: state.cart.map(item => ({
             productId: item.productId,
             quantity: item.quantity,
+            selectedReproduction: item.selectedReproduction || "",
         })),
         checkoutDraft: state.checkout.touched
             ? {

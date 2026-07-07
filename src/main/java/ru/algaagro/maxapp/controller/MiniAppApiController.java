@@ -154,7 +154,7 @@ public class MiniAppApiController {
                 request.culture(),
                 request.deliveryNote(),
                 request.attachments(),
-                request.items().stream().map(item -> new OrderService.CreateOrderItem(item.productId(), item.quantity())).toList()
+                request.items().stream().map(item -> new OrderService.CreateOrderItem(item.productId(), item.quantity(), item.selectedReproduction())).toList()
         ));
         String summary = orderService.buildAdminSummary(order);
         userService.findAdminUserIds().forEach(adminId -> maxApiClient.sendToUser(adminId, summary, null, "html"));
@@ -455,15 +455,17 @@ public class MiniAppApiController {
     private Map<String, Object> toAdminCartItemDto(Map<String, Object> rawItem) {
         Long productId = toLong(rawItem.get("productId"));
         BigDecimal quantity = toBigDecimal(rawItem.get("quantity"));
+        String selectedReproduction = Objects.toString(rawItem.get("selectedReproduction"), "").trim();
         if (productId == null || quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
         CatalogProduct product = productService.findById(productId).orElse(null);
-        BigDecimal unitPrice = product == null ? null : product.getPrice();
+        BigDecimal unitPrice = product == null ? null : productService.resolveUnitPrice(product, selectedReproduction);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("productId", productId);
         response.put("quantity", quantity);
-        response.put("name", product == null ? ("Товар #" + productId) : product.getName());
+        response.put("selectedReproduction", selectedReproduction);
+        response.put("name", product == null ? ("Товар #" + productId) : productService.buildVariantProductName(product, selectedReproduction));
         response.put("brand", product == null ? "" : product.getBrand());
         response.put("unitName", product == null ? "шт" : productService.resolveDisplayUnit(product));
         response.put("packageDescription", product == null ? "" : product.getPackageDescription());
@@ -555,7 +557,8 @@ public class MiniAppApiController {
 
     public record CreateOrderItemRequest(
             Long productId,
-            @DecimalMin("0.001") BigDecimal quantity
+            @DecimalMin("0.001") BigDecimal quantity,
+            String selectedReproduction
     ) {
     }
 
