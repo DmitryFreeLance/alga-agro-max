@@ -464,12 +464,19 @@ function renderPreservingFocus() {
     const selectionEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
     const drawerScrollTop = getFilterScrollContainer()?.scrollTop ?? 0;
     const pageScrollTop = window.scrollY;
+    const shouldPreserveAdminProductForm = field === "admin-product-seed-reproduction";
+    const adminProductFormSnapshot = shouldPreserveAdminProductForm
+        ? captureNamedFormState(root.querySelector('[data-form="admin-product"]'))
+        : null;
     render();
     const nextDrawer = getFilterScrollContainer();
     if (state.catalog.filtersOpen && nextDrawer) {
         nextDrawer.scrollTop = drawerScrollTop || state.catalog.filterScrollTop || 0;
     }
     window.scrollTo(0, pageScrollTop);
+    if (shouldPreserveAdminProductForm) {
+        restoreNamedFormState(root.querySelector('[data-form="admin-product"]'), adminProductFormSnapshot);
+    }
     if (!field) {
         return;
     }
@@ -482,6 +489,48 @@ function renderPreservingFocus() {
             next.setSelectionRange(selectionStart, selectionEnd);
         }
     }
+}
+
+function captureNamedFormState(form) {
+    if (!(form instanceof HTMLFormElement)) {
+        return null;
+    }
+    const snapshot = {};
+    [...form.elements].forEach(element => {
+        if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) {
+            return;
+        }
+        if (!element.name) {
+            return;
+        }
+        snapshot[element.name] = element instanceof HTMLInputElement && (element.type === "checkbox" || element.type === "radio")
+            ? { type: element.type, checked: element.checked, value: element.value }
+            : { type: "value", value: element.value };
+    });
+    return snapshot;
+}
+
+function restoreNamedFormState(form, snapshot) {
+    if (!(form instanceof HTMLFormElement) || !snapshot) {
+        return;
+    }
+    [...form.elements].forEach(element => {
+        if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) {
+            return;
+        }
+        if (!element.name || !Object.prototype.hasOwnProperty.call(snapshot, element.name)) {
+            return;
+        }
+        const saved = snapshot[element.name];
+        if (!saved) {
+            return;
+        }
+        if (saved.type === "checkbox" || saved.type === "radio") {
+            element.checked = Boolean(saved.checked) && String(saved.value) === String(element.value);
+            return;
+        }
+        element.value = saved.value ?? "";
+    });
 }
 
 function renderTopbar() {
