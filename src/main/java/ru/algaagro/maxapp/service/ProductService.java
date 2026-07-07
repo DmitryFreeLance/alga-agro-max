@@ -838,7 +838,7 @@ public class ProductService {
         if ("РС0".equals(normalized)) {
             normalized = "РС";
         }
-        return normalized.matches("^(ОС|ЭС|РС|РС\\d|РСТ)$") ? normalized.replace("РСТ", "РСт") : "";
+        return normalized.matches("^(ОС|СЭ|ЭС|РС|РС\\d|РСТ)$") ? normalized.replace("РСТ", "РСт") : "";
     }
 
     private boolean isSunflowerSeedProduct(CatalogProduct product) {

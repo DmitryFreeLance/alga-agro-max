@@ -464,6 +464,7 @@ function renderPreservingFocus() {
     const selectionEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
     const drawerScrollTop = getFilterScrollContainer()?.scrollTop ?? 0;
     const pageScrollTop = window.scrollY;
+    const adminProductModalScrollTop = root.querySelector(".modal-sheet-admin-product")?.scrollTop ?? 0;
     const shouldPreserveAdminProductForm = field === "admin-product-seed-reproduction";
     const adminProductFormSnapshot = shouldPreserveAdminProductForm
         ? captureNamedFormState(root.querySelector('[data-form="admin-product"]'))
@@ -474,6 +475,10 @@ function renderPreservingFocus() {
         nextDrawer.scrollTop = drawerScrollTop || state.catalog.filterScrollTop || 0;
     }
     window.scrollTo(0, pageScrollTop);
+    const nextAdminProductModal = root.querySelector(".modal-sheet-admin-product");
+    if (nextAdminProductModal) {
+        nextAdminProductModal.scrollTop = adminProductModalScrollTop;
+    }
     if (shouldPreserveAdminProductForm) {
         restoreNamedFormState(root.querySelector('[data-form="admin-product"]'), adminProductFormSnapshot);
     }
