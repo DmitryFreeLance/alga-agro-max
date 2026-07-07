@@ -3930,13 +3930,7 @@ async function saveAdminProduct(formData) {
     }
 
     const explicitPrice = parseOptionalNumber(formData.get("price"));
-    const effectiveBasePrice = (() => {
-        const firstVariant = seedReproductionVariants[0] || "";
-        if (firstVariant && Number(seedReproductionPrices[firstVariant]) > 0) {
-            return seedReproductionPrices[firstVariant];
-        }
-        return explicitPrice ?? 10;
-    })();
+    const effectiveBasePrice = explicitPrice ?? existingProduct?.price ?? 10;
 
     const mergedFilterMap = {
         ...(existingProduct?.filterMap || {}),
