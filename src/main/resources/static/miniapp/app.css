@@ -716,10 +716,10 @@ img {
 }
 
 .price-line {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
 }
 
@@ -727,7 +727,7 @@ img {
     display: grid;
     gap: 2px;
     min-width: 0;
-    flex: 1 1 auto;
+    align-content: end;
 }
 
 .price-block strong {
@@ -738,7 +738,7 @@ img {
 }
 
 .product-card .price-block strong {
-    font-size: clamp(0.86rem, 4.6vw, 0.98rem);
+    font-size: clamp(0.78rem, 4vw, 0.92rem);
 }
 
 .product-card .old-price {
@@ -789,9 +789,10 @@ img {
 .qty-stepper-card {
     grid-template-columns: 24px minmax(0, 1fr) 24px;
     min-height: 30px;
-    width: min(100%, 104px);
-    max-width: 104px;
-    flex: 0 1 104px;
+    width: min(100%, 96px);
+    max-width: 96px;
+    flex: 0 1 96px;
+    justify-self: end;
 }
 
 .qty-stepper button {
@@ -815,11 +816,17 @@ img {
 
 .qty-stepper-card span {
     min-width: 0;
-    font-size: 0.66rem;
+    font-size: 0.62rem;
     padding: 0 3px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.admin-empty-box {
+    margin-top: 4px;
+    min-height: auto;
+    padding: 18px 16px;
 }
 
 .empty-box,

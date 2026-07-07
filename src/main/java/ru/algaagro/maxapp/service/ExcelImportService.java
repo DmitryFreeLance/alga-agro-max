@@ -2207,46 +2207,117 @@ public class ExcelImportService {
         if (parsedRows.isEmpty()) {
             return false;
         }
-        String composition = findFirst(columns, "состав", "composition").orElse("");
+        String explicitName = firstPresent(columns, "позиция", "наименование", "товар", "номенклат", "product", "name", "назван");
+        String composition = findFirst(columns, "состав", "composition", "действующ", "active ingredient", "activeingredient").orElse("");
+        String brand = findFirst(columns, "производител", "произво", "бренд", "manufacturer", "brand").orElse("");
+        String formulation = findFirst(columns, "форма", "форм", "фор", "form").orElse("");
+        String packaging = findFirst(columns, "упаковк", "фасовк", "тара", "package").orElse("");
         String rate = findFirst(columns, "норма расхода", "расход", "дозиров").orElse("");
-        String price = findFirst(columns, "цена", "price").orElse("");
-        if (!composition.isBlank() || !rate.isBlank() || !price.isBlank()) {
+        String price = findFirst(columns, "цена", "price", "стоим", "прайс", "руб").orElse("");
+        if (!rate.isBlank() || !price.isBlank()) {
             return false;
         }
+        long nonBlankValues = columns.values().stream()
+                .filter(value -> value != null && !value.isBlank())
+                .count();
         String normalized = TextUtils.normalizeToken(position);
+        boolean hasSupplementalField = !composition.isBlank()
+                || !brand.isBlank()
+                || !formulation.isBlank()
+                || !packaging.isBlank();
+        boolean missingExplicitName = explicitName.isBlank();
+        boolean shortNameFragment = !explicitName.isBlank()
+                && explicitName.length() <= 20
+                && nonBlankValues <= 2
+                && hasSupplementalField;
         return !position.isBlank()
                 && !normalized.startsWith("изагри")
-                && (position.length() > 25 || position.contains("%") || position.contains(","));
+                && ((missingExplicitName && hasSupplementalField)
+                || shortNameFragment
+                || (nonBlankValues <= 2 && (position.length() > 25 || position.contains("%") || position.contains(",") || position.contains(";"))));
     }
 
     private void appendToPrevious(MutableImportRow previous, Map<String, String> columns, String text) {
-        String compositionHeader = previous.findHeader("состав", "composition");
-        if (compositionHeader != null) {
-            String existing = previous.columns().getOrDefault(compositionHeader, "");
-            previous.columns().put(compositionHeader, existing.isBlank() ? text : (existing + " " + text).trim());
+        boolean appended = false;
+        appended |= appendMatchingValue(previous, columns, "позиция", "наименование", "товар", "номенклат", "product", "name", "назван");
+        appended |= appendMatchingValue(previous, columns, "состав", "composition", "действующ", "active ingredient", "activeingredient");
+        appended |= appendMatchingValue(previous, columns, "производител", "произво", "бренд", "manufacturer", "brand");
+        appended |= appendMatchingValue(previous, columns, "форма", "форм", "фор", "form");
+        appended |= appendMatchingValue(previous, columns, "упаковк", "фасовк", "тара", "package");
+        if (appended) {
             return;
         }
         String positionHeader = previous.findHeader("позиция", "наименование", "товар", "name");
         if (positionHeader != null) {
             String existing = previous.columns().getOrDefault(positionHeader, "");
-            previous.columns().put(positionHeader, (existing + " " + text).trim());
+            previous.columns().put(positionHeader, joinFragments(existing, text));
         }
+    }
+
+    private boolean appendMatchingValue(MutableImportRow previous, Map<String, String> columns, String... needles) {
+        String value = readColumn(columns, needles);
+        if (value.isBlank()) {
+            return false;
+        }
+        String targetHeader = previous.findHeader(needles);
+        if (targetHeader == null) {
+            return false;
+        }
+        String existing = previous.columns().getOrDefault(targetHeader, "");
+        previous.columns().put(targetHeader, joinFragments(existing, value));
+        return true;
+    }
+
+    private String joinFragments(String existing, String addition) {
+        String safeExisting = existing == null ? "" : existing.trim();
+        String safeAddition = addition == null ? "" : addition.trim();
+        if (safeExisting.isBlank()) {
+            return safeAddition;
+        }
+        if (safeAddition.isBlank()) {
+            return safeExisting;
+        }
+        if (safeExisting.endsWith("+")
+                || safeExisting.endsWith("-")
+                || safeExisting.endsWith("/")
+                || safeExisting.endsWith("(")) {
+            return (safeExisting + safeAddition).replaceAll("\\s{2,}", " ").trim();
+        }
+        return (safeExisting + " " + safeAddition).replaceAll("\\s{2,}", " ").trim();
     }
 
     private BigDecimal parseDecimal(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-        String normalized = value.replace('\u00A0', ' ').replace(",", ".");
-        Matcher matcher = Pattern.compile("-?\\d+(?:\\.\\d+)?").matcher(normalized);
+        String normalized = value.replace('\u00A0', ' ').trim();
+        Matcher matcher = Pattern.compile("-?\\d[\\d\\s.,]*").matcher(normalized);
         String candidate = null;
         while (matcher.find()) {
-            candidate = matcher.group();
+            String matched = matcher.group().trim();
+            if (!matched.isBlank() && matched.matches(".*\\d.*")) {
+                candidate = matched;
+            }
         }
         if (candidate == null || candidate.isBlank()) {
             return null;
         }
-        return new BigDecimal(candidate);
+        String compact = candidate.replaceAll("(?<=\\d)\\s+(?=\\d)", "");
+        int lastComma = compact.lastIndexOf(',');
+        int lastDot = compact.lastIndexOf('.');
+        if (lastComma >= 0 && lastDot >= 0) {
+            if (lastComma > lastDot) {
+                compact = compact.replace(".", "").replace(',', '.');
+            } else {
+                compact = compact.replace(",", "");
+            }
+        } else if (lastComma >= 0) {
+            compact = compact.replace(',', '.');
+        }
+        if (!compact.matches("-?\\d+(?:\\.\\d+)?")) {
+            return null;
+        }
+        return new BigDecimal(compact);
     }
 
     private Optional<ProductService.ImportedProduct> tryBuildLocalWorkbookProduct(ImportRow row) {
@@ -2270,7 +2341,7 @@ public class ExcelImportService {
         boolean hasSubcategoryColumn = hasHeader(row.columns(), "подкатегор", "subcategory");
         boolean hasCultureColumn = hasHeader(row.columns(), "культура", "cultures", "culture");
         boolean hasItemTypeColumn = hasHeader(row.columns(), "тип товара", "товарная группа", "item type", "itemtype");
-        boolean hasBrandColumn = hasHeader(row.columns(), "производител", "бренд", "manufacturer", "brand");
+        boolean hasBrandColumn = hasHeader(row.columns(), "производител", "произво", "бренд", "manufacturer", "brand");
         boolean hasActiveIngredientColumn = hasHeader(row.columns(), "действующ", "active ingredient", "activeingredient");
         boolean hasDescriptionColumn = hasHeader(row.columns(), "описан", "description");
         boolean hasCompositionColumn = hasHeader(row.columns(), "состав", "composition");
@@ -2331,7 +2402,7 @@ public class ExcelImportService {
         String explicitSubcategory = hasSubcategoryColumn ? readColumn(row.columns(), "подкатегор", "subcategory") : "";
         String explicitCulture = hasCultureColumn ? readColumn(row.columns(), "культура", "cultures", "culture") : "";
         String itemType = hasItemTypeColumn ? readColumn(row.columns(), "тип товара", "товарная группа", "item type", "itemtype") : "";
-        String brand = hasBrandColumn ? readColumn(row.columns(), "производител", "бренд", "manufacturer", "brand") : "";
+        String brand = hasBrandColumn ? readColumn(row.columns(), "производител", "произво", "бренд", "manufacturer", "brand") : "";
         String activeIngredient = hasActiveIngredientColumn ? readColumn(row.columns(), "действующ", "active ingredient", "activeingredient") : "";
         String description = hasDescriptionColumn ? readColumn(row.columns(), "описан", "description") : "";
         String composition = hasCompositionColumn ? readColumn(row.columns(), "состав", "composition") : "";
@@ -2661,7 +2732,7 @@ public class ExcelImportService {
         if (hasHeader(columns, "подкатегор", "subcategory", "культура", "cultures", "culture")) {
             matches++;
         }
-        if (hasHeader(columns, "производител", "бренд", "manufacturer", "brand")) {
+        if (hasHeader(columns, "производител", "произво", "бренд", "manufacturer", "brand")) {
             matches++;
         }
         if (hasHeader(columns, "описан", "состав", "действующ", "description", "composition")) {

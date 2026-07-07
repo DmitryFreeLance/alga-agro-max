@@ -500,6 +500,43 @@ function renderPreservingFocus() {
     }
 }
 
+function renderPreservingAdminProductEditor() {
+    const pageScrollTop = window.scrollY;
+    const modal = root.querySelector(".modal-sheet-admin-product");
+    const modalScrollTop = modal?.scrollTop ?? 0;
+    const active = document.activeElement;
+    const field = active?.dataset?.field;
+    const fieldValue = active instanceof HTMLInputElement || active instanceof HTMLSelectElement || active instanceof HTMLTextAreaElement
+        ? String(active.value || "")
+        : "";
+    const inputType = active instanceof HTMLInputElement ? active.type : "";
+    const selectionStart = typeof active?.selectionStart === "number" ? active.selectionStart : null;
+    const selectionEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
+    const snapshot = captureNamedFormState(root.querySelector('[data-form="admin-product"]'));
+    render();
+    window.scrollTo(0, pageScrollTop);
+    const nextModal = root.querySelector(".modal-sheet-admin-product");
+    if (nextModal) {
+        nextModal.scrollTop = modalScrollTop;
+    }
+    restoreNamedFormState(root.querySelector('[data-form="admin-product"]'), snapshot);
+    if (active instanceof HTMLSelectElement) {
+        return;
+    }
+    if (!field) {
+        return;
+    }
+    const next = (inputType === "checkbox" || inputType === "radio")
+        ? root.querySelector(`[data-field="${CSS.escape(field)}"][value="${escapeSelectorValue(fieldValue)}"]`)
+        : root.querySelector(`[data-field="${CSS.escape(field)}"]`);
+    if (next && typeof next.focus === "function") {
+        next.focus({ preventScroll: true });
+        if (selectionStart !== null && selectionEnd !== null && typeof next.setSelectionRange === "function") {
+            next.setSelectionRange(selectionStart, selectionEnd);
+        }
+    }
+}
+
 function captureNamedFormState(form) {
     if (!(form instanceof HTMLFormElement)) {
         return null;
@@ -1668,42 +1705,44 @@ function renderAdminCatalog() {
                             ], state.admin.catalogStatus)}
                         </select>
                     </div>
-                    <div class="admin-table-wrap">
-                        <table class="admin-table">
-                            <thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th>Статус</th><th>Действия</th></tr></thead>
-                            <tbody>
-                                ${products.map(product => `
-                                    <tr>
-                                        <td data-label="Название">
-                                            <div class="admin-product-cell">
-                                                <span class="admin-product-thumb" style="background:${getProductVisual(product).palette[0]};">
-                                                    <img src="${getProductVisual(product).icon}" alt="${escapeAttr(product.name)}">
-                                                </span>
-                                                <div>
-                                                    <strong>${escapeHtml(product.name)}</strong>
-                                                    <div class="search-muted">${escapeHtml(product.brand || "Без производителя")}</div>
+                    ${products.length ? `
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th>Статус</th><th>Действия</th></tr></thead>
+                                <tbody>
+                                    ${products.map(product => `
+                                        <tr>
+                                            <td data-label="Название">
+                                                <div class="admin-product-cell">
+                                                    <span class="admin-product-thumb" style="background:${getProductVisual(product).palette[0]};">
+                                                        <img src="${getProductVisual(product).icon}" alt="${escapeAttr(product.name)}">
+                                                    </span>
+                                                    <div>
+                                                        <strong>${escapeHtml(product.name)}</strong>
+                                                        <div class="search-muted">${escapeHtml(product.brand || "Без производителя")}</div>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </td>
-                                        <td data-label="Категория">${escapeHtml(getAdminCatalogChildName(product) || getProductSectionName(product) || product.category || "—")}</td>
-                                        <td data-label="Цена">
-                                            <strong>${formatPrice(product.price ?? 10)}</strong>
-                                            ${product.oldPrice ? `<div class="search-muted"><s>${formatPrice(product.oldPrice)}</s></div>` : ""}
-                                        </td>
-                                        <td data-label="Статус">${renderAdminStatusBadge(product.active ? "ACTIVE" : "HIDDEN", product.active ? "Активен" : "Скрыт")}</td>
-                                        <td data-label="Действия">
-                                            <div class="admin-row-actions">
-                                                <button class="admin-table-btn" data-action="open-admin-product" data-product-id="${product.id}">Ред.</button>
-                                                <button class="admin-table-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">
-                                                    ${product.active ? "Скрыть" : "Показать"}
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `).join("")}
-                            </tbody>
-                        </table>
-                    </div>
+                                            </td>
+                                            <td data-label="Категория">${escapeHtml(getAdminCatalogChildName(product) || getProductSectionName(product) || product.category || "—")}</td>
+                                            <td data-label="Цена">
+                                                <strong>${formatPrice(product.price ?? 10)}</strong>
+                                                ${product.oldPrice ? `<div class="search-muted"><s>${formatPrice(product.oldPrice)}</s></div>` : ""}
+                                            </td>
+                                            <td data-label="Статус">${renderAdminStatusBadge(product.active ? "ACTIVE" : "HIDDEN", product.active ? "Активен" : "Скрыт")}</td>
+                                            <td data-label="Действия">
+                                                <div class="admin-row-actions">
+                                                    <button class="admin-table-btn" data-action="open-admin-product" data-product-id="${product.id}">Ред.</button>
+                                                    <button class="admin-table-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">
+                                                        ${product.active ? "Скрыть" : "Показать"}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join("")}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : `<div class="empty-box admin-empty-box">По этому поиску товаров нет.</div>`}
                 </div>
             </div>
         </div>
@@ -4057,6 +4096,10 @@ async function saveAdminProduct(formData) {
     });
     await refreshCatalogData();
     showNotice(id ? "Товар сохранен." : "Товар добавлен.");
+    if (state.admin.productEditor.open) {
+        renderPreservingAdminProductEditor();
+        return;
+    }
     render();
 }
 
@@ -5801,7 +5844,7 @@ function normalizePrice(value) {
 
 function formatPrice(value) {
     const amount = Number(value || 0);
-    return `${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
+    return `${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}\u00A0₽`;
 }
 
 function formatQuantity(value) {
@@ -5879,6 +5922,10 @@ function showNotice(message, type = "success") {
     noticeTimer = window.setTimeout(() => {
         state.notice = { open: false, message: "", type: "success" };
         noticeTimer = null;
+        if (state.admin.productEditor.open) {
+            renderPreservingAdminProductEditor();
+            return;
+        }
         render();
     }, 2200);
 }
