@@ -245,6 +245,7 @@ const state = {
         subcategorySearch: "",
         activeIngredientSearch: "",
         scrollToProductsPending: false,
+        selectedReproductions: {},
         draft: null,
         applied: emptyFilters(),
     },
@@ -1023,12 +1024,14 @@ function renderProductsGrid(products) {
 function renderProductCard(product) {
     const visual = getProductVisual(product);
     const favorite = isFavorite(product.id);
-    const defaultReproduction = getSeedSelectedReproduction(product);
     const hasMultipleReproductionVariants = normalize(getProductSectionName(product)) === normalize("Семена")
         && hasMultipleSeedReproductionVariants(product);
-    const cartItem = hasMultipleReproductionVariants ? null : getCartItem(product.id, defaultReproduction);
-    const price = renderProductPrice(product, defaultReproduction);
-    const badge = renderProductCardBadge(product);
+    const selectedReproduction = hasMultipleReproductionVariants
+        ? getCatalogSelectedReproduction(product)
+        : getSeedSelectedReproduction(product);
+    const cartItem = getCartItem(product.id, selectedReproduction);
+    const price = renderProductPrice(product, selectedReproduction);
+    const badge = renderProductCardBadge(product, selectedReproduction);
     return `
         <article class="product-card" data-action="open-product" data-product-id="${product.id}">
             <div class="product-card-visual" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -1043,10 +1046,8 @@ function renderProductCard(product) {
                 ${renderProductCardDetails(product)}
                 <div class="price-line">
                     ${price}
-                    ${hasMultipleReproductionVariants
-                        ? `<button type="button" class="card-cart-btn" data-action="open-product" data-product-id="${product.id}">Выбрать</button>`
-                        : cartItem
-                        ? renderStepper(product.id, cartItem.quantity, "card")
+                    ${cartItem
+                        ? renderStepper(product.id, cartItem.quantity, "card", selectedReproduction)
                         : `<button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>`}
                 </div>
             </div>
@@ -1054,13 +1055,26 @@ function renderProductCard(product) {
     `;
 }
 
-function renderProductCardBadge(product) {
+function renderProductCardBadge(product, selectedReproduction = "") {
     if (normalize(getProductSectionName(product)) === normalize("Семена")) {
-        const reproduction = getSeedReproductionDisplay(product);
-        if (!reproduction) {
+        const reproductions = getSeedReproductionValues(product);
+        if (!reproductions.length) {
             return "";
         }
-        return `<span class="product-card-badge product-card-badge-seed">${escapeHtml(reproduction)}</span>`;
+        return `
+            <div class="product-card-badge-group">
+                ${reproductions.map(value => `
+                    <button
+                        type="button"
+                        class="product-card-badge product-card-badge-seed product-card-badge-reproduction ${value === selectedReproduction ? "active" : ""}"
+                        data-action="set-product-reproduction"
+                        data-product-id="${product.id}"
+                        data-reproduction="${escapeAttr(value)}">
+                        ${escapeHtml(value)}
+                    </button>
+                `).join("")}
+            </div>
+        `;
     }
     const packageDisplay = formatCompactPackageDisplay(product) || product?.packageDescription || product?.packageType || product?.unitName || "Упаковка";
     return `<span class="product-card-badge product-card-badge-package">${escapeHtml(packageDisplay)}</span>`;
@@ -1892,19 +1906,25 @@ function renderProductModal() {
     const favorite = isFavorite(product.id);
     const canBuy = true;
     const isSeedsSection = normalize(getProductSectionName(product)) === normalize("Семена");
+    const hasMultipleReproductionVariants = isSeedsSection && hasMultipleSeedReproductionVariants(product);
     const seedPrimarySubcategory = getSeedPrimarySubcategory(product);
     const isSeedCorn = normalize(seedPrimarySubcategory) === normalize("Кукуруза");
     const isSeedSunflower = normalize(seedPrimarySubcategory) === normalize("Подсолнечник");
     const isSeedRapeseed = normalize(seedPrimarySubcategory) === normalize("Рапс");
     const isSeedSugarBeet = normalize(seedPrimarySubcategory) === normalize("Сахарная свекла");
-    const selectedReproduction = isSeedsSection ? getSeedSelectedReproduction(product, state.productModal.selectedReproduction) : "";
+    const selectedReproduction = isSeedsSection
+        ? (hasMultipleReproductionVariants
+            ? getExplicitSeedSelectedReproduction(product, state.productModal.selectedReproduction)
+            : getSeedSelectedReproduction(product, state.productModal.selectedReproduction))
+        : "";
     const reproductionOptions = isSeedsSection ? getSeedReproductionValues(product) : [];
     const seedHeaderSubtitle = isSeedsSection && !isSeedCorn && !isSeedSunflower && !isSeedRapeseed && !isSeedSugarBeet
         ? (getSeedCardCultureLabel(product) || seedPrimarySubcategory || "Культура")
         : (product.brand || "");
-    const cartItem = getCartItem(product.id, selectedReproduction);
+    const cartItem = selectedReproduction ? getCartItem(product.id, selectedReproduction) : null;
     const currentQty = cartItem?.quantity || state.productModal.quantity;
     const displayPrice = resolveProductUnitPrice(product, selectedReproduction);
+    const canConfirmProductCart = !hasMultipleReproductionVariants || Boolean(selectedReproduction);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-product"></div>
@@ -1977,9 +1997,9 @@ function renderProductModal() {
                     </div>
                     ${canBuy ? `
                         <div class="detail-footer detail-footer-sticky">
-                            ${renderStepper(product.id, currentQty, "modal", selectedReproduction)}
-                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}" data-reproduction="${escapeAttr(selectedReproduction)}">
-                                ${cartItem ? "✓ В корзине" : "В корзину"}
+                            ${canConfirmProductCart ? renderStepper(product.id, currentQty, "modal", selectedReproduction) : ""}
+                            <button class="primary-btn" data-action="confirm-product-cart" data-product-id="${product.id}" data-reproduction="${escapeAttr(selectedReproduction)}" ${canConfirmProductCart ? "" : "disabled"}>
+                                ${canConfirmProductCart ? (cartItem ? "✓ В корзине" : "В корзину") : "Выберите репродукцию"}
                             </button>
                         </div>
                     ` : `<button class="secondary-btn" data-action="open-manager">Связаться с менеджером</button>`}
@@ -2601,9 +2621,8 @@ function renderAdminProductModal() {
                             <div class="admin-field"><label>${escapeHtml(getAdminPackageVolumeLabel(orderMode))}</label><input name="packageVolume" type="number" min="0.001" step="0.001" autocomplete="off" list="admin-package-volume-options" value="${escapeAttr(orderConfig.packageVolume || "")}" placeholder="10"></div>
                             <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" autocomplete="off" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
                         </div>
-                        <div class="admin-form-row admin-form-row-2-compact">
-                            <div class="admin-field"><label>Остаток</label><input name="stockQuantity" type="number" min="0" step="0.001" value="${escapeAttr(product?.stockQuantity ?? "")}"></div>
-                            <div class="admin-field"><label>Фасовка</label><input name="packageDescription" autocomplete="off" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "25x4" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
+                        <div class="admin-form-row admin-form-row-compact">
+                            <div class="admin-field admin-field-span-full"><label>Фасовка</label><input name="packageDescription" autocomplete="off" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "25x4" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
                         </div>
                     </div>
                     <div class="admin-form-section admin-form-section-order">
@@ -3038,7 +3057,10 @@ function handleClick(event) {
         return;
     }
     if (action === "open-product") {
-        openProductModal(Number(button.dataset.productId));
+        const product = getProductById(Number(button.dataset.productId));
+        openProductModal(Number(button.dataset.productId), {
+            selectedReproduction: getCatalogSelectedReproduction(product),
+        });
         render();
         return;
     }
@@ -3047,10 +3069,13 @@ function handleClick(event) {
         if (!product) {
             return;
         }
-        const selectedReproduction = getSeedSelectedReproduction(product, button.dataset.reproduction || "");
-        state.productModal.selectedReproduction = selectedReproduction;
-        state.productModal.quantity = getCartItem(product.id, selectedReproduction)?.quantity || getInitialQuantity(product);
-        render();
+        const selectedReproduction = getExplicitSeedSelectedReproduction(product, button.dataset.reproduction || "");
+        setCatalogSelectedReproduction(product.id, selectedReproduction);
+        if (state.productModal.open && state.productModal.productId === product.id) {
+            state.productModal.selectedReproduction = selectedReproduction;
+            state.productModal.quantity = getCartItem(product.id, selectedReproduction)?.quantity || getInitialQuantity(product);
+        }
+        renderPreservingScrollPosition();
         return;
     }
     if (action === "close-product") {
@@ -3075,7 +3100,13 @@ function handleClick(event) {
     if (action === "add-product") {
         const productId = Number(button.dataset.productId);
         const product = getProductById(productId);
-        const selectedReproduction = getSeedSelectedReproduction(product);
+        const selectedReproduction = getCatalogSelectedReproduction(product)
+            || getExplicitSeedSelectedReproduction(product, state.productModal.selectedReproduction);
+        if (hasMultipleSeedReproductionVariants(product) && !selectedReproduction) {
+            openProductModal(productId, { selectedReproduction: "" });
+            render();
+            return;
+        }
         addToCart(productId, getInitialQuantity(product), selectedReproduction);
         render();
         return;
@@ -3945,7 +3976,7 @@ async function saveAdminProduct(formData) {
         description: String(formData.get("description") || "").trim(),
         unitName,
         price: effectiveBasePrice,
-        stockQuantity: parseOptionalNumber(formData.get("stockQuantity")),
+        stockQuantity: existingProduct?.stockQuantity ?? null,
         packageType,
         packageDescription,
         minOrderQuantity,
@@ -4984,18 +5015,22 @@ function closeProductModal(options = {}) {
 }
 
 function openProductModal(productId, options = {}) {
-    const { syncUrl = true } = options;
+    const { syncUrl = true, selectedReproduction = undefined } = options;
     const product = getProductById(Number(productId));
     if (!product) {
         return false;
     }
+    const hasMultipleReproductionVariants = hasMultipleSeedReproductionVariants(product);
+    const normalizedSelection = hasMultipleReproductionVariants
+        ? getExplicitSeedSelectedReproduction(product, selectedReproduction ?? getCatalogSelectedReproduction(product))
+        : getSeedSelectedReproduction(product, selectedReproduction ?? getCatalogSelectedReproduction(product));
     state.productModal = {
         ...emptyProductModalState(),
         open: true,
         productId: product.id,
         quantity: getInitialQuantity(product),
         imageIndex: 0,
-        selectedReproduction: getSeedSelectedReproduction(product),
+        selectedReproduction: normalizedSelection,
     };
     if (syncUrl) {
         updateBrowserProductUrl(product.id);
@@ -5386,17 +5421,60 @@ function hasMultipleSeedReproductionVariants(product) {
     return getSeedReproductionValues(product).length > 1;
 }
 
+function getExplicitSeedSelectedReproduction(product, preferredValue = "") {
+    const values = getSeedReproductionValues(product);
+    const preferred = normalizeSeedReproductionValue(preferredValue);
+    return preferred && values.includes(preferred) ? preferred : "";
+}
+
+function getCatalogSelectedReproduction(product) {
+    if (!product?.id) {
+        return "";
+    }
+    return getExplicitSeedSelectedReproduction(product, state.catalog.selectedReproductions?.[product.id]);
+}
+
+function setCatalogSelectedReproduction(productId, reproduction) {
+    const nextSelections = { ...(state.catalog.selectedReproductions || {}) };
+    if (reproduction) {
+        nextSelections[productId] = reproduction;
+    } else {
+        delete nextSelections[productId];
+    }
+    state.catalog.selectedReproductions = nextSelections;
+}
+
 function resolveProductUnitPrice(product, selectedReproduction = "") {
     const priceMap = getSeedReproductionPriceMap(product);
     const normalizedReproduction = normalizeSeedReproductionValue(selectedReproduction);
     if (normalizedReproduction && Number(priceMap[normalizedReproduction]) > 0) {
         return Number(priceMap[normalizedReproduction]);
     }
-    const fallbackKey = getSeedSelectedReproduction(product, normalizedReproduction);
-    if (fallbackKey && Number(priceMap[fallbackKey]) > 0) {
-        return Number(priceMap[fallbackKey]);
+    if (normalizedReproduction) {
+        const fallbackKey = getSeedSelectedReproduction(product, normalizedReproduction);
+        if (fallbackKey && Number(priceMap[fallbackKey]) > 0) {
+            return Number(priceMap[fallbackKey]);
+        }
+    }
+    if (Object.keys(priceMap).length === 1) {
+        const [onlyKey] = Object.keys(priceMap);
+        if (onlyKey && Number(priceMap[onlyKey]) > 0) {
+            return Number(priceMap[onlyKey]);
+        }
     }
     return product?.price == null ? 10 : Number(product.price);
+}
+
+function renderPreservingScrollPosition() {
+    const pageScrollTop = window.scrollY;
+    const modalSheet = root.querySelector(".modal-sheet");
+    const modalScrollTop = modalSheet?.scrollTop ?? 0;
+    render();
+    window.scrollTo(0, pageScrollTop);
+    const nextModalSheet = root.querySelector(".modal-sheet");
+    if (nextModalSheet) {
+        nextModalSheet.scrollTop = modalScrollTop;
+    }
 }
 
 function getVariantProductName(product, selectedReproduction = "") {

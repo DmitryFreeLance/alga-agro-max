@@ -621,6 +621,14 @@ img {
     max-width: 132px;
 }
 
+.product-card-badge-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 2px;
+}
+
 .product-card-badge-package {
     background: rgba(233, 243, 230, 0.96);
     color: var(--green-800);
@@ -633,6 +641,24 @@ img {
     color: #b12828;
     border: 1px solid rgba(177, 40, 40, 0.18);
     margin-top: 2px;
+}
+
+.product-card-badge-reproduction {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: 999px;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.product-card-badge-reproduction.active {
+    background: #c84848;
+    color: var(--white);
+    border-color: #c84848;
+}
+
+.product-card-badge-reproduction:active {
+    transform: scale(0.96);
 }
 
 .product-card-subtitle {

@@ -22,6 +22,7 @@ public class ManufacturerService {
         this.manufacturerRepository = manufacturerRepository;
     }
 
+    @Transactional
     public List<Map<String, Object>> listManufacturers(List<CatalogProduct> products) {
         Map<String, Long> countsByName = products.stream()
                 .map(CatalogProduct::getBrand)
@@ -32,16 +33,27 @@ public class ManufacturerService {
                 .filter(brand -> brand != null && !brand.isBlank())
                 .collect(Collectors.toMap(this::normalizeKey, String::trim, (left, right) -> left, LinkedHashMap::new));
 
+        Map<String, Manufacturer> manufacturersByKey = new LinkedHashMap<>();
         manufacturerRepository.findAll().forEach(manufacturer -> {
             String key = normalizeKey(manufacturer.getName());
+            manufacturersByKey.putIfAbsent(key, manufacturer);
             displayNames.putIfAbsent(key, manufacturer.getName());
             countsByName.putIfAbsent(key, 0L);
+        });
+
+        displayNames.forEach((key, displayName) -> {
+            if (manufacturersByKey.containsKey(key)) {
+                return;
+            }
+            Manufacturer manufacturer = new Manufacturer();
+            manufacturer.setName(displayName);
+            manufacturersByKey.put(key, manufacturerRepository.save(manufacturer));
         });
 
         return displayNames.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue(String.CASE_INSENSITIVE_ORDER))
                 .map(entry -> {
-                    Manufacturer manufacturer = manufacturerRepository.findByNameIgnoreCase(entry.getValue()).orElse(null);
+                    Manufacturer manufacturer = manufacturersByKey.get(entry.getKey());
                     Map<String, Object> dto = new LinkedHashMap<>();
                     dto.put("id", manufacturer == null ? null : manufacturer.getId());
                     dto.put("name", entry.getValue());
