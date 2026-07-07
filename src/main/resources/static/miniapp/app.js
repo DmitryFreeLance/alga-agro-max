@@ -3880,8 +3880,10 @@ async function saveAdminProduct(formData) {
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproduction);
     const seedReproductionPrices = {};
     seedReproductionVariants.forEach(value => {
+        const fieldName = `seedReproductionPrice_${value}`;
+        const formValue = formData.get(fieldName);
         const draftValue = state.admin.productEditor.seedReproductionPriceDrafts?.[value];
-        const parsedValue = parseOptionalNumber(draftValue);
+        const parsedValue = parseOptionalNumber(formValue ?? draftValue);
         if (parsedValue != null && parsedValue > 0) {
             seedReproductionPrices[value] = parsedValue;
         }
