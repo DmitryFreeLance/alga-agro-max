@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.config.AppProperties;
 import ru.algaagro.maxapp.util.CatalogStructure;
+import ru.algaagro.maxapp.util.CultureCatalog;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -1048,16 +1049,23 @@ public class AiClassificationService {
                   ]
                 }
                 Правила:
-                - Во входных данных есть только название препарата или товара.
-                - Определи культуры, для которых этот товар подходит, исходя только из названия и общих агрономических знаний.
+                - Во входных данных есть название товара и текущий раздел каталога.
+                - Определи культуры, для которых этот товар подходит, исходя из названия, раздела каталога и общих агрономических знаний.
                 - Если по одному названию культуры определить нельзя, верни пустой массив.
                 - Не возвращай служебные комментарии, только JSON.
                 - Количество объектов в products должно строго совпадать с количеством строк.
                 - Используй уже известные в каталоге названия культур, если они подходят: %s
-                """.formatted(knownCultures.isEmpty() ? "список пуст" : String.join(", ", knownCultures)));
+                - Если раздел = "Пестициды", используй только эти варианты культур: %s
+                - Если раздел = "Семена", используй только эти варианты культур: %s
+                """.formatted(
+                knownCultures.isEmpty() ? "список пуст" : String.join(", ", knownCultures),
+                String.join(", ", CultureCatalog.FIXED_PESTICIDE_CULTURE_OPTIONS),
+                String.join(", ", CultureCatalog.FIXED_SEED_CULTURE_OPTIONS)
+        ));
         builder.append("\nТовары для анализа:\n");
         for (ExcelImportService.ImportRow row : rows) {
             builder.append("- rowId=").append(row.rowId())
+                    .append("; section=").append(firstNonBlank(row.section(), "не указан"))
                     .append("; name=").append(firstNonBlank(row.nameGuess(), row.columns().getOrDefault("Позиция", "")))
                     .append("\n");
         }
@@ -1131,18 +1139,26 @@ public class AiClassificationService {
     }
 
     private List<String> inferCultures(ExcelImportService.ImportRow row) {
-        String context = TextUtils.normalizeToken(row.section() + " " + row.nameGuess() + " " + row.columns());
+        String section = CatalogStructure.normalizeSectionName(row.section());
+        String context = (row.section() == null ? "" : row.section()) + " "
+                + (row.nameGuess() == null ? "" : row.nameGuess()) + " "
+                + String.valueOf(row.columns());
+        List<String> fixedCultures = CultureCatalog.expandToFixedOptions(context, section);
+        if (!fixedCultures.isEmpty()) {
+            return fixedCultures;
+        }
         LinkedHashSet<String> cultures = new LinkedHashSet<>();
-        if (context.contains("пшениц")) cultures.add("Пшеница");
-        if (context.contains("ячмен")) cultures.add("Ячмень");
-        if (context.contains("горох")) cultures.add("Горох");
-        if (context.contains("соя")) cultures.add("Соя");
-        if (context.contains("гречих")) cultures.add("Гречиха");
-        if (context.contains("рапс")) cultures.add("Рапс");
-        if (context.contains("кукуруз")) cultures.add("Кукуруза");
-        if (context.contains("рожь")) cultures.add("Рожь");
-        if (context.contains("тритикал")) cultures.add("Тритикале");
-        return new ArrayList<>(cultures);
+        String normalized = TextUtils.normalizeToken(context);
+        if (normalized.contains("пшениц")) cultures.add("Пшеница");
+        if (normalized.contains("ячмен")) cultures.add("Ячмень");
+        if (normalized.contains("горох")) cultures.add("Горох");
+        if (normalized.contains("соя")) cultures.add("Соя");
+        if (normalized.contains("гречих")) cultures.add("Гречиха");
+        if (normalized.contains("рапс")) cultures.add("Рапс");
+        if (normalized.contains("кукуруз")) cultures.add("Кукуруза");
+        if (normalized.contains("рож")) cultures.add("Рожь");
+        if (normalized.contains("тритикал")) cultures.add("Тритикале");
+        return CultureCatalog.normalizeForSection(section, new ArrayList<>(cultures));
     }
 
     private List<String> inferPurposes(ExcelImportService.ImportRow row, String category) {

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.repository.CatalogProductRepository;
 import ru.algaagro.maxapp.util.CatalogStructure;
+import ru.algaagro.maxapp.util.CultureCatalog;
 import ru.algaagro.maxapp.util.JsonHelper;
 import ru.algaagro.maxapp.util.TextUtils;
 
@@ -77,7 +78,12 @@ public class ProductResearchService {
                     return;
                 }
                 LinkedHashSet<String> knownCultures = new LinkedHashSet<>();
-                activeProducts.forEach(product -> knownCultures.addAll(productService.getStringList(product.getCulturesJson())));
+                knownCultures.addAll(CultureCatalog.allFixedOptions());
+                activeProducts.forEach(product -> knownCultures.addAll(
+                        CultureCatalog.normalizeForSection(
+                                product.getCategory(),
+                                productService.getStringList(product.getCulturesJson())
+                        )));
                 ResearchSession session = new ResearchSession(initiatedBy, activeProducts, new ArrayList<>(knownCultures));
                 sessions.put(initiatedBy, session);
                 log.info("Research session initialized. userId={}, targets={}", initiatedBy, activeProducts.size());
@@ -114,6 +120,10 @@ public class ProductResearchService {
 
     public boolean isResearchInProgress() {
         return !sessions.isEmpty();
+    }
+
+    public boolean hasResearchSession(Long initiatedBy) {
+        return initiatedBy != null && sessions.containsKey(initiatedBy);
     }
 
     private void processNextBatch(
@@ -156,8 +166,8 @@ public class ProductResearchService {
             for (int i = 0; i < batchProducts.size(); i++) {
                 CatalogProduct product = batchProducts.get(i);
                 AiClassificationService.ClassificationResult result = classified.get(i);
-                List<String> existingCultures = normalizeValues(productService.getStringList(product.getCulturesJson()));
-                List<String> cultures = normalizeValues(result.cultures());
+                List<String> existingCultures = normalizeValues(product.getCategory(), productService.getStringList(product.getCulturesJson()));
+                List<String> cultures = normalizeValues(product.getCategory(), result.cultures());
                 if (cultures.isEmpty()) {
                     cultures = existingCultures;
                 }
@@ -261,10 +271,11 @@ public class ProductResearchService {
     private ExcelImportService.ImportRow toImportRow(CatalogProduct product) {
         Map<String, String> columns = new LinkedHashMap<>();
         putIfNotBlank(columns, "Позиция", product.getName());
+        putIfNotBlank(columns, "Категория", product.getCategory());
         return new ExcelImportService.ImportRow(
                 "product-" + product.getId(),
                 "catalog",
-                "",
+                firstNonBlank(product.getCategory(), ""),
                 product.getId() == null ? 0 : product.getId().intValue(),
                 columns,
                 firstNonBlank(product.getName(), ""),
@@ -318,15 +329,8 @@ public class ProductResearchService {
         return value == null || value.isBlank() ? CatalogStructure.OTHER : value;
     }
 
-    private List<String> normalizeValues(List<String> values) {
-        if (values == null) {
-            return List.of();
-        }
-        return values.stream()
-                .filter(value -> value != null && !value.isBlank())
-                .map(String::trim)
-                .distinct()
-                .toList();
+    private List<String> normalizeValues(String sectionName, List<String> values) {
+        return CultureCatalog.normalizeForSection(sectionName, values);
     }
 
     private String formatCultures(List<String> cultures) {

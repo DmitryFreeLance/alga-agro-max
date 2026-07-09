@@ -322,6 +322,14 @@ public class BotUpdateHandler {
             showButtons(user, null);
             return true;
         }
+        if (normalized.equals("продолжить") && productResearchService.hasResearchSession(user.getMaxUserId())) {
+            continueProductsResearch(user, null);
+            return true;
+        }
+        if (normalized.equals("остановить") && productResearchService.hasResearchSession(user.getMaxUserId())) {
+            stopProductsResearch(user, null);
+            return true;
+        }
         if (normalized.equals("добавить кнопку")) {
             notifyButtonCreationDisabled(user, null);
             return true;
