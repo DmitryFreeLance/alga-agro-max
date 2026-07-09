@@ -6,6 +6,8 @@ const queryUserId = new URLSearchParams(window.location.search).get("maxUserId")
 const APP_ASSET_VERSION = "@asset.version@";
 let clientStateSyncTimer = null;
 let noticeTimer = null;
+let catalogSearchRenderTimer = null;
+let adminCatalogSearchRenderTimer = null;
 
 const FIXED_SECTION_DEFINITIONS = [
     {
@@ -190,6 +192,8 @@ const SEED_REPRODUCTION_ORDER = [
     "РСт",
 ];
 
+const SEARCH_RENDER_DEBOUNCE_MS = 120;
+
 function emptyProductModalState() {
     return {
         open: false,
@@ -205,7 +209,7 @@ function emptyAdminProductEditorState() {
         open: false,
         productId: null,
         categoryDraft: "",
-        subcategoryDraft: "",
+        subcategoryDraft: null,
         orderModeDraft: "",
         priceDraft: "",
         discountDraft: "",
@@ -331,7 +335,7 @@ window.addEventListener("popstate", handlePopState);
 
 async function bootstrap() {
     const criticalProducts = fetchJson("/api/catalog/products?sort=name").then(products => {
-        state.products = products;
+        state.products = decorateProductsForUi(products);
         state.sections = getCatalogSections();
         syncProductModalFromUrl();
         state.app.catalogLoading = false;
@@ -384,7 +388,7 @@ async function loadAdminData() {
     ]);
     state.admin.ready = true;
     state.admin.dashboard = dashboard;
-    state.admin.products = products;
+    state.admin.products = decorateProductsForUi(products);
     state.admin.manufacturers = manufacturers;
     state.admin.orders = orders;
     state.admin.customers = customers;
@@ -451,6 +455,111 @@ function renderNotice() {
         return "";
     }
     return `<div class="app-notice app-notice-${escapeAttr(state.notice.type || "success")}">${escapeHtml(state.notice.message)}</div>`;
+}
+
+function scheduleDeferredSearchRender(kind) {
+    const currentTimer = kind === "admin" ? adminCatalogSearchRenderTimer : catalogSearchRenderTimer;
+    if (currentTimer) {
+        window.clearTimeout(currentTimer);
+    }
+    const nextTimer = window.setTimeout(() => {
+        if (kind === "admin") {
+            adminCatalogSearchRenderTimer = null;
+        } else {
+            catalogSearchRenderTimer = null;
+        }
+        renderPreservingFocus();
+    }, SEARCH_RENDER_DEBOUNCE_MS);
+    if (kind === "admin") {
+        adminCatalogSearchRenderTimer = nextTimer;
+    } else {
+        catalogSearchRenderTimer = nextTimer;
+    }
+}
+
+function computeProductContextIndex(product) {
+    return normalize([
+        product?.category,
+        product?.subcategory,
+        product?.itemType,
+        product?.name,
+        product?.description,
+        product?.activeIngredient,
+        product?.cultivationTechnology,
+        ...(product?.cultures || []),
+        ...Object.values(product?.filterMap || {}),
+        ...Object.values(product?.rawData || {}),
+    ].join(" "));
+}
+
+function resolveProductSectionName(product, context = computeProductContextIndex(product)) {
+    const category = String(product?.category || "").trim();
+    if (product?.forGreenhouse || product?.filterMap?.forGreenhouse) {
+        return "Препараты для закрытого грунта";
+    }
+    const directSection = getSectionDefinition(category);
+    if (directSection) {
+        return directSection.name;
+    }
+    const pesticideCategory = getActualPesticideCategory(product, context);
+    if (pesticideCategory || hasPesticideSignals(context)) {
+        return "Пестициды";
+    }
+    if (isSeedsSectionName(context)) {
+        return "Семена";
+    }
+    if (isMeliorantsSectionName(context)) {
+        return "Мелиоранты";
+    }
+    if (isPavsSectionName(context)) {
+        return "ПАВы";
+    }
+    if (isDefoamersSectionName(context)) {
+        return "Пеногасители";
+    }
+    if (isPlantGlueSectionName(context)) {
+        return "Клей для сельхоз растений";
+    }
+    if (isSpecialSectionName(context)) {
+        return "Спецпрепараты";
+    }
+    if (isAgrochemicalsSectionName(context)) {
+        return "Агрохимикаты";
+    }
+    if (isSzrSectionName(context) || !normalize(context)) {
+        return "Пестициды";
+    }
+    return "Пестициды";
+}
+
+function decorateProductForUi(product) {
+    if (!product || typeof product !== "object") {
+        return product;
+    }
+    const contextIndex = computeProductContextIndex(product);
+    product._contextIndex = contextIndex;
+    const resolvedSectionName = resolveProductSectionName(product, contextIndex);
+    product._resolvedSectionName = resolvedSectionName;
+    product._catalogSearchIndex = normalize([
+        product.name,
+        product.description,
+        product.brand,
+        product.category,
+        product.subcategory,
+        resolvedSectionName,
+    ].join(" "));
+    product._adminSearchIndex = normalize([
+        product.name,
+        product.brand,
+        product.category,
+        product.subcategory,
+        resolvedSectionName,
+    ].join(" "));
+    return product;
+}
+
+function decorateProductsForUi(products) {
+    return (products || []).map(decorateProductForUi);
 }
 
 function renderPreservingFocus() {
@@ -856,18 +965,13 @@ function resolveSectionSubcategory(rawValue, sectionName) {
 }
 
 function getProductContext(product) {
-    return normalize([
-        product?.category,
-        product?.subcategory,
-        product?.itemType,
-        product?.name,
-        product?.description,
-        product?.activeIngredient,
-        product?.cultivationTechnology,
-        ...(product?.cultures || []),
-        ...Object.values(product?.filterMap || {}),
-        ...Object.values(product?.rawData || {}),
-    ].join(" "));
+    if (!product) {
+        return "";
+    }
+    if (!product._contextIndex) {
+        decorateProductForUi(product);
+    }
+    return product._contextIndex || "";
 }
 
 function isSeedMixture(product) {
@@ -1053,8 +1157,8 @@ function isLikelyRealPav(product) {
         && !getPesticideCategoryFromContext(context);
 }
 
-function getActualPesticideCategory(product) {
-    const context = getProductContext(product);
+function getActualPesticideCategory(product, providedContext = "") {
+    const context = providedContext || product?._contextIndex || computeProductContextIndex(product);
     const detected = getPesticideCategoryFromContext(context);
     if (detected) {
         return detected;
@@ -2639,7 +2743,9 @@ function renderAdminProductModal() {
     const product = state.admin.productEditor.productId ? state.admin.products.find(item => item.id === state.admin.productEditor.productId) : null;
     const categories = getAdminPrimarySections();
     const selectedCategory = state.admin.productEditor.categoryDraft || (product ? getProductSectionName(product) : (state.admin.catalogSection || categories[0] || ""));
-    const selectedSubcategory = state.admin.productEditor.subcategoryDraft || (product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""));
+    const selectedSubcategory = state.admin.productEditor.subcategoryDraft != null
+        ? state.admin.productEditor.subcategoryDraft
+        : (product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""));
     const subcategoryOptions = getAdminSubcategoryOptions(selectedCategory);
     const subcategorySelectOptions = selectedSubcategory && !subcategoryOptions.includes(selectedSubcategory)
         ? [selectedSubcategory, ...subcategoryOptions]
@@ -3485,7 +3591,7 @@ function handleInput(event) {
     }
     if (field === "catalog-query") {
         state.catalog.query = event.target.value;
-        renderPreservingFocus();
+        scheduleDeferredSearchRender("catalog");
         return;
     }
     if (field === "filter-manufacturer-search") {
@@ -3520,7 +3626,7 @@ function handleInput(event) {
     }
     if (field === "admin-product-search") {
         state.admin.catalogSearch = event.target.value;
-        renderPreservingFocus();
+        scheduleDeferredSearchRender("admin");
         return;
     }
     if (field === "admin-product-category") {
@@ -4332,7 +4438,7 @@ async function refreshCatalogData() {
     const [products] = await Promise.all([
         fetchJson("/api/catalog/products?sort=name"),
     ]);
-    state.products = products;
+    state.products = decorateProductsForUi(products);
     state.sections = getCatalogSections();
     syncProductModalFromUrl();
     if (state.profile?.admin) {
@@ -4423,7 +4529,10 @@ function getSectionProducts(sectionName) {
 
 function getSearchResults(query) {
     const normalized = normalize(query);
-    return state.products.filter(product => getProductContext(product).includes(normalized));
+    return state.products.filter(product => {
+        const catalogSearchIndex = product._catalogSearchIndex || decorateProductForUi(product)._catalogSearchIndex || "";
+        return catalogSearchIndex.includes(normalized);
+    });
 }
 
 function applyCatalogFilters(products) {
@@ -4483,7 +4592,10 @@ function applyCatalogFilters(products) {
     }
     if (state.catalog.query.trim()) {
         const normalized = normalize(state.catalog.query);
-        filtered = filtered.filter(product => normalize([product.name, product.description, product.brand].join(" ")).includes(normalized));
+        filtered = filtered.filter(product => {
+            const catalogSearchIndex = product._catalogSearchIndex || decorateProductForUi(product)._catalogSearchIndex || "";
+            return catalogSearchIndex.includes(normalized);
+        });
     }
     return sortProducts(filtered, state.catalog.sort);
 }
@@ -4654,47 +4766,13 @@ function getProductLeafSectionName(product) {
 }
 
 function getProductSectionName(product) {
-    const category = String(product?.category || "").trim();
-    const context = getProductContext(product);
-    if (product?.forGreenhouse || product?.filterMap?.forGreenhouse) {
-        return "Препараты для закрытого грунта";
-    }
-    const directSection = getSectionDefinition(category);
-    if (directSection?.name === "Препараты для закрытого грунта") {
-        return directSection.name;
-    }
-    const pesticideCategory = getActualPesticideCategory(product);
-    if (pesticideCategory || hasPesticideSignals(context)) {
+    if (!product) {
         return "Пестициды";
     }
-    if (isSeedsSectionName(context)) {
-        return "Семена";
+    if (!product._resolvedSectionName) {
+        decorateProductForUi(product);
     }
-    if (directSection && directSection.name !== "Препараты для закрытого грунта") {
-        return directSection.name;
-    }
-    if (isMeliorantsSectionName(context)) {
-        return "Мелиоранты";
-    }
-    if (isPavsSectionName(context)) {
-        return "ПАВы";
-    }
-    if (isDefoamersSectionName(context)) {
-        return "Пеногасители";
-    }
-    if (isPlantGlueSectionName(context)) {
-        return "Клей для сельхоз растений";
-    }
-    if (isSpecialSectionName(context)) {
-        return "Спецпрепараты";
-    }
-    if (isAgrochemicalsSectionName(context)) {
-        return "Агрохимикаты";
-    }
-    if (isSzrSectionName(context) || !normalize(context)) {
-        return "Пестициды";
-    }
-    return "Пестициды";
+    return product._resolvedSectionName || "Пестициды";
 }
 
 function getSeedTechnologyDisplay(product) {
@@ -4935,11 +5013,13 @@ function getAdminFilteredProducts() {
     const search = normalize(state.admin.catalogSearch);
     const effectiveSection = state.admin.catalogSection || getAdminSectionTree()[0]?.name || "";
     return state.admin.products.filter(product => {
+        const productSectionName = getProductSectionName(product);
+        const adminSearchIndex = product._adminSearchIndex || decorateProductForUi(product)._adminSearchIndex || "";
         if (state.admin.catalogStatus === "ACTIVE" && !product.active) return false;
         if (state.admin.catalogStatus === "HIDDEN" && product.active) return false;
-        if (effectiveSection && getProductSectionName(product) !== effectiveSection) return false;
+        if (effectiveSection && productSectionName !== effectiveSection) return false;
         if (state.admin.catalogCategory && getAdminCatalogChildName(product) !== state.admin.catalogCategory) return false;
-        if (search && !normalize([product.name, product.brand, getProductSectionName(product), product.category, product.subcategory].join(" ")).includes(search)) return false;
+        if (search && !adminSearchIndex.includes(search)) return false;
         return true;
     });
 }
