@@ -37,5 +37,9 @@ public class StartupService {
         if (normalizedSeedPackages > 0) {
             log.info("Normalized seed package descriptions to Big Bag for {} products", normalizedSeedPackages);
         }
+        int normalizedPackageUnits = productService.normalizeExistingPackageDescriptionUnits();
+        if (normalizedPackageUnits > 0) {
+            log.info("Normalized package descriptions with units for {} products", normalizedPackageUnits);
+        }
     }
 }

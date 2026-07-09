@@ -44,6 +44,7 @@ public class ProductService {
     private static final Pattern CANISTER_COUNT_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*канистр[а-я]*[^\\d]{0,12}(?:по\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern PE_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(?:п\\.\\s*е\\.|п/е|пе|посевн(?:ая|ые)?\\s+единиц[аы]?)");
     private static final Pattern TON_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(?:т\\b|тонн[аы]?)");
+    private static final Pattern SIMPLE_PACKAGE_NUMBER_PATTERN = Pattern.compile("^\\s*(\\d+(?:[.,]\\d+)?)\\s*$");
 
     private final CatalogProductRepository catalogProductRepository;
     private final JsonHelper jsonHelper;
@@ -223,6 +224,29 @@ public class ProductService {
         return changedProducts.size();
     }
 
+    @Transactional
+    public int normalizeExistingPackageDescriptionUnits() {
+        List<CatalogProduct> changedProducts = new ArrayList<>();
+        for (CatalogProduct product : catalogProductRepository.findAll()) {
+            String normalizedPackageDescription = normalizePackageDescriptionWithUnit(
+                    sanitizePackageDescription(product.getPackageDescription()),
+                    product.getUnitName()
+            );
+            if (Objects.equals(blankToNull(product.getPackageDescription()), blankToNull(normalizedPackageDescription))) {
+                continue;
+            }
+            product.setPackageDescription(normalizedPackageDescription);
+            Map<String, Object> rawData = new LinkedHashMap<>(jsonHelper.readMap(product.getRawDataJson()));
+            putOrRemove(rawData, "Фасовка", normalizedPackageDescription);
+            product.setRawDataJson(jsonHelper.writeValue(rawData));
+            changedProducts.add(product);
+        }
+        if (!changedProducts.isEmpty()) {
+            catalogProductRepository.saveAll(changedProducts);
+        }
+        return changedProducts.size();
+    }
+
     private ImportMatch findExistingProductMatch(ImportedProduct importedProduct) {
         CatalogProduct product = importedProduct.externalId() == null || importedProduct.externalId().isBlank()
                 ? null
@@ -299,11 +323,11 @@ public class ProductService {
         BigDecimal inferredMin = sanitizeOrderRuleQuantity(inferred.minOrderQuantity(), unitName, inferred.packageDescription());
         BigDecimal inferredStep = sanitizeOrderRuleQuantity(inferred.orderStep(), unitName, inferred.packageDescription());
         String inferredPackageType = sanitizePackageType(inferred.packageType(), inferred.packageDescription());
-        String inferredPackageDescription = sanitizePackageDescription(inferred.packageDescription());
+        String inferredPackageDescription = normalizePackageDescriptionWithUnit(sanitizePackageDescription(inferred.packageDescription()), unitName);
         BigDecimal explicitMin = sanitizeOrderRuleQuantity(product.getMinOrderQuantity(), unitName, product.getPackageDescription());
         BigDecimal explicitStep = sanitizeOrderRuleQuantity(product.getOrderStep(), unitName, product.getPackageDescription());
         String explicitPackageType = sanitizePackageType(product.getPackageType(), product.getPackageDescription());
-        String explicitPackageDescription = sanitizePackageDescription(product.getPackageDescription());
+        String explicitPackageDescription = normalizePackageDescriptionWithUnit(sanitizePackageDescription(product.getPackageDescription()), unitName);
         BigDecimal minOrderQuantity = firstPositive(explicitMin, inferredMin, DEFAULT_ORDER_QUANTITY);
         BigDecimal orderStep = firstPositive(explicitStep, inferredStep, minOrderQuantity, DEFAULT_ORDER_QUANTITY);
         String packageType = firstNonBlank(explicitPackageType, inferredPackageType);
@@ -760,7 +784,10 @@ public class ProductService {
         List<String> purposes = payload.purposes() == null ? List.of() : payload.purposes();
         List<String> tags = payload.tags() == null ? List.of() : payload.tags();
         String packageType = blankToNull(payload.packageType());
-        String packageDescription = blankToNull(payload.packageDescription());
+        String packageDescription = normalizePackageDescriptionWithUnit(
+                sanitizePackageDescription(payload.packageDescription()),
+                product.getUnitName()
+        );
         if ((packageType == null || packageType.isBlank())
                 && (packageDescription == null || packageDescription.isBlank())
                 && shouldDefaultBigBagForSeed(normalizedCategory, normalizedSubcategory, cultures, payload.name(), payload.description())) {
@@ -1188,6 +1215,57 @@ public class ProductService {
         return safe;
     }
 
+    private String normalizePackageDescriptionWithUnit(String packageDescription, String unitName) {
+        String safe = blankToNull(packageDescription);
+        if (safe == null) {
+            return null;
+        }
+        if (containsExplicitPackageUnit(safe) || isNamedPackageDescription(safe)) {
+            return safe;
+        }
+        String compactUnit = normalizeCompactPackageUnit(unitName);
+        if (compactUnit.isBlank()) {
+            return safe;
+        }
+        Matcher volumeXCount = VOLUME_X_COUNT_PATTERN.matcher(safe);
+        if (volumeXCount.matches()) {
+            BigDecimal volume = parseFlexibleDecimal(volumeXCount.group(1));
+            BigDecimal units = parseFlexibleDecimal(volumeXCount.group(3));
+            if (volume != null && units != null) {
+                return formatQuantity(volume) + compactUnit + "x" + formatQuantity(units);
+            }
+        }
+        Matcher simpleNumber = SIMPLE_PACKAGE_NUMBER_PATTERN.matcher(safe);
+        if (simpleNumber.matches()) {
+            BigDecimal quantity = parseFlexibleDecimal(simpleNumber.group(1));
+            if (quantity != null) {
+                return formatQuantity(quantity) + compactUnit;
+            }
+        }
+        return safe;
+    }
+
+    private boolean containsExplicitPackageUnit(String packageDescription) {
+        String normalized = TextUtils.normalizeToken(packageDescription);
+        return normalized.contains("лит")
+                || normalized.contains("кг")
+                || normalized.contains("кил")
+                || normalized.contains("тон")
+                || normalized.contains("п е")
+                || normalized.matches(".*(?:^| )л(?: |$).*")
+                || normalized.matches(".*(?:^| )т(?: |$).*")
+                || normalized.matches(".*(?:^| )пе(?: |$).*");
+    }
+
+    private boolean isNamedPackageDescription(String packageDescription) {
+        String normalized = TextUtils.normalizeToken(packageDescription);
+        return normalized.contains("биг баг")
+                || normalized.contains("короб")
+                || normalized.contains("канистр")
+                || normalized.contains("канистра")
+                || normalized.contains("посевн");
+    }
+
     private void appendOrderSource(StringBuilder builder, String value) {
         if (value == null || value.isBlank()) {
             return;
@@ -1369,7 +1447,10 @@ public class ProductService {
             return null;
         }
         String packageType = blankToNull(imported.packageType());
-        String packageDescription = blankToNull(imported.packageDescription());
+        String packageDescription = normalizePackageDescriptionWithUnit(
+                sanitizePackageDescription(imported.packageDescription()),
+                imported.unitName()
+        );
         if (shouldDefaultBigBagForSeed(imported.category(), imported.subcategory(), imported.cultures(), imported.name(), imported.description())) {
             packageType = "биг-бэг";
             packageDescription = "Биг-бэг";
