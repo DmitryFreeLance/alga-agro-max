@@ -408,6 +408,26 @@ async function loadAdminData() {
     }
 }
 
+async function openAdminProductEditor(productId) {
+    if (productId && state.profile?.admin) {
+        await ensureAdminDataLoaded(true);
+    }
+    const product = productId ? state.admin.products.find(item => item.id === productId) : null;
+    state.admin.productEditor = {
+        ...emptyAdminProductEditorState(),
+        open: true,
+        productId,
+        categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
+        subcategoryDraft: product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""),
+        orderModeDraft: product ? getAdminOrderMode(product) : (state.admin.catalogSection === "Семена" ? "pe" : "liters"),
+        priceDraft: product?.price != null ? String(product.price) : "",
+        discountDraft: product?.discountPercent != null ? String(product.discountPercent) : "",
+        seedReproductionDraft: product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "",
+        seedReproductionPriceDrafts: getSeedReproductionPriceMap(product),
+    };
+    render();
+}
+
 function render() {
     const existingDrawer = getFilterScrollContainer();
     if (existingDrawer) {
@@ -3206,7 +3226,7 @@ function handleClick(event) {
         state.catalog.query = "";
         if (state.nav === "profile") {
             loadProfileOrders().catch(error => console.warn("Profile orders preload failed", error));
-            ensureAdminDataLoaded().catch(error => console.warn("Admin preload failed", error));
+            ensureAdminDataLoaded(true).catch(error => console.warn("Admin preload failed", error));
         }
         render();
         return;
@@ -3488,7 +3508,7 @@ function handleClick(event) {
         if (state.admin.menu === "catalog" && !state.admin.catalogSection) {
             state.admin.catalogSection = getAdminSectionTree()[0]?.name || "";
         }
-        ensureAdminDataLoaded().catch(error => console.warn("Admin data load failed", error));
+        ensureAdminDataLoaded(true).catch(error => console.warn("Admin data load failed", error));
         render();
         return;
     }
@@ -3496,25 +3516,16 @@ function handleClick(event) {
         state.admin.menu = "catalog";
         state.admin.catalogSection = button.dataset.section || "";
         state.admin.catalogCategory = button.dataset.category || "";
+        ensureAdminDataLoaded(true).catch(error => console.warn("Admin section refresh failed", error));
         render();
         return;
     }
     if (action === "open-admin-product") {
         const productId = button.dataset.productId ? Number(button.dataset.productId) : null;
-        const product = productId ? state.admin.products.find(item => item.id === productId) : null;
-        state.admin.productEditor = {
-            ...emptyAdminProductEditorState(),
-            open: true,
-            productId,
-            categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
-            subcategoryDraft: product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""),
-            orderModeDraft: product ? getAdminOrderMode(product) : (state.admin.catalogSection === "Семена" ? "pe" : "liters"),
-            priceDraft: product?.price != null ? String(product.price) : "",
-            discountDraft: product?.discountPercent != null ? String(product.discountPercent) : "",
-            seedReproductionDraft: product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "",
-            seedReproductionPriceDrafts: getSeedReproductionPriceMap(product),
-        };
-        render();
+        openAdminProductEditor(productId).catch(error => {
+            console.warn("Admin product open failed", error);
+            showNotice("Не удалось открыть карточку товара", "error");
+        });
         return;
     }
     if (action === "close-admin-product") {
@@ -4469,8 +4480,8 @@ async function loadProfileOrders() {
     }
 }
 
-async function ensureAdminDataLoaded() {
-    if (!state.maxUserId || !state.profile?.admin || state.admin.ready || state.admin.loading) {
+async function ensureAdminDataLoaded(force = false) {
+    if (!state.maxUserId || !state.profile?.admin || state.admin.loading || (!force && state.admin.ready)) {
         return;
     }
     state.admin.loading = true;

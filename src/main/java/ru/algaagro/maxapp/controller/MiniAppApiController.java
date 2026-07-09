@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ContentDisposition;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -52,6 +54,8 @@ import ru.algaagro.maxapp.util.JsonHelper;
 @RestController
 @RequestMapping("/api")
 public class MiniAppApiController {
+
+    private static final Logger log = LoggerFactory.getLogger(MiniAppApiController.class);
 
     private final ProductService productService;
     private final OrderService orderService;
@@ -202,17 +206,42 @@ public class MiniAppApiController {
         if (request.maxUserId() == null) {
             throw new IllegalArgumentException("Не удалось определить пользователя");
         }
-        AppUser user = userService.syncClientState(new UserService.ClientStateCommand(
-                request.maxUserId(),
-                request.displayName(),
-                request.username(),
-                request.cartItems(),
-                request.checkoutDraft()
-        ));
+        AppUser user;
+        try {
+            user = userService.syncClientState(new UserService.ClientStateCommand(
+                    request.maxUserId(),
+                    request.displayName(),
+                    request.username(),
+                    request.cartItems(),
+                    request.checkoutDraft()
+            ));
+        } catch (RuntimeException exception) {
+            if (!isSqliteBusy(exception)) {
+                throw exception;
+            }
+            log.warn("Profile state sync skipped because SQLite is busy for maxUserId={}", request.maxUserId());
+            return Map.of(
+                    "saved", false,
+                    "busy", true,
+                    "maxUserId", request.maxUserId()
+            );
+        }
         return Map.of(
                 "saved", true,
                 "maxUserId", user.getMaxUserId()
         );
+    }
+
+    private boolean isSqliteBusy(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.contains("[SQLITE_BUSY]")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     @GetMapping("/files/{scope}/{storedName}")

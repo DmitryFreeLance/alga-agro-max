@@ -2867,30 +2867,54 @@ public class ExcelImportService {
             return safeDescription;
         }
         String volume = formatDecimal(packageVolume).replace(".", ",");
-        if (CatalogStructure.PESTICIDES.equals(CatalogStructure.normalizeSectionName(category))) {
-            if (unitsPerPackage != null && unitsPerPackage.compareTo(BigDecimal.ONE) > 0) {
-                return volume + "x" + formatDecimal(unitsPerPackage).replace(".", ",");
-            }
-            return volume;
+        String compactUnit = resolveCompactPackageUnit(unitName);
+        String normalizedDescription = buildCompactPackageDescription(volume, compactUnit, unitsPerPackage);
+        if (safeDescription.isBlank()) {
+            return normalizedDescription;
         }
-        String normalizedUnit = TextUtils.normalizeToken(unitName);
-        String compactUnit = "";
-        if (normalizedUnit.equals("л") || normalizedUnit.startsWith("лит")) {
-            compactUnit = "л";
-        } else if (normalizedUnit.equals("кг") || normalizedUnit.startsWith("кил")) {
-            compactUnit = "кг";
-        } else if (normalizedUnit.equals("т") || normalizedUnit.startsWith("тон")) {
-            compactUnit = "т";
-        } else if (normalizedUnit.contains("п.е") || normalizedUnit.contains("пе")) {
-            compactUnit = "п.е.";
+        if (!compactUnit.isBlank() && !containsPackageUnitMarker(safeDescription)) {
+            return normalizedDescription;
         }
+        return safeDescription;
+    }
+
+    private String buildCompactPackageDescription(String volume, String compactUnit, BigDecimal unitsPerPackage) {
         if (unitsPerPackage != null && unitsPerPackage.compareTo(BigDecimal.ONE) > 0) {
             return volume + compactUnit + "x" + formatDecimal(unitsPerPackage).replace(".", ",");
         }
         if (!compactUnit.isBlank()) {
             return volume + compactUnit;
         }
-        return safeDescription.isBlank() ? volume : safeDescription;
+        return volume;
+    }
+
+    private String resolveCompactPackageUnit(String unitName) {
+        String normalizedUnit = TextUtils.normalizeToken(unitName);
+        if (normalizedUnit.equals("л") || normalizedUnit.startsWith("лит")) {
+            return "л";
+        }
+        if (normalizedUnit.equals("кг") || normalizedUnit.startsWith("кил")) {
+            return "кг";
+        }
+        if (normalizedUnit.equals("т") || normalizedUnit.startsWith("тон")) {
+            return "т";
+        }
+        if (normalizedUnit.contains("п е") || normalizedUnit.equals("пе")) {
+            return "п.е.";
+        }
+        return "";
+    }
+
+    private boolean containsPackageUnitMarker(String packageDescription) {
+        String normalized = TextUtils.normalizeToken(packageDescription);
+        return normalized.contains("лит")
+                || normalized.contains("кг")
+                || normalized.contains("кил")
+                || normalized.contains("тон")
+                || normalized.matches(".*(?:^| )л(?: |$).*")
+                || normalized.matches(".*(?:^| )т(?: |$).*")
+                || normalized.contains("п е")
+                || normalized.matches(".*(?:^| )пе(?: |$).*");
     }
 
     private String blankToEmpty(String value) {
