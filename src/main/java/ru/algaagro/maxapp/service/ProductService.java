@@ -37,6 +37,7 @@ public class ProductService {
     private static final BigDecimal DEFAULT_ORDER_QUANTITY = BigDecimal.ONE;
     private static final BigDecimal DEFAULT_CATALOG_PRICE = new BigDecimal("10");
     private static final Pattern BOX_MULTIPLIER_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
+    private static final Pattern VOLUME_X_COUNT_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов|т|тонна|тонны|п\\.?е\\.?)?\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)");
     private static final Pattern BOX_TOTAL_PATTERN = Pattern.compile("(?i)короб[а-я]*[^\\d]{0,20}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern TOTAL_VOLUME_PATTERN = Pattern.compile("(?i)итог[ао]?[^\\d]{0,12}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern CANISTER_PATTERN = Pattern.compile("(?i)канистр[а-я]*[^\\d]{0,12}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
@@ -536,6 +537,7 @@ public class ProductService {
                 || normalizedUnit.equals("кг")
                 || normalizedUnit.contains("кил");
         boolean boxLike = BOX_MULTIPLIER_PATTERN.matcher(packageDescription == null ? "" : packageDescription).find()
+                || VOLUME_X_COUNT_PATTERN.matcher(packageDescription == null ? "" : packageDescription).find()
                 || TextUtils.normalizeToken(packageType).contains("короб");
         if (volumeUnit && boxLike) {
             return "шт";
@@ -997,6 +999,20 @@ public class ProductService {
         String packageType = null;
         String packageDescription = null;
 
+        Matcher volumeFirstBox = VOLUME_X_COUNT_PATTERN.matcher(textSource);
+        if (volumeFirstBox.find()) {
+            BigDecimal volume = parseFlexibleDecimal(volumeFirstBox.group(1));
+            BigDecimal units = parseFlexibleDecimal(volumeFirstBox.group(3));
+            BigDecimal total = positiveMultiply(units, volume);
+            String detectedUnit = firstNonBlank(volumeFirstBox.group(2), unitName);
+            if (total != null) {
+                minOrderQuantity = total;
+                orderStep = total;
+                packageType = "коробка";
+                packageDescription = formatQuantity(volume) + normalizeCompactPackageUnit(detectedUnit) + "x" + formatQuantity(units);
+            }
+        }
+
         Matcher boxMultiplier = BOX_MULTIPLIER_PATTERN.matcher(textSource);
         if (boxMultiplier.find()) {
             BigDecimal units = parseFlexibleDecimal(boxMultiplier.group(1));
@@ -1097,6 +1113,23 @@ public class ProductService {
             orderStep = minOrderQuantity;
         }
         return new OrderRules(firstNonBlank(unitName, "шт"), minOrderQuantity, orderStep, packageType, packageDescription);
+    }
+
+    private String normalizeCompactPackageUnit(String unitName) {
+        String normalized = TextUtils.normalizeToken(unitName);
+        if (normalized.equals("л") || normalized.startsWith("лит")) {
+            return "л";
+        }
+        if (normalized.equals("кг") || normalized.startsWith("кил")) {
+            return "кг";
+        }
+        if (normalized.equals("т") || normalized.startsWith("тон")) {
+            return "т";
+        }
+        if (normalized.contains("п.е") || normalized.contains("пе")) {
+            return "п.е.";
+        }
+        return "";
     }
 
     private String buildOrderRulesText(String name, String description, Map<String, ?> rawData, Map<String, ?> filterMap) {

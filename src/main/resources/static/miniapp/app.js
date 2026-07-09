@@ -2713,12 +2713,16 @@ function inferAdminOrderConfig(product) {
     const unitName = String(product?.unitName || "л").trim();
     let packageVolume = "";
     let unitsPerPackage = "";
-    const boxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)/i)
+    const volumeFirstBoxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:л|лит|кг|кил|т|тон|п\.?е\.?)?\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)/i);
+    const countFirstBoxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)\s*(?:л|лит|кг|кил|т|тон|п\.?е\.?)\b/i)
         || description.match(/(\d+(?:[.,]\d+)?)\s*(?:шт|упаков(?:ки|ок)|канистр)[^\d]{0,12}(?:по\s*)?(\d+(?:[.,]\d+)?)/i);
     const singleLike = description.match(/(\d+(?:[.,]\d+)?)\s*(л|лит|кг|кил|т)\b/i);
-    if (boxLike) {
-        unitsPerPackage = String(boxLike[1]).replace(",", ".");
-        packageVolume = String(boxLike[2]).replace(",", ".");
+    if (volumeFirstBoxLike) {
+        packageVolume = String(volumeFirstBoxLike[1]).replace(",", ".");
+        unitsPerPackage = String(volumeFirstBoxLike[2]).replace(",", ".");
+    } else if (countFirstBoxLike) {
+        unitsPerPackage = String(countFirstBoxLike[1]).replace(",", ".");
+        packageVolume = String(countFirstBoxLike[2]).replace(",", ".");
     } else if (singleLike) {
         packageVolume = String(singleLike[1]).replace(",", ".");
         unitsPerPackage = "1";

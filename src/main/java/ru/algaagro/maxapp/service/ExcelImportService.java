@@ -2427,6 +2427,8 @@ public class ExcelImportService {
                         readColumn(row.columns(), "объем", "объём", "package volume", "packagevolume")
                 )
                 : "";
+        BigDecimal packageVolumeValue = parseStructuredDecimal(row.columns(), "объем упаковки", "объем", "объём", "package volume", "packagevolume");
+        BigDecimal unitsPerPackageValue = parseStructuredDecimal(row.columns(), "упаковок в коробке", "коробке", "units per package", "unitsperpackage");
         BigDecimal minOrderQuantity = hasMinOrderColumn ? parseStructuredDecimal(row.columns(), "мин", "минимальн", "minimum", "minorderquantity") : null;
         BigDecimal orderStep = hasOrderStepColumn ? parseStructuredDecimal(row.columns(), "кратност", "шаг заказа", "order step", "orderstep") : null;
         String discountPercent = hasDiscountColumn ? readColumn(row.columns(), "скидк", "discount") : "";
@@ -2514,6 +2516,7 @@ public class ExcelImportService {
         if (!updatesExistingProduct && itemType.isBlank()) {
             itemType = firstNonBlank(subcategory, category, row.section());
         }
+        packageDescription = normalizeImportedPackageDescription(category, unitName, packageDescription, packageVolumeValue, unitsPerPackageValue);
 
         List<String> cultures = hasCultureColumn
                 ? splitMultiValue(firstNonBlank(explicitCulture, !updatesExistingProduct && CatalogStructure.SEEDS.equals(category) ? subcategory : ""))
@@ -2606,25 +2609,23 @@ public class ExcelImportService {
         String resolvedPackageDescription = packageDescription;
         BigDecimal resolvedMinOrder = minOrderQuantity;
         BigDecimal resolvedOrderStep = orderStep;
-        if (!updatesExistingProduct) {
-            ProductService.OrderRules orderRules = productService.inferOrderRules(
-                    name,
-                    unitName,
-                    description,
-                    rawData,
-                    filterMap
-            );
-            resolvedUnitName = firstNonBlank(
-                    unitName,
-                    CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
-                    orderRules.unitName(),
-                    "шт"
-            );
-            resolvedPackageType = firstNonBlank(packageType, orderRules.packageType());
-            resolvedPackageDescription = firstNonBlank(packageDescription, orderRules.packageDescription());
-            resolvedMinOrder = firstPositive(minOrderQuantity, orderRules.minOrderQuantity());
-            resolvedOrderStep = firstPositive(orderStep, orderRules.orderStep(), resolvedMinOrder);
-        }
+        ProductService.OrderRules orderRules = productService.inferOrderRules(
+                name,
+                unitName,
+                description,
+                rawData,
+                filterMap
+        );
+        resolvedUnitName = firstNonBlank(
+                unitName,
+                CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
+                orderRules.unitName(),
+                "шт"
+        );
+        resolvedPackageType = firstNonBlank(packageType, orderRules.packageType());
+        resolvedPackageDescription = firstNonBlank(packageDescription, orderRules.packageDescription());
+        resolvedMinOrder = firstPositive(minOrderQuantity, orderRules.minOrderQuantity());
+        resolvedOrderStep = firstPositive(orderStep, orderRules.orderStep(), resolvedMinOrder);
 
         return Optional.of(productService.prepareImportedProduct(new ProductService.ImportedProduct(
                 buildExternalId(row),
@@ -2864,6 +2865,44 @@ public class ExcelImportService {
 
     private String formatDecimal(BigDecimal value) {
         return value == null ? "" : value.stripTrailingZeros().toPlainString();
+    }
+
+    private String normalizeImportedPackageDescription(
+            String category,
+            String unitName,
+            String packageDescription,
+            BigDecimal packageVolume,
+            BigDecimal unitsPerPackage
+    ) {
+        String safeDescription = blankToEmpty(packageDescription);
+        if (packageVolume == null || packageVolume.compareTo(BigDecimal.ZERO) <= 0) {
+            return safeDescription;
+        }
+        String volume = formatDecimal(packageVolume).replace(".", ",");
+        if (CatalogStructure.PESTICIDES.equals(CatalogStructure.normalizeSectionName(category))) {
+            if (unitsPerPackage != null && unitsPerPackage.compareTo(BigDecimal.ONE) > 0) {
+                return volume + "x" + formatDecimal(unitsPerPackage).replace(".", ",");
+            }
+            return volume;
+        }
+        String normalizedUnit = TextUtils.normalizeToken(unitName);
+        String compactUnit = "";
+        if (normalizedUnit.equals("л") || normalizedUnit.startsWith("лит")) {
+            compactUnit = "л";
+        } else if (normalizedUnit.equals("кг") || normalizedUnit.startsWith("кил")) {
+            compactUnit = "кг";
+        } else if (normalizedUnit.equals("т") || normalizedUnit.startsWith("тон")) {
+            compactUnit = "т";
+        } else if (normalizedUnit.contains("п.е") || normalizedUnit.contains("пе")) {
+            compactUnit = "п.е.";
+        }
+        if (unitsPerPackage != null && unitsPerPackage.compareTo(BigDecimal.ONE) > 0) {
+            return volume + compactUnit + "x" + formatDecimal(unitsPerPackage).replace(".", ",");
+        }
+        if (!compactUnit.isBlank()) {
+            return volume + compactUnit;
+        }
+        return safeDescription.isBlank() ? volume : safeDescription;
     }
 
     private String blankToEmpty(String value) {
