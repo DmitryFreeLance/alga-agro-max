@@ -70,6 +70,20 @@ public final class CultureCatalog {
         return new ArrayList<>(values);
     }
 
+    public static List<String> researchFixedOptions() {
+        return FIXED_SEED_CULTURE_OPTIONS;
+    }
+
+    public static List<String> normalizeForResearch(List<String> values) {
+        LinkedHashSet<String> resolved = new LinkedHashSet<>();
+        if (values != null) {
+            for (String value : values) {
+                resolved.addAll(expandToFixedOptions(value, CatalogStructure.SEEDS));
+            }
+        }
+        return new ArrayList<>(resolved);
+    }
+
     public static List<String> normalizeForSection(String sectionName, List<String> values) {
         List<String> options = fixedOptionsForSection(sectionName);
         if (options.isEmpty()) {

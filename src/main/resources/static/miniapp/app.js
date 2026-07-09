@@ -848,27 +848,36 @@ function renderSectionPage() {
 
 function renderSectionStructure(sectionName, products) {
     const definition = getSectionDefinition(sectionName);
-    if (!definition?.subcategories?.length) {
+    const hasSubcategories = Boolean(definition?.subcategories?.length);
+    const useCultureStructure = !hasSubcategories && normalize(sectionName) !== normalize("Семена");
+    const structureValues = useCultureStructure
+        ? getCultureOptionsForSection(sectionName, products)
+        : (definition?.subcategories || []);
+    if (!structureValues.length) {
         return "";
     }
-    const counts = new Map(definition.subcategories.map(name => [name, 0]));
+    const counts = new Map(structureValues.map(name => [name, 0]));
     products.forEach(product => {
-        const subcategory = mapProductToSectionSubcategory(product, sectionName);
-        if (counts.has(subcategory)) {
-            counts.set(subcategory, (counts.get(subcategory) || 0) + 1);
-        }
+        const values = useCultureStructure
+            ? getFilterCultureValues(product, sectionName)
+            : [mapProductToSectionSubcategory(product, sectionName)].filter(Boolean);
+        values.forEach(value => {
+            if (counts.has(value)) {
+                counts.set(value, (counts.get(value) || 0) + 1);
+            }
+        });
     });
-    const selected = new Set(state.catalog.applied.subcategories || []);
+    const selected = new Set(useCultureStructure ? (state.catalog.applied.cultures || []) : (state.catalog.applied.subcategories || []));
     return `
         <div class="section-structure-block">
             <div class="section-label">Структура раздела</div>
             <div class="section-structure-grid">
-                ${definition.subcategories.map(name => `
+                ${structureValues.map(name => `
                     <button
                         type="button"
                         class="section-structure-item ${selected.has(name) ? "active" : ""}"
-                        data-action="set-section-subcategory"
-                        data-subcategory="${escapeAttr(name)}">
+                        data-action="${useCultureStructure ? "set-section-culture" : "set-section-subcategory"}"
+                        ${useCultureStructure ? `data-culture="${escapeAttr(name)}"` : `data-subcategory="${escapeAttr(name)}"`}>
                         <span class="section-structure-name">${escapeHtml(name)}</span>
                         <span class="section-structure-count">${counts.get(name) || 0}</span>
                     </button>
@@ -1045,9 +1054,7 @@ function expandCultureToFixedOptions(value, sectionName = "Семена") {
     if (!normalized) {
         return [];
     }
-    const options = normalize(sectionName) === normalize("Пестициды")
-        ? FIXED_PESTICIDE_CULTURE_OPTIONS
-        : FIXED_SEED_CULTURE_OPTIONS;
+    const options = FIXED_SEED_CULTURE_OPTIONS;
     const direct = options.filter(option => normalize(option) === normalized);
     if (direct.length) {
         return direct;
@@ -1226,10 +1233,8 @@ function mapProductToSectionSubcategory(product, sectionName) {
 
 function getCultureOptionsForSection(sectionName, products = []) {
     const normalizedSection = normalize(sectionName);
-    if (normalizedSection === normalize("Семена") || normalizedSection === normalize("Пестициды")) {
-        return normalizedSection === normalize("Пестициды")
-            ? [...FIXED_PESTICIDE_CULTURE_OPTIONS]
-            : [...FIXED_SEED_CULTURE_OPTIONS];
+    if (normalizedSection) {
+        return [...FIXED_SEED_CULTURE_OPTIONS];
     }
     return uniqueValues(products.flatMap(item => getFilterCultureValues(item, sectionName)).filter(Boolean));
 }
@@ -2284,7 +2289,7 @@ function renderCatalogFiltersPanel({ inline = false } = {}) {
         : categoryTree.filter(node => normalize(node.label).includes(subcategorySearch));
     const isSeedsSection = normalize(effectiveSection) === normalize("Семена");
     const isPesticidesSection = normalize(effectiveSection) === normalize("Пестициды");
-    const showCultureSection = isSeedsSection || isPesticidesSection;
+    const showCultureSection = Boolean(effectiveSection);
     const showSubcategorySearch = isPesticidesSection;
     const activeIngredients = isPesticidesSection
         ? uniqueValues(sectionProducts.flatMap(item => extractActiveIngredientTerms(item)).filter(Boolean))
@@ -3255,6 +3260,19 @@ function handleClick(event) {
         state.catalog.applied = {
             ...cloneFilters(state.catalog.applied),
             subcategories: sameSingle || !subcategory ? [] : [subcategory],
+        };
+        state.catalog.draft = cloneFilters(state.catalog.applied);
+        state.catalog.scrollToProductsPending = true;
+        render();
+        return;
+    }
+    if (action === "set-section-culture") {
+        const culture = button.dataset.culture || "";
+        const current = state.catalog.applied.cultures || [];
+        const sameSingle = current.length === 1 && current[0] === culture;
+        state.catalog.applied = {
+            ...cloneFilters(state.catalog.applied),
+            cultures: sameSingle || !culture ? [] : [culture],
         };
         state.catalog.draft = cloneFilters(state.catalog.applied);
         state.catalog.scrollToProductsPending = true;
@@ -5782,10 +5800,20 @@ function getFilterCultureValues(product, sectionName) {
     if (normalize(effectiveSection) === normalize("Семена")) {
         return getSeedFilterCultureValues(product);
     }
-    if (normalize(effectiveSection) === normalize("Пестициды")) {
-        return getPesticideCultureValues(product);
-    }
-    return uniqueValues((product?.cultures || []).filter(Boolean));
+    const explicitCandidates = [
+        ...(product?.cultures || []),
+        ...toStringArray(product?.filterMap?.cultures),
+        product?.rawData?.["Культура"],
+        product?.rawData?.["Культуры"],
+        product?.subcategory,
+        product?.itemType,
+        product?.description,
+    ];
+    const values = new Set();
+    explicitCandidates.forEach(candidate => {
+        expandCultureToFixedOptions(candidate, "Семена").forEach(value => values.add(value));
+    });
+    return uniqueValues([...values]);
 }
 
 function getPesticideTargetLabels(product) {

@@ -78,12 +78,9 @@ public class ProductResearchService {
                     return;
                 }
                 LinkedHashSet<String> knownCultures = new LinkedHashSet<>();
-                knownCultures.addAll(CultureCatalog.allFixedOptions());
+                knownCultures.addAll(CultureCatalog.researchFixedOptions());
                 activeProducts.forEach(product -> knownCultures.addAll(
-                        CultureCatalog.normalizeForSection(
-                                product.getCategory(),
-                                productService.getStringList(product.getCulturesJson())
-                        )));
+                        CultureCatalog.normalizeForResearch(productService.getStringList(product.getCulturesJson()))));
                 ResearchSession session = new ResearchSession(initiatedBy, activeProducts, new ArrayList<>(knownCultures));
                 sessions.put(initiatedBy, session);
                 log.info("Research session initialized. userId={}, targets={}", initiatedBy, activeProducts.size());
@@ -330,7 +327,7 @@ public class ProductResearchService {
     }
 
     private List<String> normalizeValues(String sectionName, List<String> values) {
-        return CultureCatalog.normalizeForSection(sectionName, values);
+        return CultureCatalog.normalizeForResearch(values);
     }
 
     private String formatCultures(List<String> cultures) {
