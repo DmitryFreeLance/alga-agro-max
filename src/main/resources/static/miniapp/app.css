@@ -2300,6 +2300,7 @@ button[disabled] {
     grid-template-columns: 76px minmax(0, 1fr) auto;
     gap: 18px;
     align-items: center;
+    min-height: 108px;
 }
 
 .admin-section-summary-visual {
@@ -2312,19 +2313,34 @@ button[disabled] {
     height: 34px;
 }
 
+.admin-section-summary-copy {
+    min-height: 76px;
+    display: grid;
+    align-content: center;
+}
+
 .admin-section-summary-copy h3 {
     margin: 4px 0 6px;
 }
 
+.admin-section-summary-copy .search-muted,
 .admin-section-summary-copy p {
     margin: 0;
     color: var(--text-500);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .admin-section-summary-actions {
     display: grid;
     gap: 10px;
     justify-items: end;
+    align-content: center;
+}
+
+.admin-section-summary-actions .admin-outline-btn {
+    white-space: nowrap;
 }
 
 .admin-visibility-pill {

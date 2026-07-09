@@ -641,6 +641,32 @@ public class ProductService {
     }
 
     @Transactional
+    public CatalogProduct updateProductCultures(CatalogProduct product, List<String> cultures, boolean syncToBitrix) {
+        if (product == null || product.getId() == null) {
+            throw new IllegalArgumentException("Товар не найден");
+        }
+        List<String> safeCultures = cultures == null ? List.of() : cultures.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        product.setCulturesJson(jsonHelper.writeValue(safeCultures));
+        product.setCulturesIndex(TextUtils.toIndex(safeCultures));
+        Map<String, Object> filterMap = new LinkedHashMap<>(jsonHelper.readMap(product.getFilterMapJson()));
+        if (safeCultures.isEmpty()) {
+            filterMap.remove("cultures");
+        } else {
+            filterMap.put("cultures", new ArrayList<>(safeCultures));
+        }
+        product.setFilterMapJson(jsonHelper.writeValue(filterMap));
+        CatalogProduct saved = catalogProductRepository.save(product);
+        if (syncToBitrix) {
+            syncProductWithBitrix(saved.getId());
+        }
+        return saved;
+    }
+
+    @Transactional
     public void updateManufacturerName(Long productId, String manufacturerName) {
         CatalogProduct product = catalogProductRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));

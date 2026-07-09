@@ -543,6 +543,14 @@ public class BotUpdateHandler {
     }
 
     private void handleDynamicCallback(String payload, String callbackId, AppUser user, Long chatId) {
+        if ("research:continue".equals(payload) && user.isAdmin()) {
+            continueProductsResearch(user, callbackId);
+            return;
+        }
+        if ("research:stop".equals(payload) && user.isAdmin()) {
+            stopProductsResearch(user, callbackId);
+            return;
+        }
         if (payload.startsWith("admin:users:")) {
             int page = parseTailNumber(payload, "admin:users:");
             showUsers(user, page);
@@ -661,16 +669,40 @@ public class BotUpdateHandler {
 
     private void startProductsResearch(AppUser user) {
         maxApiClient.sendToUser(user.getMaxUserId(),
-                "🔎 Запускаю AI-пересмотр всего каталога. Процесс пойдет автоматически партиями до конца. Для принудительной остановки отправьте команду /stop.",
+                "🔎 Запускаю AI-переопределение культур для всех товаров, кроме семян. В AI отправляется только название товара, а обновляются только культуры. После каждой партии можно продолжить следующую.",
                 null,
                 "html");
         productResearchService.startResearchAsync(
                 user.getMaxUserId(),
-                report -> maxApiClient.sendToUser(user.getMaxUserId(), report.text(), null, "html"),
+                report -> maxApiClient.sendToUser(
+                        user.getMaxUserId(),
+                        report.text(),
+                        report.hasMore() ? keyboardFactory.researchKeyboard(true) : null,
+                        "html"),
                 summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
                 error -> maxApiClient.sendToUser(
                         user.getMaxUserId(),
                         "⚠️ Не удалось завершить research.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
+                        keyboardFactory.adminMenu(),
+                        "html")
+        );
+    }
+
+    private void continueProductsResearch(AppUser user, String callbackId) {
+        if (callbackId != null) {
+            maxApiClient.answerCallback(callbackId, "Запускаю следующую партию");
+        }
+        productResearchService.continueResearchAsync(
+                user.getMaxUserId(),
+                report -> maxApiClient.sendToUser(
+                        user.getMaxUserId(),
+                        report.text(),
+                        report.hasMore() ? keyboardFactory.researchKeyboard(true) : null,
+                        "html"),
+                summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
+                error -> maxApiClient.sendToUser(
+                        user.getMaxUserId(),
+                        "⚠️ Не удалось продолжить research.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
                         keyboardFactory.adminMenu(),
                         "html")
         );

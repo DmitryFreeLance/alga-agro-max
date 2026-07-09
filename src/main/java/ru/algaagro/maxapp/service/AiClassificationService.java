@@ -69,6 +69,37 @@ public class AiClassificationService {
         return results;
     }
 
+    public List<ClassificationResult> classifyCulturesByName(List<ExcelImportService.ImportRow> rows, List<String> knownCultures) {
+        List<ClassificationResult> results = new ArrayList<>();
+        int batchSize = Math.max(1, appProperties.getAi().getKieBatchSize());
+        List<List<ExcelImportService.ImportRow>> chunks = chunk(rows, batchSize);
+        log.info("AI cultures-only classification started. rows={}, requests={}, batchSize={}", rows.size(), chunks.size(), batchSize);
+        for (List<ExcelImportService.ImportRow> chunk : chunks) {
+            String prompt = buildCulturesOnlyPrompt(chunk, knownCultures);
+            log.info("Trying Gemini cultures-only classification first. model={}, endpoint={}",
+                    appProperties.getAi().getKieGeminiModel(),
+                    appProperties.getAi().getKieGeminiEndpoint());
+            String rawResponse = callGemini(prompt);
+            if (rawResponse == null) {
+                log.warn("Gemini cultures-only classification failed, switching to GPT fallback. model={}",
+                        appProperties.getAi().getKieModel());
+                rawResponse = callKie(prompt);
+            }
+            if (rawResponse == null) {
+                throw new IllegalStateException("ИИ не удалось определить культуры, попробуйте позже.");
+            }
+            try {
+                results.addAll(parseCulturesOnlyResponse(rawResponse, chunk));
+            } catch (IllegalStateException error) {
+                log.warn("AI cultures-only response parsing failed, using heuristic fallback. reason={}, payloadPreview={}",
+                        error.getMessage(),
+                        TextUtils.trimTo(rawResponse, 1500));
+                results.addAll(buildHeuristicResults(chunk));
+            }
+        }
+        return results;
+    }
+
     public List<ClassificationResult> classifyHeuristically(List<ExcelImportService.ImportRow> rows) {
         return buildHeuristicResults(rows);
     }
@@ -675,6 +706,46 @@ public class AiClassificationService {
         return results;
     }
 
+    private List<ClassificationResult> parseCulturesOnlyResponse(String rawResponse, List<ExcelImportService.ImportRow> chunk) {
+        JsonNode items = extractProductsNode(rawResponse);
+        if (!items.isArray()) {
+            log.warn("AI cultures-only response is not an array after normalization. payload={}", TextUtils.trimTo(rawResponse, 1500));
+            throw new IllegalStateException("AI cultures-only response is not an array");
+        }
+        Map<String, List<String>> culturesByRowId = new LinkedHashMap<>();
+        for (JsonNode item : items) {
+            String rowId = item.path("rowId").asText("").trim();
+            if (rowId.isBlank()) {
+                continue;
+            }
+            culturesByRowId.put(rowId, readFlexibleStringArray(item.path("cultures")));
+        }
+        List<ClassificationResult> results = new ArrayList<>();
+        for (ExcelImportService.ImportRow row : chunk) {
+            if (!culturesByRowId.containsKey(row.rowId())) {
+                throw new IllegalStateException("AI cultures-only response missed rowId " + row.rowId());
+            }
+            results.add(new ClassificationResult(
+                    row.rowId(),
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    culturesByRowId.get(row.rowId()),
+                    List.of(),
+                    List.of(),
+                    Map.of()
+            ));
+        }
+        return results;
+    }
+
     private List<ClassificationResult> buildHeuristicResults(List<ExcelImportService.ImportRow> chunk) {
         List<ClassificationResult> results = new ArrayList<>();
         for (ExcelImportService.ImportRow row : chunk) {
@@ -956,6 +1027,38 @@ public class AiClassificationService {
                     .append("; source=").append(row.sourceFile())
                     .append("; section=").append(row.section())
                     .append("; values=").append(row.columns())
+                    .append("\n");
+        }
+        return builder.toString();
+    }
+
+    private String buildCulturesOnlyPrompt(List<ExcelImportService.ImportRow> rows, List<String> knownCultures) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("""
+                Ты определяешь культуры применения для агро-товаров.
+                Верни строго JSON без markdown.
+                Не добавляй пояснения до или после JSON.
+                Формат ответа:
+                {
+                  "products": [
+                    {
+                      "rowId": "product-123",
+                      "cultures": ["Пшеница", "Ячмень"]
+                    }
+                  ]
+                }
+                Правила:
+                - Во входных данных есть только название препарата или товара.
+                - Определи культуры, для которых этот товар подходит, исходя только из названия и общих агрономических знаний.
+                - Если по одному названию культуры определить нельзя, верни пустой массив.
+                - Не возвращай служебные комментарии, только JSON.
+                - Количество объектов в products должно строго совпадать с количеством строк.
+                - Используй уже известные в каталоге названия культур, если они подходят: %s
+                """.formatted(knownCultures.isEmpty() ? "список пуст" : String.join(", ", knownCultures)));
+        builder.append("\nТовары для анализа:\n");
+        for (ExcelImportService.ImportRow row : rows) {
+            builder.append("- rowId=").append(row.rowId())
+                    .append("; name=").append(firstNonBlank(row.nameGuess(), row.columns().getOrDefault("Позиция", "")))
                     .append("\n");
         }
         return builder.toString();
