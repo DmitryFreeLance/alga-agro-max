@@ -2604,28 +2604,16 @@ public class ExcelImportService {
             putIfNotBlank(rawData, "Кратность", formatDecimal(orderStep));
         }
 
-        String resolvedUnitName = unitName;
+        String resolvedUnitName = firstNonBlank(
+                unitName,
+                CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
+                inferUnit(row.columns()).orElse(""),
+                "шт"
+        );
         String resolvedPackageType = packageType;
         String resolvedPackageDescription = packageDescription;
         BigDecimal resolvedMinOrder = minOrderQuantity;
         BigDecimal resolvedOrderStep = orderStep;
-        ProductService.OrderRules orderRules = productService.inferOrderRules(
-                name,
-                unitName,
-                description,
-                rawData,
-                filterMap
-        );
-        resolvedUnitName = firstNonBlank(
-                unitName,
-                CatalogStructure.SEEDS.equals(category) ? "п.е." : "",
-                orderRules.unitName(),
-                "шт"
-        );
-        resolvedPackageType = firstNonBlank(packageType, orderRules.packageType());
-        resolvedPackageDescription = firstNonBlank(packageDescription, orderRules.packageDescription());
-        resolvedMinOrder = firstPositive(minOrderQuantity, orderRules.minOrderQuantity());
-        resolvedOrderStep = firstPositive(orderStep, orderRules.orderStep(), resolvedMinOrder);
 
         return Optional.of(productService.prepareImportedProduct(new ProductService.ImportedProduct(
                 buildExternalId(row),
