@@ -370,8 +370,11 @@ async function bootstrap() {
 
     if (state.maxUserId) {
         fetchJson(`/api/profile?maxUserId=${state.maxUserId}`)
-            .then(profile => {
+            .then(async profile => {
                 state.profile = profile;
+                if (!state.profile?.admin) {
+                    state.profile.admin = await probeAdminAccess(state.maxUserId);
+                }
                 state.app.profileLoading = false;
                 if (!state.cart.length && Array.isArray(profile.savedCart) && profile.savedCart.length) {
                     state.cart = profile.savedCart;
@@ -4695,8 +4698,18 @@ async function loadProfileOrders() {
 }
 
 async function ensureAdminDataLoaded(force = false) {
-    if (!state.maxUserId || !state.profile?.admin || state.admin.loading || (!force && state.admin.ready)) {
+    if (!state.maxUserId || state.admin.loading || (!force && state.admin.ready)) {
         return;
+    }
+    if (!state.profile?.admin) {
+        const hasAdminAccess = await probeAdminAccess(state.maxUserId);
+        if (!hasAdminAccess) {
+            return;
+        }
+        state.profile = {
+            ...(state.profile || {}),
+            admin: true,
+        };
     }
     state.admin.loading = true;
     if (state.nav === "profile") {
@@ -4709,6 +4722,18 @@ async function ensureAdminDataLoaded(force = false) {
         if (state.nav === "profile") {
             render();
         }
+    }
+}
+
+async function probeAdminAccess(maxUserId) {
+    if (!maxUserId) {
+        return false;
+    }
+    try {
+        await fetchJson(`/api/admin/dashboard?maxUserId=${maxUserId}`);
+        return true;
+    } catch (error) {
+        return false;
     }
 }
 
