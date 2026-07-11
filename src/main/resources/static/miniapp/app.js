@@ -882,10 +882,8 @@ function renderSectionStructure(sectionName, products) {
         return "";
     }
     const definition = getSectionDefinition(sectionName);
-    const useCultureStructure = normalize(sectionName) === normalize("Пестициды");
-    const structureValues = useCultureStructure
-        ? getCultureOptionsForSection(sectionName, products)
-        : (definition?.subcategories || []);
+    const useCultureStructure = false;
+    const structureValues = definition?.subcategories || [];
     if (!structureValues.length) {
         return "";
     }
