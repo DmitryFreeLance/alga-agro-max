@@ -33,6 +33,9 @@ public class CatalogOrderItem {
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal unitPrice;
 
+    @Column(nullable = false)
+    private String currencyCode = "RUB";
+
     public Long getId() {
         return id;
     }
@@ -75,5 +78,13 @@ public class CatalogOrderItem {
 
     public void setUnitPrice(BigDecimal unitPrice) {
         this.unitPrice = unitPrice;
+    }
+
+    public String getCurrencyCode() {
+        return currencyCode;
+    }
+
+    public void setCurrencyCode(String currencyCode) {
+        this.currencyCode = currencyCode;
     }
 }

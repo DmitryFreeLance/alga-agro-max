@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -50,21 +51,28 @@ public class OrderService {
         order.setDeliveryAddress(command.deliveryAddress());
         order.setComment(command.comment());
         order.setAttachmentsJson(jsonHelper.writeValue(command.attachments() == null ? List.of() : command.attachments()));
+        order.setCurrencyCode(normalizeOrderCurrencyCode(command.currencyCode()));
 
         BigDecimal total = BigDecimal.ZERO;
+        List<String> itemCurrencies = new ArrayList<>();
         for (CreateOrderItem itemCommand : command.items()) {
             var product = productService.findById(itemCommand.productId())
                     .orElseThrow(() -> new IllegalArgumentException("Product not found: " + itemCommand.productId()));
             productService.validateOrderQuantity(product, itemCommand.quantity());
+            ProductService.PriceQuote priceQuote = productService.resolvePriceQuote(product, itemCommand.selectedReproduction(), command.currencyCode());
             CatalogOrderItem item = new CatalogOrderItem();
             item.setProductId(product.getId());
             item.setProductName(productService.buildVariantProductName(product, itemCommand.selectedReproduction()));
             item.setQuantity(itemCommand.quantity());
-            item.setUnitPrice(productService.resolveUnitPrice(product, itemCommand.selectedReproduction()));
-            total = total.add(item.getUnitPrice().multiply(item.getQuantity()));
+            item.setUnitPrice(priceQuote.amount());
+            item.setCurrencyCode(priceQuote.currencyCode());
+            itemCurrencies.add(priceQuote.currencyCode());
+            total = total.add(priceQuote.amount().multiply(item.getQuantity()));
             order.addItem(item);
         }
-        order.setTotalPrice(total);
+        boolean mixedCurrencies = itemCurrencies.stream().filter(Objects::nonNull).distinct().count() > 1;
+        order.setCurrencyCode(mixedCurrencies ? "MIXED" : normalizeOrderCurrencyCode(itemCurrencies.isEmpty() ? command.currencyCode() : itemCurrencies.get(0)));
+        order.setTotalPrice(mixedCurrencies ? BigDecimal.ZERO : total);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("culture", command.culture());
@@ -74,6 +82,7 @@ public class OrderService {
         payload.put("inn", command.inn());
         payload.put("deliveryAddress", command.deliveryAddress());
         payload.put("attachments", command.attachments());
+        payload.put("currencyCode", order.getCurrencyCode());
         payload.put("items", command.items());
         order.setPayloadJson(jsonHelper.writeValue(payload));
         return catalogOrderRepository.save(order);
@@ -136,9 +145,9 @@ public class OrderService {
                 .append(" ")
                 .append(resolveOrderItemUnitName(item))
                 .append(" = ")
-                .append(TextUtils.formatPrice(item.getUnitPrice().multiply(item.getQuantity())))
+                .append(TextUtils.formatPrice(item.getUnitPrice().multiply(item.getQuantity()), item.getCurrencyCode()))
                 .append("\n"));
-        builder.append("\n💳 Итого: ").append(TextUtils.formatPrice(order.getTotalPrice()));
+        builder.append("\n💳 Итого: ").append(formatOrderTotal(order));
         return builder.toString();
     }
 
@@ -157,7 +166,7 @@ public class OrderService {
                 .append(" ")
                 .append(resolveOrderItemUnitName(item))
                 .append("\n"));
-        builder.append("\n💳 Итого: ").append(TextUtils.formatPrice(order.getTotalPrice()))
+        builder.append("\n💳 Итого: ").append(formatOrderTotal(order))
                 .append("\n📞 Менеджер свяжется с вами для подтверждения деталей.");
         return builder.toString();
     }
@@ -183,6 +192,7 @@ public class OrderService {
         dto.put("status", order.getStatus().name());
         dto.put("statusLabel", statusLabel(order.getStatus()));
         dto.put("totalPrice", order.getTotalPrice());
+        dto.put("currencyCode", order.getCurrencyCode());
         dto.put("createdAt", order.getCreatedAt());
         dto.put("attachments", jsonHelper.readValue(order.getAttachmentsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() { }, List.of()));
         dto.put("items", order.getItems().stream().map(item -> Map.of(
@@ -190,9 +200,28 @@ public class OrderService {
                 "productName", item.getProductName(),
                 "quantity", item.getQuantity(),
                 "unitPrice", item.getUnitPrice(),
+                "currencyCode", item.getCurrencyCode(),
                 "unitName", resolveOrderItemUnitName(item)
         )).toList());
         return dto;
+    }
+
+    private String formatOrderTotal(CatalogOrder order) {
+        if (order == null) {
+            return "По запросу";
+        }
+        if ("MIXED".equalsIgnoreCase(order.getCurrencyCode())) {
+            return "Смешанная валюта";
+        }
+        return TextUtils.formatPrice(order.getTotalPrice(), order.getCurrencyCode());
+    }
+
+    private String normalizeOrderCurrencyCode(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase();
+        return switch (normalized) {
+            case "USD", "EUR", "MIXED" -> normalized;
+            default -> "RUB";
+        };
     }
 
     private String resolveOrderItemUnitName(CatalogOrderItem item) {
@@ -264,6 +293,7 @@ public class OrderService {
             String culture,
             String deliveryNote,
             List<Map<String, Object>> attachments,
+            String currencyCode,
             List<CreateOrderItem> items
     ) {
     }

@@ -191,6 +191,21 @@ const SEED_REPRODUCTION_ORDER = [
     "РС4",
     "РСт",
 ];
+const CURRENCY_OPTIONS = [
+    { code: "RUB", symbol: "₽", label: "Рубли" },
+    { code: "USD", symbol: "$", label: "Доллары" },
+    { code: "EUR", symbol: "€", label: "Евро" },
+];
+const CURRENCY_SYMBOLS = Object.fromEntries(CURRENCY_OPTIONS.map(item => [item.code, item.symbol]));
+const CURRENCY_LABELS = Object.fromEntries(CURRENCY_OPTIONS.map(item => [item.code, item.label]));
+const SECTION_STRUCTURE_DISABLED = new Set([
+    "Агрохимикаты",
+    "Мелиоранты",
+    "Препараты для закрытого грунта",
+    "ПАВы",
+    "Пеногасители",
+    "Клей для сельхоз растений",
+].map(item => normalize(item)));
 
 const SEARCH_RENDER_DEBOUNCE_MS = 120;
 
@@ -211,10 +226,13 @@ function emptyAdminProductEditorState() {
         categoryDraft: "",
         subcategoryDraft: null,
         orderModeDraft: "",
-        priceDraft: "",
+        priceRubDraft: "",
+        priceUsdDraft: "",
+        priceEurDraft: "",
         discountDraft: "",
         seedReproductionDraft: null,
         seedReproductionPriceDrafts: {},
+        seedReproductionCurrencyPriceDrafts: {},
     };
 }
 
@@ -239,6 +257,7 @@ const state = {
     catalog: {
         query: "",
         section: "",
+        currency: normalizeCurrencyCode(loadStorage("alga-catalog-currency", "RUB")),
         sort: "default",
         filtersOpen: false,
         filterFocus: "",
@@ -420,10 +439,13 @@ async function openAdminProductEditor(productId) {
         categoryDraft: product ? getProductSectionName(product) : (state.admin.catalogSection || getAdminPrimarySections()[0] || ""),
         subcategoryDraft: product ? getAdminCatalogChildName(product) : (state.admin.catalogCategory || ""),
         orderModeDraft: product ? getAdminOrderMode(product) : (state.admin.catalogSection === "Семена" ? "pe" : "liters"),
-        priceDraft: product?.price != null ? String(product.price) : "",
+        priceRubDraft: product?.priceRub != null ? String(product.priceRub) : "",
+        priceUsdDraft: product?.priceUsd != null ? String(product.priceUsd) : "",
+        priceEurDraft: product?.priceEur != null ? String(product.priceEur) : "",
         discountDraft: product?.discountPercent != null ? String(product.discountPercent) : "",
         seedReproductionDraft: product?.filterMap?.seedReproduction || product?.filterMap?.reproduction || "",
         seedReproductionPriceDrafts: getSeedReproductionPriceMap(product),
+        seedReproductionCurrencyPriceDrafts: getSeedReproductionCurrencyPriceMap(product),
     };
     render();
 }
@@ -799,7 +821,10 @@ function renderCatalogHome(results) {
     }
     return `
         <div class="stack">
-            <div class="section-label">Разделы каталога</div>
+            <div class="section-label-row">
+                <div class="section-label">Разделы каталога</div>
+                ${renderCurrencySwitcher()}
+            </div>
             <div class="section-list">
                 ${getCatalogSections().map(renderSectionCard).join("")}
             </div>
@@ -831,6 +856,9 @@ function renderSectionPage() {
     const filtered = applyCatalogFilters(products);
     return `
         <div class="stack">
+            <div class="catalog-currency-row">
+                ${renderCurrencySwitcher()}
+            </div>
             ${renderSectionStructure(state.catalog.section, products)}
             <div class="toolbar-row catalog-toolbar-compact" data-products-anchor="catalog-results">
                 <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Ещё фильтры</button>
@@ -847,9 +875,11 @@ function renderSectionPage() {
 }
 
 function renderSectionStructure(sectionName, products) {
+    if (!shouldShowSectionStructure(sectionName)) {
+        return "";
+    }
     const definition = getSectionDefinition(sectionName);
-    const hasSubcategories = Boolean(definition?.subcategories?.length);
-    const useCultureStructure = !hasSubcategories && normalize(sectionName) !== normalize("Семена");
+    const useCultureStructure = normalize(sectionName) === normalize("Пестициды");
     const structureValues = useCultureStructure
         ? getCultureOptionsForSection(sectionName, products)
         : (definition?.subcategories || []);
@@ -883,6 +913,38 @@ function renderSectionStructure(sectionName, products) {
                     </button>
                 `).join("")}
             </div>
+        </div>
+    `;
+}
+
+function shouldShowSectionStructure(sectionName) {
+    const normalizedSection = normalize(sectionName);
+    if (!normalizedSection || SECTION_STRUCTURE_DISABLED.has(normalizedSection)) {
+        return false;
+    }
+    if (normalizedSection === normalize("Семена")) {
+        return true;
+    }
+    if (normalizedSection === normalize("Пестициды")) {
+        return true;
+    }
+    return Boolean(getSectionDefinition(sectionName)?.subcategories?.length);
+}
+
+function renderCurrencySwitcher() {
+    const selectedCurrency = getCatalogCurrencyPreference();
+    return `
+        <div class="currency-switcher" aria-label="Выбор валюты цен">
+            ${CURRENCY_OPTIONS.map(item => `
+                <button
+                    type="button"
+                    class="currency-switcher-btn ${item.code === selectedCurrency ? "active" : ""}"
+                    data-action="set-currency"
+                    data-currency="${item.code}"
+                    aria-label="${escapeAttr(item.label)}">
+                    ${escapeHtml(item.symbol)}
+                </button>
+            `).join("")}
         </div>
     `;
 }
@@ -1394,12 +1456,11 @@ function formatCompactPackageDisplay(product) {
 }
 
 function renderProductPrice(product, selectedReproduction = "") {
-    const oldPrice = normalizePrice(product.oldPrice);
-    const safePrice = resolveProductUnitPrice(product, selectedReproduction);
+    const priceInfo = resolveProductPriceInfo(product, selectedReproduction);
     return `
-        <div class="price-block ${oldPrice ? "discounted" : ""}">
-            <div class="old-price">${oldPrice ? `${formatPrice(oldPrice)}` : "&nbsp;"}</div>
-            <strong class="${oldPrice ? "price-current-discount" : ""}">${formatPrice(safePrice)}</strong>
+        <div class="price-block ${priceInfo.oldAmount ? "discounted" : ""}">
+            <div class="old-price">${priceInfo.oldAmount ? `${formatPrice(priceInfo.oldAmount, priceInfo.currencyCode)}` : "&nbsp;"}</div>
+            <strong class="${priceInfo.oldAmount ? "price-current-discount" : ""}">${formatPrice(priceInfo.amount, priceInfo.currencyCode)}</strong>
         </div>
     `;
 }
@@ -1426,7 +1487,7 @@ function renderCartPage() {
                 <div class="summary-grid">
                     <div class="summary-row"><span>Позиций</span><span>${items.length}</span></div>
                     <div class="summary-row"><span>Единиц</span><span>${sumCartUnits()}</span></div>
-                    <div class="summary-row"><span>Примерная сумма</span><strong>${formatApproximateTotal(items)}</strong></div>
+                    ${renderCurrencyTotalsRows(items, "Примерная сумма")}
                 </div>
                 <button class="primary-btn" data-action="open-checkout">Оформить заявку →</button>
             </div>
@@ -1436,7 +1497,8 @@ function renderCartPage() {
 
 function renderCartItem(item) {
     const visual = getProductVisual(item.product);
-    const lineTotal = Number(item.unitPrice ?? resolveProductUnitPrice(item.product, item.selectedReproduction)) * Number(item.quantity || 0);
+    const priceInfo = item.priceInfo || resolveProductPriceInfo(item.product, item.selectedReproduction);
+    const lineTotal = Number(priceInfo.amount || 0) * Number(item.quantity || 0);
     return `
         <article class="cart-item">
             <div class="cart-thumb" style="background:linear-gradient(135deg, ${visual.palette[0]}, ${visual.palette[1]});">
@@ -1449,7 +1511,7 @@ function renderCartItem(item) {
             </div>
             <div class="cart-end">
                 <button class="delete-btn" data-action="remove-cart" data-product-id="${item.product.id}" data-reproduction="${escapeAttr(item.selectedReproduction || "")}">×</button>
-                <strong>${formatPrice(lineTotal)}</strong>
+                <strong>${formatPrice(lineTotal, priceInfo.currencyCode)}</strong>
             </div>
         </article>
     `;
@@ -1503,6 +1565,7 @@ function renderCheckoutPage() {
                         <div class="summary-card">
                             ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.displayName || item.product.name)}</span><span>${formatQuantity(item.quantity)} ${escapeHtml(item.product.unitName || "ед.")}</span></div>`).join("")}
                             <div class="summary-row"><strong>Итого позиций</strong><strong>${getCartProducts().length}</strong></div>
+                            ${renderCurrencyTotalsRows(getCartProducts(), "Итого")}
                         </div>
                     </div>
                     <div class="field">
@@ -1839,35 +1902,38 @@ function renderAdminCatalog() {
                             <table class="admin-table">
                                 <thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th>Статус</th><th>Действия</th></tr></thead>
                                 <tbody>
-                                    ${products.map(product => `
-                                        <tr>
-                                            <td data-label="Название">
-                                                <div class="admin-product-cell">
-                                                    <span class="admin-product-thumb" style="background:${getProductVisual(product).palette[0]};">
-                                                        <img src="${getProductVisual(product).icon}" alt="${escapeAttr(product.name)}">
-                                                    </span>
-                                                    <div>
-                                                        <strong>${escapeHtml(product.name)}</strong>
-                                                        <div class="search-muted">${escapeHtml(product.brand || "Без производителя")}</div>
+                                    ${products.map(product => {
+                                        const listPriceInfo = resolveProductPriceInfo(product);
+                                        return `
+                                            <tr>
+                                                <td data-label="Название">
+                                                    <div class="admin-product-cell">
+                                                        <span class="admin-product-thumb" style="background:${getProductVisual(product).palette[0]};">
+                                                            <img src="${getProductVisual(product).icon}" alt="${escapeAttr(product.name)}">
+                                                        </span>
+                                                        <div>
+                                                            <strong>${escapeHtml(product.name)}</strong>
+                                                            <div class="search-muted">${escapeHtml(product.brand || "Без производителя")}</div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </td>
-                                            <td data-label="Категория">${escapeHtml(getAdminCatalogChildName(product) || getProductSectionName(product) || product.category || "—")}</td>
-                                            <td data-label="Цена">
-                                                <strong>${formatPrice(product.price ?? 10)}</strong>
-                                                ${product.oldPrice ? `<div class="search-muted"><s>${formatPrice(product.oldPrice)}</s></div>` : ""}
-                                            </td>
-                                            <td data-label="Статус">${renderAdminStatusBadge(product.active ? "ACTIVE" : "HIDDEN", product.active ? "Активен" : "Скрыт")}</td>
-                                            <td data-label="Действия">
-                                                <div class="admin-row-actions">
-                                                    <button class="admin-table-btn" data-action="open-admin-product" data-product-id="${product.id}">Ред.</button>
-                                                    <button class="admin-table-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">
-                                                        ${product.active ? "Скрыть" : "Показать"}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `).join("")}
+                                                </td>
+                                                <td data-label="Категория">${escapeHtml(getAdminCatalogChildName(product) || getProductSectionName(product) || product.category || "—")}</td>
+                                                <td data-label="Цена">
+                                                    <strong>${formatPrice(listPriceInfo.amount, listPriceInfo.currencyCode)}</strong>
+                                                    ${listPriceInfo.oldAmount ? `<div class="search-muted"><s>${formatPrice(listPriceInfo.oldAmount, listPriceInfo.currencyCode)}</s></div>` : ""}
+                                                </td>
+                                                <td data-label="Статус">${renderAdminStatusBadge(product.active ? "ACTIVE" : "HIDDEN", product.active ? "Активен" : "Скрыт")}</td>
+                                                <td data-label="Действия">
+                                                    <div class="admin-row-actions">
+                                                        <button class="admin-table-btn" data-action="open-admin-product" data-product-id="${product.id}">Ред.</button>
+                                                        <button class="admin-table-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">
+                                                            ${product.active ? "Скрыть" : "Показать"}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join("")}
                                 </tbody>
                             </table>
                         </div>
@@ -1952,7 +2018,7 @@ function renderAdminOrders() {
                                 <td data-label="Номер">${escapeHtml(order.publicCode)}</td>
                                 <td data-label="Клиент">${escapeHtml(order.customerName || "")}</td>
                                 <td data-label="Телефон">${escapeHtml(order.customerPhone || "")}</td>
-                                <td data-label="Сумма">${formatPrice(order.totalPrice || 0)}</td>
+                                <td data-label="Сумма">${formatOrderTotal(order)}</td>
                                 <td data-label="Дата">${formatDate(order.createdAt)}</td>
                                 <td data-label="Статус">${renderAdminStatusBadge(order.status, order.statusLabel)}</td>
                                 <td data-label="Действие"><button class="admin-table-btn" data-action="open-admin-order" data-order-id="${order.id}">Открыть</button></td>
@@ -2148,7 +2214,7 @@ function renderProductModal() {
         : (product.brand || "");
     const cartItem = getCartItem(product.id, selectedReproduction);
     const currentQty = cartItem?.quantity || state.productModal.quantity;
-    const displayPrice = resolveProductUnitPrice(product, selectedReproduction);
+    const priceInfo = resolveProductPriceInfo(product, selectedReproduction);
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-product"></div>
@@ -2186,8 +2252,8 @@ function renderProductModal() {
                         </div>
                     ` : ""}
                     <div class="detail-price">
-                        ${product.oldPrice ? `<div class="old-price">${formatPrice(product.oldPrice)}</div>` : ""}
-                        <strong class="${product.oldPrice ? "price-current-discount" : ""}">${formatPrice(displayPrice)}</strong>
+                        ${priceInfo.oldAmount ? `<div class="old-price">${formatPrice(priceInfo.oldAmount, priceInfo.currencyCode)}</div>` : ""}
+                        <strong class="${priceInfo.oldAmount ? "price-current-discount" : ""}">${formatPrice(priceInfo.amount, priceInfo.currencyCode)}</strong>
                     </div>
                     <div class="product-spec-list product-spec-list-card">
                         ${isSeedsSection ? `
@@ -2796,18 +2862,30 @@ function renderAdminProductModal() {
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproductionValue);
     const savedSeedReproductionPrices = getSeedReproductionPriceMap(product);
     const draftSeedReproductionPrices = state.admin.productEditor.seedReproductionPriceDrafts || {};
+    const savedSeedReproductionCurrencyPrices = getSeedReproductionCurrencyPriceMap(product);
+    const draftSeedReproductionCurrencyPrices = state.admin.productEditor.seedReproductionCurrencyPriceDrafts || {};
     const orderMode = state.admin.productEditor.orderModeDraft
         || (product?.unitName
             ? getAdminOrderMode(product)
             : (isSeedsCategory ? "pe" : getAdminOrderMode(product)));
     const orderConfig = inferAdminOrderConfig(product);
-    const priceValue = state.admin.productEditor.priceDraft !== ""
-        ? state.admin.productEditor.priceDraft
-        : (product?.price ?? "");
+    const priceRubValue = state.admin.productEditor.priceRubDraft !== ""
+        ? state.admin.productEditor.priceRubDraft
+        : (product?.priceRub ?? "");
+    const priceUsdValue = state.admin.productEditor.priceUsdDraft !== ""
+        ? state.admin.productEditor.priceUsdDraft
+        : (product?.priceUsd ?? "");
+    const priceEurValue = state.admin.productEditor.priceEurDraft !== ""
+        ? state.admin.productEditor.priceEurDraft
+        : (product?.priceEur ?? "");
     const discountValue = state.admin.productEditor.discountDraft !== ""
         ? state.admin.productEditor.discountDraft
         : (product?.discountPercent ?? "");
-    const discountedPriceLabel = formatDiscountedAdminPrice(priceValue, discountValue);
+    const discountedPriceLabel = formatDiscountedAdminPrice({
+        priceRub: priceRubValue,
+        priceUsd: priceUsdValue,
+        priceEur: priceEurValue,
+    }, discountValue);
     const packageDescriptionValue = isSeedsCategory
         ? (product?.packageDescription || "1 п.е.")
         : selectedCategory === "Пестициды"
@@ -2857,10 +2935,14 @@ function renderAdminProductModal() {
                     </div>
                     <div class="admin-form-section admin-form-section-order">
                         <div class="admin-form-section-title">Прайс и заказ</div>
-                        <div class="admin-form-row admin-form-row-3">
-                            <div class="admin-field"><label>Прайс</label><input name="price" data-field="admin-product-price" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(priceValue)}" placeholder="2239"></div>
+                        <div class="admin-form-row admin-form-row-4 admin-form-row-prices">
+                            <div class="admin-field"><label>Рубли</label><input name="priceRub" data-field="admin-product-price-rub" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(priceRubValue)}" placeholder="2239"></div>
+                            <div class="admin-field"><label>Доллары</label><input name="priceUsd" data-field="admin-product-price-usd" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(priceUsdValue)}" placeholder="25"></div>
+                            <div class="admin-field"><label>Евро</label><input name="priceEur" data-field="admin-product-price-eur" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(priceEurValue)}" placeholder="23"></div>
                             <div class="admin-field"><label>Скидка, %</label><input name="discountPercent" data-field="admin-product-discount" type="text" inputmode="decimal" autocomplete="off" value="${escapeAttr(discountValue)}" placeholder="10"></div>
-                            <div class="admin-field admin-field-price-result"><label>=</label><div class="admin-price-result">${escapeHtml(discountedPriceLabel)}</div></div>
+                        </div>
+                        <div class="admin-form-row admin-form-row-compact">
+                            <div class="admin-field admin-field-price-result"><label>После скидки</label><div class="admin-price-result">${escapeHtml(discountedPriceLabel)}</div></div>
                         </div>
                         <div class="admin-form-row admin-form-row-2-compact">
                             <div class="admin-field"><label>Мин. объем заказа</label><input name="minOrderQuantity" type="number" min="0.001" step="0.001" required value="${escapeAttr(product?.minOrderQuantity ?? 1)}"></div>
@@ -2898,21 +2980,40 @@ function renderAdminProductModal() {
                                 </div>
                             ` : `<input type="hidden" name="seedTreatment" value="">`}
                             ${seedReproductionVariants.length > 1 ? `
-                                <div class="admin-form-row admin-form-row-4 admin-form-row-compact">
+                                <div class="admin-form-row admin-form-row-compact admin-seed-reproduction-price-grid">
                                     ${seedReproductionVariants.map(value => {
                                         const hasDraft = Object.prototype.hasOwnProperty.call(draftSeedReproductionPrices, value);
                                         const fieldValue = hasDraft ? draftSeedReproductionPrices[value] : (savedSeedReproductionPrices[value] ?? "");
+                                        const savedCurrencyValues = savedSeedReproductionCurrencyPrices[value] || {};
+                                        const draftCurrencyValues = draftSeedReproductionCurrencyPrices[value] || {};
                                         return `
-                                            <div class="admin-field">
-                                                <label>Цена ${escapeHtml(value)}</label>
-                                                <input
-                                                    name="seedReproductionPrice_${escapeAttr(value)}"
-                                                    data-field="admin-product-seed-reproduction-price"
-                                                    data-reproduction="${escapeAttr(value)}"
-                                                    type="text"
-                                                    inputmode="decimal"
-                                                    value="${escapeAttr(fieldValue === "" ? "" : String(fieldValue))}"
-                                                    placeholder="2239">
+                                            <div class="admin-seed-reproduction-price-card">
+                                                <div class="admin-seed-reproduction-price-title">${escapeHtml(value)}</div>
+                                                <div class="admin-seed-reproduction-price-fields">
+                                                    ${CURRENCY_OPTIONS.map(currency => {
+                                                        const currencyDraftValue = draftCurrencyValues[currency.code];
+                                                        const currencySavedValue = savedCurrencyValues[currency.code];
+                                                        const currencyValue = currencyDraftValue != null
+                                                            ? currencyDraftValue
+                                                            : (currencySavedValue != null
+                                                                ? String(currencySavedValue)
+                                                                : (currency.code === "RUB" && fieldValue !== "" ? String(fieldValue) : ""));
+                                                        return `
+                                                            <div class="admin-field">
+                                                                <label>${escapeHtml(currency.label)}</label>
+                                                                <input
+                                                                    name="seedReproductionPrice_${escapeAttr(value)}_${currency.code}"
+                                                                    data-field="admin-product-seed-reproduction-currency-price"
+                                                                    data-reproduction="${escapeAttr(value)}"
+                                                                    data-currency="${currency.code}"
+                                                                    type="text"
+                                                                    inputmode="decimal"
+                                                                    value="${escapeAttr(currencyValue)}"
+                                                                    placeholder="${currency.code === "RUB" ? "2239" : currency.code === "USD" ? "25" : "23"}">
+                                                            </div>
+                                                        `;
+                                                    }).join("")}
+                                                </div>
                                             </div>
                                         `;
                                     }).join("")}
@@ -3003,10 +3104,10 @@ function renderAdminOrderModal() {
                         </div>
                         <div class="summary-card">
                             <div class="admin-block-title">Состав и сумма</div>
-                            ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "ед.")}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity)}</strong></div>`).join("")}
+                            ${order.items.map(item => `<div class="summary-row"><span>${escapeHtml(item.productName)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "ед.")}</span><strong>${formatPrice((item.unitPrice || 0) * item.quantity, item.currencyCode || order.currencyCode || "RUB")}</strong></div>`).join("")}
                             <div class="summary-row"><span>Дата</span><strong>${formatDate(order.createdAt)}</strong></div>
                             <div class="summary-row"><span>Статус</span>${renderAdminStatusBadge(order.status, order.statusLabel)}</div>
-                            <div class="summary-row"><strong>Итого</strong><strong>${formatPrice(order.totalPrice || 0)}</strong></div>
+                            <div class="summary-row"><strong>Итого</strong><strong>${formatOrderTotal(order)}</strong></div>
                         </div>
                     </div>
                     ${(order.attachments || []).length ? `
@@ -3127,7 +3228,7 @@ function renderAdminCustomerModal() {
                                     ${customer.cartItems.map(item => `
                                         <div class="summary-row">
                                             <span>${escapeHtml(item.name)} × ${formatQuantity(item.quantity)} ${escapeHtml(item.unitName || "")}</span>
-                                            <strong>${formatPrice((item.totalPrice && item.totalPrice > 0 ? item.totalPrice : Number(item.quantity || 0) * 10) || 10)}</strong>
+                                            <strong>${formatPrice((item.totalPrice && item.totalPrice > 0 ? item.totalPrice : Number(item.quantity || 0) * 10) || 10, item.currencyCode || "RUB")}</strong>
                                         </div>
                                     `).join("")}
                                 </div>
@@ -3203,12 +3304,21 @@ function summarizeOrderItems(items) {
 }
 
 function formatCustomerCartTotal(customer) {
-    const total = Number(customer?.cartTotal || 0);
     if (!customer?.cartItemsCount) {
         return "—";
     }
-    const safeTotal = total > 0 ? total : Number(customer?.cartItemsCount || 0) * 10;
-    return formatPrice(safeTotal || 10);
+    const totals = buildCurrencyTotals((customer?.cartItems || []).map(item => ({
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        currencyCode: item.currencyCode,
+    })));
+    if (totals.length > 1) {
+        return totals.map(item => formatPrice(item.amount, item.currencyCode)).join(" • ");
+    }
+    if (totals.length === 1) {
+        return formatPrice(totals[0].amount, totals[0].currencyCode);
+    }
+    return formatPrice(Number(customer?.cartItemsCount || 0) * 10 || 10, "RUB");
 }
 
 function isAdminWorkspaceActive() {
@@ -3276,6 +3386,12 @@ function handleClick(event) {
         };
         state.catalog.draft = cloneFilters(state.catalog.applied);
         state.catalog.scrollToProductsPending = true;
+        render();
+        return;
+    }
+    if (action === "set-currency") {
+        state.catalog.currency = normalizeCurrencyCode(button.dataset.currency || "RUB");
+        saveStorage("alga-catalog-currency", state.catalog.currency);
         render();
         return;
     }
@@ -3682,8 +3798,18 @@ function handleInput(event) {
         renderPreservingFocus();
         return;
     }
-    if (field === "admin-product-price") {
-        state.admin.productEditor.priceDraft = event.target.value;
+    if (field === "admin-product-price-rub") {
+        state.admin.productEditor.priceRubDraft = event.target.value;
+        updateAdminPricePreview();
+        return;
+    }
+    if (field === "admin-product-price-usd") {
+        state.admin.productEditor.priceUsdDraft = event.target.value;
+        updateAdminPricePreview();
+        return;
+    }
+    if (field === "admin-product-price-eur") {
+        state.admin.productEditor.priceEurDraft = event.target.value;
         updateAdminPricePreview();
         return;
     }
@@ -3698,6 +3824,20 @@ function handleInput(event) {
             state.admin.productEditor.seedReproductionPriceDrafts = {
                 ...(state.admin.productEditor.seedReproductionPriceDrafts || {}),
                 [reproduction]: event.target.value,
+            };
+        }
+        return;
+    }
+    if (field === "admin-product-seed-reproduction-currency-price") {
+        const reproduction = normalizeSeedReproductionValue(event.target.dataset.reproduction || "");
+        const currencyCode = normalizeCurrencyCode(event.target.dataset.currency || "RUB");
+        if (reproduction && currencyCode !== "MIXED") {
+            state.admin.productEditor.seedReproductionCurrencyPriceDrafts = {
+                ...(state.admin.productEditor.seedReproductionCurrencyPriceDrafts || {}),
+                [reproduction]: {
+                    ...(state.admin.productEditor.seedReproductionCurrencyPriceDrafts?.[reproduction] || {}),
+                    [currencyCode]: event.target.value,
+                },
             };
         }
         return;
@@ -3955,7 +4095,11 @@ function clearAdminSuggestions(field) {
 function updateAdminPricePreview() {
     const preview = root.querySelector(".admin-price-result");
     if (!preview) return;
-    const priceValue = state.admin.productEditor.priceDraft;
+    const priceValue = {
+        priceRub: state.admin.productEditor.priceRubDraft,
+        priceUsd: state.admin.productEditor.priceUsdDraft,
+        priceEur: state.admin.productEditor.priceEurDraft,
+    };
     const discountValue = state.admin.productEditor.discountDraft;
     preview.textContent = formatDiscountedAdminPrice(priceValue, discountValue);
 }
@@ -4006,6 +4150,7 @@ async function submitOrder() {
         deliveryAddress: state.checkout.form.address.trim(),
         comment: state.checkout.form.comment.trim(),
         attachments: state.checkout.uploaded,
+        currencyCode: getCatalogCurrencyPreference(),
         items,
     };
     const response = await fetchJson("/api/orders", {
@@ -4116,13 +4261,27 @@ async function saveAdminProduct(formData) {
     const seedTreatment = String(formData.get("seedTreatment") || "").trim();
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproduction);
     const seedReproductionPrices = {};
+    const seedReproductionCurrencyPrices = {};
     seedReproductionVariants.forEach(value => {
-        const fieldName = `seedReproductionPrice_${value}`;
-        const formValue = formData.get(fieldName);
-        const draftValue = state.admin.productEditor.seedReproductionPriceDrafts?.[value];
-        const parsedValue = parseOptionalNumber(formValue ?? draftValue);
-        if (parsedValue != null && parsedValue > 0) {
-            seedReproductionPrices[value] = parsedValue;
+        const currencyValues = {};
+        CURRENCY_OPTIONS.forEach(currency => {
+            const fieldName = `seedReproductionPrice_${value}_${currency.code}`;
+            const formValue = formData.get(fieldName);
+            const draftValue = state.admin.productEditor.seedReproductionCurrencyPriceDrafts?.[value]?.[currency.code];
+            const parsedValue = parseOptionalNumber(formValue ?? draftValue);
+            if (parsedValue != null && parsedValue > 0) {
+                currencyValues[currency.code] = parsedValue;
+            }
+        });
+        if (Object.keys(currencyValues).length) {
+            seedReproductionCurrencyPrices[value] = currencyValues;
+        }
+        const legacyRubPrice = currencyValues.RUB;
+        const firstAvailableCurrencyValue = currencyValues.RUB ?? currencyValues.USD ?? currencyValues.EUR;
+        if (legacyRubPrice != null && legacyRubPrice > 0) {
+            seedReproductionPrices[value] = legacyRubPrice;
+        } else if (firstAvailableCurrencyValue != null && firstAvailableCurrencyValue > 0) {
+            seedReproductionPrices[value] = firstAvailableCurrencyValue;
         }
     });
     if (normalize(category) === normalize("Семена") && normalize(subcategory) === normalize("Сахарная свекла")) {
@@ -4168,12 +4327,32 @@ async function saveAdminProduct(formData) {
         packageDescription = hasManualPackageDescription ? packageDescriptionInput : "1 п.е.";
     }
 
-    const explicitPrice = parseOptionalNumber(formData.get("price"));
-    const effectiveBasePrice = explicitPrice ?? existingProduct?.price ?? 10;
+    const priceRub = parseOptionalNumber(formData.get("priceRub"));
+    const priceUsd = parseOptionalNumber(formData.get("priceUsd"));
+    const priceEur = parseOptionalNumber(formData.get("priceEur"));
+    const primaryPriceCurrency = priceRub != null
+        ? "RUB"
+        : priceUsd != null
+        ? "USD"
+        : priceEur != null
+        ? "EUR"
+        : "";
+    const effectiveBasePrice = priceRub
+        ?? priceUsd
+        ?? priceEur
+        ?? parseOptionalNumber(existingProduct?.priceRub)
+        ?? parseOptionalNumber(existingProduct?.priceUsd)
+        ?? parseOptionalNumber(existingProduct?.priceEur)
+        ?? existingProduct?.price
+        ?? 10;
 
     const mergedFilterMap = {
         ...(existingProduct?.filterMap || {}),
         activeIngredient,
+        priceRub: priceRub == null ? "" : formatAdminNumber(priceRub),
+        priceUsd: priceUsd == null ? "" : formatAdminNumber(priceUsd),
+        priceEur: priceEur == null ? "" : formatAdminNumber(priceEur),
+        priceCurrency: primaryPriceCurrency,
         discountPercent: discountPercent == null ? "" : formatAdminNumber(discountPercent),
         oldPrice: "",
         forGreenhouse,
@@ -4185,13 +4364,20 @@ async function saveAdminProduct(formData) {
         cultivationTechnology,
         seedTreatment,
         seedReproductionPrices,
+        seedReproductionCurrencyPrices,
     };
     if (!seedReproductionVariants.length || Object.keys(seedReproductionPrices).length === 0) {
         delete mergedFilterMap.seedReproductionPrices;
     }
+    if (!seedReproductionVariants.length || Object.keys(seedReproductionCurrencyPrices).length === 0) {
+        delete mergedFilterMap.seedReproductionCurrencyPrices;
+    }
     const mergedRawData = {
         ...(existingProduct?.rawData || {}),
         "Действующее вещество": activeIngredient,
+        "Цена RUB": priceRub == null ? "" : formatAdminNumber(priceRub),
+        "Цена USD": priceUsd == null ? "" : formatAdminNumber(priceUsd),
+        "Цена EUR": priceEur == null ? "" : formatAdminNumber(priceEur),
         "ФАО": seedFao,
         "Семян в мешке": seedsPerBag,
         "Группа спелости": seedMaturityGroup,
@@ -4251,14 +4437,19 @@ function formatAdminNumber(value) {
 }
 
 function formatDiscountedAdminPrice(priceValue, discountValue) {
-    const price = parseOptionalNumber(priceValue);
+    const priceMap = {
+        RUB: parseOptionalNumber(priceValue?.priceRub),
+        USD: parseOptionalNumber(priceValue?.priceUsd),
+        EUR: parseOptionalNumber(priceValue?.priceEur),
+    };
     const discountPercent = parseOptionalNumber(discountValue);
-    if (price == null || discountPercent == null) {
+    const selectedCurrency = ["RUB", "USD", "EUR"].find(code => priceMap[code] != null && priceMap[code] > 0);
+    if (!selectedCurrency || discountPercent == null) {
         return "—";
     }
     const normalizedDiscount = Math.min(100, Math.max(0, discountPercent));
-    const discounted = price * (1 - normalizedDiscount / 100);
-    return formatPrice(discounted);
+    const discounted = priceMap[selectedCurrency] * (1 - normalizedDiscount / 100);
+    return formatPrice(discounted, selectedCurrency);
 }
 
 function buildAdminProductPayload(product, overrides = {}) {
@@ -4284,6 +4475,10 @@ function buildAdminProductPayload(product, overrides = {}) {
         tags: (product.tags || []).join(", "),
         filterMap: {
             ...(product.filterMap || {}),
+            priceRub: product.priceRub ?? product.filterMap?.priceRub ?? "",
+            priceUsd: product.priceUsd ?? product.filterMap?.priceUsd ?? "",
+            priceEur: product.priceEur ?? product.filterMap?.priceEur ?? "",
+            priceCurrency: product.filterMap?.priceCurrency || "",
             activeIngredient: product.activeIngredient || product.filterMap?.activeIngredient || "",
             oldPrice: product.oldPrice ?? product.filterMap?.oldPrice ?? "",
             forGreenhouse: Boolean(product.forGreenhouse ?? product.filterMap?.forGreenhouse),
@@ -4292,6 +4487,7 @@ function buildAdminProductPayload(product, overrides = {}) {
             seedMaturityGroup: product.seedMaturityGroup || product.filterMap?.seedMaturityGroup || product.filterMap?.maturityGroup || "",
             seedReproduction: product.seedReproduction || product.filterMap?.seedReproduction || product.filterMap?.reproduction || "",
             seedReproductionPrices: product.seedReproductionPrices || product.filterMap?.seedReproductionPrices || {},
+            seedReproductionCurrencyPrices: product.seedReproductionCurrencyPrices || product.filterMap?.seedReproductionCurrencyPrices || {},
             seedVegetationPeriod: product.seedVegetationPeriod || product.filterMap?.seedVegetationPeriod || product.filterMap?.vegetationPeriod || "",
             cultivationTechnology: product.cultivationTechnology || product.filterMap?.cultivationTechnology || "",
             seedTreatment: product.seedTreatment || product.filterMap?.seedTreatment || product.rawData?.["Протравка"] || product.rawData?.["Протравитель"] || "",
@@ -4618,10 +4814,16 @@ function applyCatalogFilters(products) {
         });
     }
     if (applied.priceMin) {
-        filtered = filtered.filter(product => product.price != null && Number(product.price) >= Number(applied.priceMin));
+        filtered = filtered.filter(product => {
+            const amount = resolveProductPriceInfo(product).amount;
+            return amount != null && Number(amount) >= Number(applied.priceMin);
+        });
     }
     if (applied.priceMax) {
-        filtered = filtered.filter(product => product.price != null && Number(product.price) <= Number(applied.priceMax));
+        filtered = filtered.filter(product => {
+            const amount = resolveProductPriceInfo(product).amount;
+            return amount != null && Number(amount) <= Number(applied.priceMax);
+        });
     }
     if (state.catalog.query.trim()) {
         const normalized = normalize(state.catalog.query);
@@ -4635,8 +4837,8 @@ function applyCatalogFilters(products) {
 
 function sortProducts(products, sort) {
     return [...products].sort((left, right) => {
-        const leftPrice = left.price == null ? null : Number(left.price);
-        const rightPrice = right.price == null ? null : Number(right.price);
+        const leftPrice = resolveProductPriceInfo(left).amount;
+        const rightPrice = resolveProductPriceInfo(right).amount;
         if (sort === "price_asc") {
             if (leftPrice == null && rightPrice == null) return compareNames(left, right);
             if (leftPrice == null) return 1;
@@ -5202,12 +5404,15 @@ function getCartProducts() {
                 return null;
             }
             const selectedReproduction = getSeedSelectedReproduction(product, item.selectedReproduction);
+            const priceInfo = resolveProductPriceInfo(product, selectedReproduction);
             return {
                 ...item,
                 selectedReproduction,
                 product,
                 displayName: getVariantProductName(product, selectedReproduction),
-                unitPrice: resolveProductUnitPrice(product, selectedReproduction),
+                priceInfo,
+                unitPrice: priceInfo.amount,
+                currencyCode: priceInfo.currencyCode,
             };
         })
         .filter(item => item && item.product);
@@ -5218,8 +5423,14 @@ function sumCartUnits() {
 }
 
 function formatApproximateTotal(items) {
-    const total = items.reduce((sum, item) => sum + Number(item.unitPrice ?? resolveProductUnitPrice(item.product, item.selectedReproduction)) * Number(item.quantity || 0), 0);
-    return formatPrice(total || 10);
+    const totals = buildCurrencyTotals(items);
+    if (!totals.length) {
+        return formatPrice(10, getCatalogCurrencyPreference());
+    }
+    if (totals.length === 1) {
+        return formatPrice(totals[0].amount || 10, totals[0].currencyCode);
+    }
+    return totals.map(item => formatPrice(item.amount, item.currencyCode)).join(" • ");
 }
 
 function toggleFavorite(productId) {
@@ -5634,6 +5845,41 @@ function getSeedReproductionPriceMap(product) {
     return Object.fromEntries(sortSeedReproductionValues(Object.keys(result)).map(key => [key, result[key]]));
 }
 
+function getSeedReproductionCurrencyPriceMap(product) {
+    const rawMap = product?.seedReproductionCurrencyPrices || product?.filterMap?.seedReproductionCurrencyPrices || {};
+    const result = {};
+    if (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) {
+        Object.entries(rawMap).forEach(([reproductionKey, currencyValues]) => {
+            const normalizedReproduction = normalizeSeedReproductionValue(reproductionKey);
+            if (!normalizedReproduction || !currencyValues || typeof currencyValues !== "object" || Array.isArray(currencyValues)) {
+                return;
+            }
+            const normalizedCurrencyValues = {};
+            Object.entries(currencyValues).forEach(([currencyCode, value]) => {
+                const normalizedCurrency = normalizeCurrencyCode(currencyCode);
+                const numericValue = parseOptionalNumber(value);
+                if (normalizedCurrency !== "MIXED" && numericValue != null && numericValue > 0) {
+                    normalizedCurrencyValues[normalizedCurrency] = numericValue;
+                }
+            });
+            if (Object.keys(normalizedCurrencyValues).length) {
+                result[normalizedReproduction] = normalizedCurrencyValues;
+            }
+        });
+    }
+    const legacyMap = getSeedReproductionPriceMap(product);
+    Object.entries(legacyMap).forEach(([reproductionKey, value]) => {
+        if (!result[reproductionKey]) {
+            result[reproductionKey] = { RUB: value };
+            return;
+        }
+        if (result[reproductionKey].RUB == null && value != null) {
+            result[reproductionKey].RUB = value;
+        }
+    });
+    return Object.fromEntries(sortSeedReproductionValues(Object.keys(result)).map(key => [key, result[key]]));
+}
+
 function getSeedSelectedReproduction(product, preferredValue = "") {
     const values = getSeedReproductionValues(product);
     const preferred = normalizeSeedReproductionValue(preferredValue);
@@ -5670,25 +5916,182 @@ function setCatalogSelectedReproduction(productId, reproduction) {
     state.catalog.selectedReproductions = nextSelections;
 }
 
-function resolveProductUnitPrice(product, selectedReproduction = "") {
+function resolveProductPriceInfo(product, selectedReproduction = "", preferredCurrency = getCatalogCurrencyPreference()) {
     const priceMap = getSeedReproductionPriceMap(product);
+    const reproductionCurrencyPriceMap = getSeedReproductionCurrencyPriceMap(product);
     const normalizedReproduction = normalizeSeedReproductionValue(selectedReproduction);
+    if (normalizedReproduction && reproductionCurrencyPriceMap[normalizedReproduction]) {
+        const currencyValues = reproductionCurrencyPriceMap[normalizedReproduction];
+        const currencyCode = getPreferredAvailableCurrency(currencyValues, preferredCurrency) || "RUB";
+        const reproductionAmount = normalizePrice(currencyValues[currencyCode]);
+        if (reproductionAmount != null) {
+            return {
+                amount: applyDiscountToAmount(reproductionAmount, parseOptionalNumber(product?.discountPercent)),
+                currencyCode,
+                oldAmount: null,
+            };
+        }
+    }
     if (normalizedReproduction && Number(priceMap[normalizedReproduction]) > 0) {
-        return Number(priceMap[normalizedReproduction]);
+        return {
+            amount: Number(priceMap[normalizedReproduction]),
+            currencyCode: "RUB",
+            oldAmount: null,
+        };
     }
     if (normalizedReproduction) {
         const fallbackKey = getSeedSelectedReproduction(product, normalizedReproduction);
         if (fallbackKey && Number(priceMap[fallbackKey]) > 0) {
-            return Number(priceMap[fallbackKey]);
+            return {
+                amount: Number(priceMap[fallbackKey]),
+                currencyCode: "RUB",
+                oldAmount: null,
+            };
         }
     }
     if (Object.keys(priceMap).length === 1) {
         const [onlyKey] = Object.keys(priceMap);
         if (onlyKey && Number(priceMap[onlyKey]) > 0) {
-            return Number(priceMap[onlyKey]);
+            return {
+                amount: Number(priceMap[onlyKey]),
+                currencyCode: "RUB",
+                oldAmount: null,
+            };
         }
     }
-    return product?.price == null ? 10 : Number(product.price);
+    const reproductionCurrencyEntries = Object.entries(reproductionCurrencyPriceMap);
+    if (reproductionCurrencyEntries.length) {
+        const [, firstCurrencyValues] = reproductionCurrencyEntries[0];
+        const currencyCode = getPreferredAvailableCurrency(firstCurrencyValues, preferredCurrency) || "RUB";
+        const reproductionAmount = normalizePrice(firstCurrencyValues[currencyCode]);
+        if (reproductionAmount != null) {
+            return {
+                amount: applyDiscountToAmount(reproductionAmount, parseOptionalNumber(product?.discountPercent)),
+                currencyCode,
+                oldAmount: null,
+            };
+        }
+    }
+    const basePriceMap = getProductCurrencyPrices(product);
+    const currencyCode = getPreferredAvailableCurrency(basePriceMap, preferredCurrency) || "RUB";
+    const baseAmount = normalizePrice(basePriceMap[currencyCode]);
+    const discountPercent = parseOptionalNumber(product?.discountPercent);
+    const amount = applyDiscountToAmount(baseAmount ?? normalizePrice(product?.price) ?? 10, discountPercent);
+    const oldAmount = baseAmount != null && amount < baseAmount
+        ? baseAmount
+        : (currencyCode === "RUB" ? normalizePrice(product?.oldPrice) : null);
+    return {
+        amount,
+        currencyCode,
+        oldAmount,
+    };
+}
+
+function resolveProductUnitPrice(product, selectedReproduction = "") {
+    return resolveProductPriceInfo(product, selectedReproduction).amount;
+}
+
+function getProductCurrencyPrices(product) {
+    const result = {};
+    const rub = normalizePrice(product?.priceRub ?? product?.filterMap?.priceRub);
+    const usd = normalizePrice(product?.priceUsd ?? product?.filterMap?.priceUsd);
+    const eur = normalizePrice(product?.priceEur ?? product?.filterMap?.priceEur);
+    if (rub != null) {
+        result.RUB = rub;
+    }
+    if (usd != null) {
+        result.USD = usd;
+    }
+    if (eur != null) {
+        result.EUR = eur;
+    }
+    if (!Object.keys(result).length) {
+        const legacy = normalizePrice(product?.price);
+        if (legacy != null) {
+            result.RUB = legacy;
+        }
+    }
+    return result;
+}
+
+function getCatalogCurrencyPreference() {
+    return normalizeCurrencyCode(state.catalog.currency || "RUB");
+}
+
+function getPreferredAvailableCurrency(priceMap, preferredCurrency = "RUB") {
+    const candidates = [normalizeCurrencyCode(preferredCurrency), "RUB", "USD", "EUR"];
+    return candidates.find(code => normalizePrice(priceMap?.[code]) != null) || "";
+}
+
+function applyDiscountToAmount(amount, discountPercent) {
+    const numericAmount = normalizePrice(amount);
+    const numericDiscount = parseOptionalNumber(discountPercent);
+    if (numericAmount == null || numericDiscount == null || numericDiscount <= 0) {
+        return numericAmount ?? 10;
+    }
+    const safeDiscount = Math.min(100, Math.max(0, numericDiscount));
+    return Math.round(numericAmount * (1 - safeDiscount / 100) * 100) / 100;
+}
+
+function buildCurrencyTotals(items) {
+    const safeItems = Array.isArray(items) ? items : [];
+    const totalsByCurrency = new Map();
+    safeItems.forEach(item => {
+        const currencyCode = normalizeCurrencyCode(item?.currencyCode || item?.priceInfo?.currencyCode || getCatalogCurrencyPreference());
+        const linePrice = Number(item?.unitPrice ?? item?.priceInfo?.amount ?? resolveProductUnitPrice(item?.product, item?.selectedReproduction));
+        const lineTotal = linePrice * Number(item?.quantity || 0);
+        totalsByCurrency.set(currencyCode, (totalsByCurrency.get(currencyCode) || 0) + lineTotal);
+    });
+    return [...totalsByCurrency.entries()]
+        .map(([currencyCode, amount]) => ({ currencyCode, amount }))
+        .sort((left, right) => CURRENCY_OPTIONS.findIndex(item => item.code === left.currencyCode) - CURRENCY_OPTIONS.findIndex(item => item.code === right.currencyCode));
+}
+
+function summarizeCartTotals(items) {
+    const totals = buildCurrencyTotals(items);
+    if (!totals.length) {
+        return { mixed: false, amount: 0, currencyCode: getCatalogCurrencyPreference(), totals };
+    }
+    if (totals.length > 1) {
+        return { mixed: true, amount: null, currencyCode: "MIXED", totals };
+    }
+    return { mixed: false, amount: totals[0].amount, currencyCode: totals[0].currencyCode, totals };
+}
+
+function renderCurrencyTotalsRows(items, label) {
+    const totals = buildCurrencyTotals(items);
+    if (!totals.length) {
+        return `<div class="summary-row"><span>${escapeHtml(label)}</span><strong>${formatPrice(10, getCatalogCurrencyPreference())}</strong></div>`;
+    }
+    if (totals.length === 1) {
+        return `<div class="summary-row"><span>${escapeHtml(label)}</span><strong>${formatPrice(totals[0].amount, totals[0].currencyCode)}</strong></div>`;
+    }
+    return totals.map((item, index) => `
+        <div class="summary-row">
+            <span>${escapeHtml(index === 0 ? label : `${label} (${CURRENCY_LABELS[item.currencyCode] || item.currencyCode})`)}</span>
+            <strong>${formatPrice(item.amount, item.currencyCode)}</strong>
+        </div>
+    `).join("");
+}
+
+function formatOrderTotal(order) {
+    if (normalizeCurrencyCode(order?.currencyCode) === "MIXED") {
+        const totals = buildCurrencyTotals((order?.items || []).map(item => ({
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            currencyCode: item.currencyCode,
+        })));
+        return totals.length ? totals.map(item => formatPrice(item.amount, item.currencyCode)).join(" • ") : "Смешанная валюта";
+    }
+    return formatPrice(order?.totalPrice || 0, order?.currencyCode || "RUB");
+}
+
+function normalizeCurrencyCode(value) {
+    const raw = String(value || "").trim().toUpperCase();
+    if (raw === "USD" || raw === "EUR" || raw === "RUB" || raw === "MIXED") {
+        return raw;
+    }
+    return "RUB";
 }
 
 function renderPreservingScrollPosition() {
@@ -5965,9 +6368,14 @@ function normalizePrice(value) {
     return parsed == null || parsed <= 0 ? null : parsed;
 }
 
-function formatPrice(value) {
+function formatPrice(value, currencyCode = "RUB") {
+    const normalizedCurrency = normalizeCurrencyCode(currencyCode);
+    if (normalizedCurrency === "MIXED") {
+        return "Смешанная валюта";
+    }
     const amount = Number(value || 0);
-    return `${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}\u00A0₽`;
+    const symbol = CURRENCY_SYMBOLS[normalizedCurrency] || CURRENCY_SYMBOLS.RUB;
+    return `${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}\u00A0${symbol}`;
 }
 
 function formatQuantity(value) {

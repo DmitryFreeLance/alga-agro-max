@@ -158,6 +158,7 @@ public class MiniAppApiController {
                 request.culture(),
                 request.deliveryNote(),
                 request.attachments(),
+                request.currencyCode(),
                 request.items().stream().map(item -> new OrderService.CreateOrderItem(item.productId(), item.quantity(), item.selectedReproduction())).toList()
         ));
         String summary = orderService.buildAdminSummary(order);
@@ -489,7 +490,10 @@ public class MiniAppApiController {
             return null;
         }
         CatalogProduct product = productService.findById(productId).orElse(null);
-        BigDecimal unitPrice = product == null ? null : productService.resolveUnitPrice(product, selectedReproduction);
+        ProductService.PriceQuote priceQuote = product == null
+                ? new ProductService.PriceQuote(null, "RUB")
+                : productService.resolvePriceQuote(product, selectedReproduction, "RUB");
+        BigDecimal unitPrice = priceQuote.amount();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("productId", productId);
         response.put("quantity", quantity);
@@ -499,6 +503,7 @@ public class MiniAppApiController {
         response.put("unitName", product == null ? "шт" : productService.resolveDisplayUnit(product));
         response.put("packageDescription", product == null ? "" : productService.resolveOrderRules(product).packageDescription());
         response.put("unitPrice", unitPrice);
+        response.put("currencyCode", priceQuote.currencyCode());
         response.put("priceOnRequest", unitPrice == null);
         response.put("totalPrice", unitPrice == null ? null : unitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP));
         return response;
@@ -580,6 +585,7 @@ public class MiniAppApiController {
             String culture,
             String deliveryNote,
             List<Map<String, Object>> attachments,
+            String currencyCode,
             @NotEmpty List<CreateOrderItemRequest> items
     ) {
     }

@@ -36,6 +36,7 @@ public class ProductService {
     private static final Logger log = LoggerFactory.getLogger(ProductService.class);
     private static final BigDecimal DEFAULT_ORDER_QUANTITY = BigDecimal.ONE;
     private static final BigDecimal DEFAULT_CATALOG_PRICE = new BigDecimal("10");
+    private static final List<String> SUPPORTED_PRICE_CURRENCIES = List.of("RUB", "USD", "EUR");
     private static final Pattern BOX_MULTIPLIER_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern VOLUME_X_COUNT_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов|т|тонна|тонны|п\\.?е\\.?)?\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)");
     private static final Pattern BOX_TOTAL_PATTERN = Pattern.compile("(?i)короб[а-я]*[^\\d]{0,20}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
@@ -459,11 +460,9 @@ public class ProductService {
         OrderRules orderRules = resolveOrderRules(product);
         Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
         Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
-        BigDecimal basePrice = firstPositive(product.getPrice(), DEFAULT_CATALOG_PRICE);
-        BigDecimal discountPercent = firstPositive(
-                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
-                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Скидка", ""), ""))
-        );
+        Map<String, BigDecimal> basePriceMap = readCurrencyPriceMap(product, filterMap, rawData);
+        BigDecimal basePrice = firstPositive(basePriceMap.get("RUB"), product.getPrice(), DEFAULT_CATALOG_PRICE);
+        BigDecimal discountPercent = readDiscountPercent(filterMap, rawData);
         BigDecimal effectivePrice = applyDiscount(basePrice, discountPercent);
         BigDecimal legacyOldPrice = firstPositive(
                 parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("oldPrice", ""), "")),
@@ -479,6 +478,9 @@ public class ProductService {
         dto.put("itemType", product.getItemType());
         dto.put("unitName", orderRules.unitName());
         dto.put("price", effectivePrice);
+        dto.put("priceRub", basePriceMap.get("RUB"));
+        dto.put("priceUsd", basePriceMap.get("USD"));
+        dto.put("priceEur", basePriceMap.get("EUR"));
         dto.put("stockQuantity", product.getStockQuantity());
         dto.put("cultures", getStringList(product.getCulturesJson()));
         dto.put("purposes", getStringList(product.getPurposesJson()));
@@ -545,6 +547,7 @@ public class ProductService {
                 Objects.toString(rawData.getOrDefault("Протравитель", ""), "")
         ));
         dto.put("seedReproductionPrices", readSeedReproductionPriceMap(filterMap));
+        dto.put("seedReproductionCurrencyPrices", readSeedReproductionCurrencyPriceMap(filterMap));
         return dto;
     }
 
@@ -572,36 +575,69 @@ public class ProductService {
     public Map<String, Object> toAdminDto(CatalogProduct product) {
         Map<String, Object> dto = new LinkedHashMap<>(toMiniAppDto(product));
         Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
+        Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
+        Map<String, BigDecimal> basePriceMap = readCurrencyPriceMap(product, filterMap, rawData);
         dto.put("externalId", product.getExternalId());
         dto.put("sourceFile", product.getSourceFile());
         dto.put("sku", product.getSku());
         dto.put("price", firstPositive(product.getPrice(), DEFAULT_CATALOG_PRICE));
-        dto.put("discountPercent", firstPositive(
-                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
-                BigDecimal.ZERO
-        ));
+        dto.put("priceRub", basePriceMap.get("RUB"));
+        dto.put("priceUsd", basePriceMap.get("USD"));
+        dto.put("priceEur", basePriceMap.get("EUR"));
+        dto.put("discountPercent", firstPositive(readDiscountPercent(filterMap, rawData), BigDecimal.ZERO));
         dto.put("active", product.isActive());
         dto.put("updatedAt", product.getUpdatedAt());
         return dto;
     }
 
     public BigDecimal resolveUnitPrice(CatalogProduct product, String selectedReproduction) {
+        return resolvePriceQuote(product, selectedReproduction, "RUB").amount();
+    }
+
+    public PriceQuote resolvePriceQuote(CatalogProduct product, String selectedReproduction, String preferredCurrencyCode) {
         if (product == null) {
-            return DEFAULT_CATALOG_PRICE;
+            return new PriceQuote(DEFAULT_CATALOG_PRICE, "RUB");
         }
         Map<String, Object> filterMap = jsonHelper.readMap(product.getFilterMapJson());
+        Map<String, Object> rawData = jsonHelper.readMap(product.getRawDataJson());
         Map<String, BigDecimal> reproductionPrices = readSeedReproductionPriceMap(filterMap);
+        Map<String, Map<String, BigDecimal>> reproductionCurrencyPrices = readSeedReproductionCurrencyPriceMap(filterMap);
         String normalizedReproduction = normalizeSeedReproduction(selectedReproduction);
+        if (!normalizedReproduction.isBlank()) {
+            Map<String, BigDecimal> currencyPrices = reproductionCurrencyPrices.get(normalizedReproduction);
+            if (currencyPrices != null && !currencyPrices.isEmpty()) {
+                String resolvedCurrencyCode = resolveAvailableCurrencyCode(currencyPrices, preferredCurrencyCode);
+                BigDecimal amount = currencyPrices.get(resolvedCurrencyCode);
+                if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
+                    return new PriceQuote(amount, resolvedCurrencyCode);
+                }
+            }
+        }
         if (!normalizedReproduction.isBlank()) {
             BigDecimal variantPrice = reproductionPrices.get(normalizedReproduction);
             if (variantPrice != null && variantPrice.compareTo(BigDecimal.ZERO) > 0) {
-                return variantPrice;
+                return new PriceQuote(variantPrice, "RUB");
+            }
+        }
+        if (!reproductionCurrencyPrices.isEmpty()) {
+            Map<String, BigDecimal> firstCurrencyPrices = reproductionCurrencyPrices.values().iterator().next();
+            if (firstCurrencyPrices != null && !firstCurrencyPrices.isEmpty()) {
+                String resolvedCurrencyCode = resolveAvailableCurrencyCode(firstCurrencyPrices, preferredCurrencyCode);
+                BigDecimal amount = firstCurrencyPrices.get(resolvedCurrencyCode);
+                if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
+                    return new PriceQuote(amount, resolvedCurrencyCode);
+                }
             }
         }
         if (!reproductionPrices.isEmpty()) {
-            return reproductionPrices.values().iterator().next();
+            return new PriceQuote(reproductionPrices.values().iterator().next(), "RUB");
         }
-        return firstPositive(product.getPrice(), DEFAULT_CATALOG_PRICE);
+        Map<String, BigDecimal> priceMap = readCurrencyPriceMap(product, filterMap, rawData);
+        String resolvedCurrencyCode = resolveAvailableCurrencyCode(priceMap, preferredCurrencyCode);
+        BigDecimal discountPercent = readDiscountPercent(filterMap, rawData);
+        BigDecimal baseAmount = priceMap.get(resolvedCurrencyCode);
+        BigDecimal amount = applyDiscount(firstPositive(baseAmount, product.getPrice(), DEFAULT_CATALOG_PRICE), discountPercent);
+        return new PriceQuote(firstPositive(amount, DEFAULT_CATALOG_PRICE), resolvedCurrencyCode);
     }
 
     public String buildVariantProductName(CatalogProduct product, String selectedReproduction) {
@@ -622,6 +658,69 @@ public class ProductService {
         BigDecimal normalizedDiscount = discountPercent.min(new BigDecimal("100"));
         BigDecimal multiplier = BigDecimal.ONE.subtract(normalizedDiscount.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP));
         return basePrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal readDiscountPercent(Map<String, Object> filterMap, Map<String, Object> rawData) {
+        return firstPositive(
+                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault("discountPercent", ""), "")),
+                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Скидка", ""), ""))
+        );
+    }
+
+    private Map<String, BigDecimal> readCurrencyPriceMap(CatalogProduct product, Map<String, Object> filterMap, Map<String, Object> rawData) {
+        Map<String, BigDecimal> prices = new LinkedHashMap<>();
+        boolean hasStructuredPrices = SUPPORTED_PRICE_CURRENCIES.stream()
+                .map(code -> readCurrencyPrice(filterMap, rawData, code))
+                .anyMatch(Objects::nonNull);
+        BigDecimal rubPrice = hasStructuredPrices
+                ? readCurrencyPrice(filterMap, rawData, "RUB")
+                : firstPositive(readCurrencyPrice(filterMap, rawData, "RUB"), product == null ? null : product.getPrice());
+        if (rubPrice != null) {
+            prices.put("RUB", rubPrice);
+        }
+        for (String currencyCode : SUPPORTED_PRICE_CURRENCIES) {
+            if ("RUB".equals(currencyCode)) {
+                continue;
+            }
+            BigDecimal amount = readCurrencyPrice(filterMap, rawData, currencyCode);
+            if (amount != null) {
+                prices.put(currencyCode, amount);
+            }
+        }
+        return prices;
+    }
+
+    private BigDecimal readCurrencyPrice(Map<String, Object> filterMap, Map<String, Object> rawData, String currencyCode) {
+        return firstPositive(
+                parseFlexibleDecimal(Objects.toString(filterMap.getOrDefault(priceKey(currencyCode), ""), "")),
+                parseFlexibleDecimal(Objects.toString(rawData.getOrDefault("Цена " + currencyCode, ""), ""))
+        );
+    }
+
+    private String resolveAvailableCurrencyCode(Map<String, BigDecimal> priceMap, String preferredCurrencyCode) {
+        String normalizedPreferred = normalizeCurrencyCode(preferredCurrencyCode);
+        if (priceMap.containsKey(normalizedPreferred)) {
+            return normalizedPreferred;
+        }
+        for (String currencyCode : SUPPORTED_PRICE_CURRENCIES) {
+            if (priceMap.containsKey(currencyCode)) {
+                return currencyCode;
+            }
+        }
+        return "RUB";
+    }
+
+    private String normalizeCurrencyCode(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        return SUPPORTED_PRICE_CURRENCIES.contains(normalized) ? normalized : "RUB";
+    }
+
+    private String priceKey(String currencyCode) {
+        return switch (normalizeCurrencyCode(currencyCode)) {
+            case "USD" -> "priceUsd";
+            case "EUR" -> "priceEur";
+            default -> "priceRub";
+        };
     }
 
     @Transactional
@@ -880,6 +979,33 @@ public class ProductService {
                 result.put(normalizedKey, numericValue);
             }
         });
+        return result;
+    }
+
+    private Map<String, Map<String, BigDecimal>> readSeedReproductionCurrencyPriceMap(Map<String, Object> filterMap) {
+        Object rawValue = filterMap == null ? null : filterMap.get("seedReproductionCurrencyPrices");
+        Map<String, Map<String, BigDecimal>> result = new LinkedHashMap<>();
+        if (rawValue instanceof Map<?, ?> rawMap) {
+            rawMap.forEach((key, value) -> {
+                String normalizedKey = normalizeSeedReproduction(Objects.toString(key, ""));
+                if (normalizedKey.isBlank() || !(value instanceof Map<?, ?> currencyMap)) {
+                    return;
+                }
+                Map<String, BigDecimal> normalizedCurrencyValues = new LinkedHashMap<>();
+                currencyMap.forEach((currencyKey, currencyValue) -> {
+                    String normalizedCurrencyCode = normalizeCurrencyCode(Objects.toString(currencyKey, ""));
+                    BigDecimal numericValue = parseFlexibleDecimal(Objects.toString(currencyValue, ""));
+                    if (!normalizedCurrencyCode.isBlank() && numericValue != null && numericValue.compareTo(BigDecimal.ZERO) > 0) {
+                        normalizedCurrencyValues.put(normalizedCurrencyCode, numericValue);
+                    }
+                });
+                if (!normalizedCurrencyValues.isEmpty()) {
+                    result.put(normalizedKey, normalizedCurrencyValues);
+                }
+            });
+        }
+        readSeedReproductionPriceMap(filterMap).forEach((reproductionKey, value) ->
+                result.computeIfAbsent(reproductionKey, key -> new LinkedHashMap<>()).putIfAbsent("RUB", value));
         return result;
     }
 
@@ -1765,6 +1891,12 @@ public class ProductService {
             Map<String, Object> filterMap,
             Map<String, Object> rawData,
             Boolean active
+    ) {
+    }
+
+    public record PriceQuote(
+            BigDecimal amount,
+            String currencyCode
     ) {
     }
 

@@ -50,10 +50,23 @@ public final class TextUtils {
     }
 
     public static String formatPrice(BigDecimal value) {
+        return formatPrice(value, "RUB");
+    }
+
+    public static String formatPrice(BigDecimal value, String currencyCode) {
         if (value == null) {
             return "По запросу";
         }
-        return PRICE_FORMAT.format(value) + " ₽";
+        return PRICE_FORMAT.format(value) + " " + currencySymbol(currencyCode);
+    }
+
+    private static String currencySymbol(String currencyCode) {
+        String normalized = currencyCode == null ? "" : currencyCode.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "USD" -> "$";
+            case "EUR" -> "€";
+            default -> "₽";
+        };
     }
 
     public static boolean containsToken(String index, String token) {

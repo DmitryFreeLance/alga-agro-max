@@ -317,10 +317,10 @@ public class BitrixSyncService {
         if (order.getCustomerCompany() != null && !order.getCustomerCompany().isBlank()) {
             fields.put("COMPANY_TITLE", order.getCustomerCompany());
         }
-        if (order.getTotalPrice() != null) {
+        if (order.getTotalPrice() != null && !"MIXED".equalsIgnoreCase(order.getCurrencyCode())) {
             fields.put("OPPORTUNITY", order.getTotalPrice());
         }
-        fields.put("CURRENCY_ID", appProperties.getBitrix().getCurrencyId());
+        fields.put("CURRENCY_ID", resolveLeadCurrencyCode(order));
         fields.put("COMMENTS", buildLeadComment(order));
         fields.put("OPENED", "Y");
         fields.put("ORIGINATOR_ID", appProperties.getBitrix().getOriginatorId());
@@ -993,9 +993,16 @@ public class BitrixSyncService {
                 .append(" × ")
                 .append(item.getQuantity().stripTrailingZeros().toPlainString())
                 .append(" = ")
-                .append(TextUtils.formatPrice(item.getUnitPrice().multiply(item.getQuantity())))
+                .append(TextUtils.formatPrice(item.getUnitPrice().multiply(item.getQuantity()), item.getCurrencyCode()))
                 .append("\n"));
         return builder.toString().trim();
+    }
+
+    private String resolveLeadCurrencyCode(CatalogOrder order) {
+        if (order == null || order.getCurrencyCode() == null || order.getCurrencyCode().isBlank() || "MIXED".equalsIgnoreCase(order.getCurrencyCode())) {
+            return appProperties.getBitrix().getCurrencyId();
+        }
+        return order.getCurrencyCode().trim().toUpperCase(Locale.ROOT);
     }
 
     private JsonNode call(String method, Object payload) {

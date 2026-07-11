@@ -970,7 +970,7 @@ public class BotUpdateHandler {
                 .append(" — ").append(order.getCustomerName())
                 .append("\n").append(order.getCustomerPhone())
                 .append("\nПозиций: ").append(order.getItems().size())
-                .append(", сумма: ").append(TextUtils.formatPrice(order.getTotalPrice()))
+                .append(", сумма: ").append("MIXED".equalsIgnoreCase(order.getCurrencyCode()) ? "Смешанная валюта" : TextUtils.formatPrice(order.getTotalPrice(), order.getCurrencyCode()))
                 .append("\n\n"));
         if (orders.isEmpty()) {
             text.append("Заказов пока нет.");

@@ -217,6 +217,47 @@ img {
     font-size: 0.9rem;
 }
 
+.section-label-row,
+.catalog-currency-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.catalog-currency-row {
+    justify-content: flex-end;
+}
+
+.currency-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.currency-switcher-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(44, 95, 50, 0.18);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--green-900);
+    font-weight: 800;
+    font-size: 0.95rem;
+    box-shadow: 0 8px 18px rgba(53, 90, 56, 0.08);
+    transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.currency-switcher-btn.active {
+    background: var(--green-700);
+    color: var(--white);
+    border-color: var(--green-700);
+}
+
+.currency-switcher-btn:active {
+    transform: scale(0.96);
+}
+
 .section-list {
     display: grid;
     gap: 10px;
@@ -2595,6 +2636,38 @@ button[disabled] {
     align-items: center;
 }
 
+.admin-form-row-prices {
+    align-items: end;
+}
+
+.admin-seed-reproduction-price-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.admin-seed-reproduction-price-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(70, 93, 71, 0.18);
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.admin-seed-reproduction-price-title {
+    color: var(--text-700);
+    font-size: 0.88rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.admin-seed-reproduction-price-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
 .admin-price-grid-head {
     color: var(--text-500);
     font-size: 0.78rem;
@@ -2858,7 +2931,20 @@ button[disabled] {
 }
 
 @media (max-width: 819px) {
+    .section-label-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .catalog-currency-row {
+        justify-content: flex-start;
+    }
+
     .catalog-toolbar-compact {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-seed-reproduction-price-fields {
         grid-template-columns: minmax(0, 1fr);
     }
 

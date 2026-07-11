@@ -53,6 +53,9 @@ public class CatalogOrder {
     @Column(precision = 14, scale = 2, nullable = false)
     private BigDecimal totalPrice = BigDecimal.ZERO;
 
+    @Column(nullable = false)
+    private String currencyCode = "RUB";
+
     private Long bitrixLeadId;
 
     @Lob
@@ -188,6 +191,14 @@ public class CatalogOrder {
 
     public void setBitrixLeadId(Long bitrixLeadId) {
         this.bitrixLeadId = bitrixLeadId;
+    }
+
+    public String getCurrencyCode() {
+        return currencyCode;
+    }
+
+    public void setCurrencyCode(String currencyCode) {
+        this.currencyCode = currencyCode;
     }
 
     public String getPayloadJson() {
