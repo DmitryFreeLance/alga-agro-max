@@ -270,6 +270,7 @@ const state = {
         activeIngredientSearch: "",
         scrollToProductsPending: false,
         selectedReproductions: {},
+        quantityDrafts: {},
         draft: null,
         applied: emptyFilters(),
     },
@@ -1329,7 +1330,7 @@ function renderProductCard(product) {
             <div class="product-card-body">
                 <div class="product-card-heading ${isSeedCard ? "product-card-heading-seed" : ""}">
                     <p class="product-card-title">${escapeHtml(product.name)}</p>
-                    ${isSeedCard ? "" : badge}
+                ${isSeedCard ? "" : badge}
                 </div>
                 ${isSeedCard ? `<div class="product-card-badge-row">${badge}</div>` : ""}
                 ${renderProductCardDetails(product)}
@@ -1337,10 +1338,33 @@ function renderProductCard(product) {
                     ${price}
                     ${cartItem
                         ? renderStepper(product.id, cartItem.quantity, "card", selectedReproduction)
-                        : `<button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>`}
+                        : renderCardQuantityComposer(product, selectedReproduction)}
                 </div>
             </div>
         </article>
+    `;
+}
+
+function renderCardQuantityComposer(product, selectedReproduction = "") {
+    const reproduction = getSeedSelectedReproduction(product, selectedReproduction);
+    const unitName = getProductOrderDisplayUnit(product);
+    return `
+        <div class="card-qty-add" data-action="cart-quantity-focus">
+            <label class="card-qty-field">
+                <input
+                    type="text"
+                    inputmode="decimal"
+                    data-action="cart-quantity-focus"
+                    data-field="cart-quantity-input"
+                    data-product-id="${product.id}"
+                    data-reproduction="${escapeAttr(reproduction)}"
+                    data-live="false"
+                    aria-label="Количество товара"
+                    value="${escapeAttr(resolveQuantityInputValue(product, reproduction, getInitialQuantity(product)))}">
+                <span>${escapeHtml(unitName)}</span>
+            </label>
+            <button type="button" class="card-cart-btn" data-action="add-product" data-product-id="${product.id}">+</button>
+        </div>
     `;
 }
 
@@ -1774,12 +1798,34 @@ function renderAdminContent() {
 
 function renderAdminDashboard() {
     const dashboard = state.admin.dashboard || { latestOrders: [] };
+    const referralLink = dashboard.referralLink || state.profile?.referralLink || "";
     return `
         <div class="admin-kpi-grid">
             ${renderAdminKpiCard("◫", dashboard.ordersTotal || 0, "Заявок всего", `+${dashboard.ordersAddedThisWeek || 0} за неделю`)}
             ${renderAdminKpiCard("⧖", dashboard.ordersPending || 0, "В ожидании", "Требуют ответа", "warning")}
             ${renderAdminKpiCard("◪", dashboard.productsTotal || 0, "Товаров", "В каталоге", "neutral")}
             ${renderAdminKpiCard("◉", dashboard.usersTotal || 0, "Пользователей", `+${dashboard.usersAddedThisMonth || 0} за месяц`, "accent")}
+        </div>
+        <div class="admin-card admin-card-spacious">
+            <div class="admin-section-head">
+                <div>
+                    <h3>Реферальная ссылка</h3>
+                    <p>Считаются пользователи, которые запустили бота по вашей ссылке</p>
+                </div>
+                ${referralLink ? `<button class="admin-outline-btn" data-action="copy-referral-link">Скопировать ссылку</button>` : ""}
+            </div>
+            <div class="admin-customer-grid">
+                <div class="summary-card">
+                    <div class="admin-block-title">Ваша ссылка</div>
+                    <div class="search-muted">${escapeHtml(referralLink || "Ссылка станет доступна после получения публичного адреса бота")}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="admin-block-title">Статистика</div>
+                    <div class="summary-row"><span>Приглашено пользователей</span><strong>${dashboard.referredUsersCount || 0}</strong></div>
+                    <div class="summary-row"><span>Заказов от приглашенных</span><strong>${dashboard.referralOrdersCount || 0}</strong></div>
+                    <div class="summary-row"><span>Реферальный код</span><span>${escapeHtml(dashboard.referralCode || "—")}</span></div>
+                </div>
+            </div>
         </div>
         <div class="admin-card admin-card-spacious">
             <div class="admin-section-head">
@@ -2068,6 +2114,7 @@ function renderAdminCustomers() {
                                     <div class="admin-customer-meta">
                                         <strong>${escapeHtml(customer.displayName || "Пользователь MAX")}</strong>
                                         <div class="search-muted">${customer.username ? `@${escapeHtml(customer.username)}` : `ID ${customer.maxUserId}`}</div>
+                                        ${customer.referredByCurrentAdmin ? `<div class="search-muted">Приглашен по вашей ссылке</div>` : customer.referredByDisplayName ? `<div class="search-muted">Пригласил: ${escapeHtml(customer.referredByDisplayName)}</div>` : ""}
                                     </div>
                                 </td>
                                 <td data-label="Контакты">
@@ -3036,6 +3083,11 @@ function renderAdminProductModal() {
                                 <span>Для теплицы</span>
                             </label>
                         </div>
+                        ${selectedCategory === "Пестициды" ? `
+                            <div class="admin-form-row admin-form-row-compact">
+                                <div class="admin-field admin-field-span-full"><label>Ссылка AgroXXI</label><input name="agroxxiUrl" type="url" value="${escapeAttr(product?.agroxxiUrl || "")}" placeholder="https://www.agroxxi.ru/goshandbook/prep/..."></div>
+                            </div>
+                        ` : ""}
                     </div>
                     <div class="admin-actions">
                         ${product ? `<button type="button" class="ghost-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">${product.active ? "Скрыть" : "Показать"}</button>` : ""}
@@ -3185,6 +3237,7 @@ function renderAdminCustomerModal() {
                             <div class="summary-row"><span>ФИО</span><span>${escapeHtml(customer.displayName || customer.contactName || "—")}</span></div>
                             <div class="summary-row"><span>ИНН</span><span>${escapeHtml(customer.inn || "—")}</span></div>
                             <div class="summary-row"><span>Адрес</span><span>${escapeHtml(customer.deliveryAddress || "—")}</span></div>
+                            <div class="summary-row"><span>Пригласил</span><span>${escapeHtml(customer.referredByDisplayName || (customer.referredByMaxUserId ? `MAX ID ${customer.referredByMaxUserId}` : "—"))}</span></div>
                         </div>
                         <div class="summary-card">
                             <div class="admin-block-title">Корзина и заказы</div>
@@ -3194,6 +3247,7 @@ function renderAdminCustomerModal() {
                             <div class="summary-row"><span>Всего заказов</span><strong>${customer.ordersCount || 0}</strong></div>
                             <div class="summary-row"><span>Оплаченных</span><strong>${customer.completedOrdersCount || 0}</strong></div>
                             <div class="summary-row"><span>Последний заказ</span><span>${escapeHtml(customer.latestOrderCode || "—")}</span></div>
+                            <div class="summary-row"><span>Дата приглашения</span><span>${customer.referredAt ? formatDate(customer.referredAt) : "—"}</span></div>
                         </div>
                     </div>
                     <div class="admin-customer-grid">
@@ -3333,6 +3387,9 @@ function handleClick(event) {
     if (button.tagName === "BUTTON") {
         event.preventDefault();
     }
+    if (action === "cart-quantity-focus") {
+        return;
+    }
     if (action === "pick-admin-suggestion") {
         applyAdminSuggestion(button.dataset.field, button.dataset.value || "");
         return;
@@ -3448,6 +3505,10 @@ function handleClick(event) {
         copyProductLink(Number(button.dataset.productId)).catch(handleActionError);
         return;
     }
+    if (action === "copy-referral-link") {
+        copyReferralLink().catch(handleActionError);
+        return;
+    }
     if (action === "gallery-prev" || action === "gallery-next") {
         state.productModal.imageIndex = 0;
         render();
@@ -3462,7 +3523,11 @@ function handleClick(event) {
         const productId = Number(button.dataset.productId);
         const product = getProductById(productId);
         const selectedReproduction = getCatalogSelectedReproduction(product);
-        addToCart(productId, getInitialQuantity(product), selectedReproduction);
+        addToCart(
+            productId,
+            getEffectiveQuantityValue(product, selectedReproduction, getInitialQuantity(product)),
+            selectedReproduction
+        );
         render();
         return;
     }
@@ -3470,7 +3535,18 @@ function handleClick(event) {
         const product = getProductById(Number(button.dataset.productId));
         if (product) {
             const selectedReproduction = getSeedSelectedReproduction(product, button.dataset.reproduction || state.productModal.selectedReproduction);
-            setCartQuantity(product.id, getSanitizedQuantityForProduct(product, getCartItem(product.id, selectedReproduction)?.quantity || state.productModal.quantity), selectedReproduction);
+            setCartQuantity(
+                product.id,
+                getSanitizedQuantityForProduct(
+                    product,
+                    getEffectiveQuantityValue(
+                        product,
+                        selectedReproduction,
+                        getCartItem(product.id, selectedReproduction)?.quantity || state.productModal.quantity
+                    )
+                ),
+                selectedReproduction
+            );
             saveCart();
         }
         closeProductModal();
@@ -3735,6 +3811,16 @@ function handleClick(event) {
 function handleInput(event) {
     const { field } = event.target.dataset;
     if (!field) return;
+    if (field === "cart-quantity-input") {
+        const productId = Number(event.target.dataset.productId || 0);
+        const product = getProductById(productId);
+        if (!product) {
+            return;
+        }
+        const reproduction = getSeedSelectedReproduction(product, event.target.dataset.reproduction || "");
+        setQuantityDraft(product.id, reproduction, event.target.value);
+        return;
+    }
     if (event.target.dataset.optionsId) {
         updateAdminSuggestions(event.target);
         return;
@@ -3898,6 +3984,19 @@ function handleFocusOut(event) {
 function handleChange(event) {
     const { field } = event.target.dataset;
     if (!field) return;
+    if (field === "cart-quantity-input") {
+        commitQuantityInput(
+            Number(event.target.dataset.productId || 0),
+            event.target.dataset.reproduction || "",
+            event.target.dataset.live === "true"
+        );
+        if (state.productModal.open) {
+            renderPreservingScrollPosition();
+        } else {
+            render();
+        }
+        return;
+    }
     if (field === "catalog-sort") {
         state.catalog.sort = event.target.value;
         render();
@@ -4260,6 +4359,7 @@ async function saveAdminProduct(formData) {
     const seedVegetationPeriod = String(formData.get("seedVegetationPeriod") || "").trim();
     let cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
     const seedTreatment = String(formData.get("seedTreatment") || "").trim();
+    const agroxxiUrl = String(formData.get("agroxxiUrl") || "").trim();
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproduction);
     const seedReproductionPrices = {};
     const seedReproductionCurrencyPrices = {};
@@ -4396,6 +4496,7 @@ async function saveAdminProduct(formData) {
         brand: String(formData.get("brand") || "").trim(),
         description: String(formData.get("description") || "").trim(),
         unitName,
+        agroxxiUrl,
         price: effectiveBasePrice,
         stockQuantity: existingProduct?.stockQuantity ?? null,
         packageType,
@@ -4461,6 +4562,7 @@ function buildAdminProductPayload(product, overrides = {}) {
         name: product.name || "",
         description: product.description || "",
         brand: product.brand || "",
+        agroxxiUrl: product.agroxxiUrl || "",
         category: product.category || "",
         subcategory: product.subcategory || "",
         itemType: product.itemType || "",
@@ -5335,10 +5437,23 @@ function renderStepper(productId, quantity, variant, selectedReproduction = "") 
     const product = getProductById(productId);
     const reproduction = normalizeSeedReproductionValue(selectedReproduction);
     const variantClass = variant ? ` qty-stepper-${variant}` : "";
+    const unitName = getProductOrderDisplayUnit(product);
     return `
-        <div class="qty-stepper${variantClass}">
+        <div class="qty-stepper${variantClass}" data-action="cart-quantity-focus">
             <button type="button" data-action="cart-minus" data-product-id="${productId}" data-reproduction="${escapeAttr(reproduction)}">−</button>
-            <span>${formatQuantityWithUnit(quantity, getProductOrderDisplayUnit(product))}</span>
+            <div class="qty-stepper-value" data-action="cart-quantity-focus">
+                <input
+                    type="text"
+                    inputmode="decimal"
+                    data-action="cart-quantity-focus"
+                    data-field="cart-quantity-input"
+                    data-product-id="${productId}"
+                    data-reproduction="${escapeAttr(reproduction)}"
+                    data-live="true"
+                    aria-label="Количество товара"
+                    value="${escapeAttr(resolveQuantityInputValue(product, reproduction, quantity))}">
+                <small>${escapeHtml(unitName)}</small>
+            </div>
             <button type="button" data-action="cart-plus" data-product-id="${productId}" data-reproduction="${escapeAttr(reproduction)}">+</button>
         </div>
     `;
@@ -5364,6 +5479,7 @@ function setCartQuantity(productId, quantity, selectedReproduction = "") {
     const nextQuantity = Math.max(0, Number(quantity) || 0);
     const product = getProductById(productId);
     const normalizedReproduction = product ? getSeedSelectedReproduction(product, selectedReproduction) : normalizeSeedReproductionValue(selectedReproduction);
+    clearQuantityDraft(productId, normalizedReproduction);
     const existing = state.cart.find(item => item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction);
     if (nextQuantity <= 0) {
         state.cart = state.cart.filter(item => !(item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction));
@@ -5380,7 +5496,11 @@ function adjustCartQuantity(productId, direction, selectedReproduction = "") {
     const product = getProductById(productId);
     if (!product) return;
     const normalizedReproduction = getSeedSelectedReproduction(product, selectedReproduction);
-    const current = getCartItem(productId, normalizedReproduction)?.quantity || 0;
+    const current = getEffectiveQuantityValue(
+        product,
+        normalizedReproduction,
+        getCartItem(productId, normalizedReproduction)?.quantity || 0
+    );
     const step = Number(product.orderStep || 1);
     const min = Number(product.minOrderQuantity || 1);
     const next = direction > 0
@@ -5409,8 +5529,75 @@ function getInitialQuantity(product) {
 function removeFromCart(productId, selectedReproduction = "") {
     const product = getProductById(productId);
     const normalizedReproduction = normalizeSeedReproductionValue(selectedReproduction);
+    clearQuantityDraft(productId, normalizedReproduction);
     state.cart = state.cart.filter(item => !(item.productId === productId && resolveCartItemReproduction(item, product) === normalizedReproduction));
     saveCart();
+}
+
+function getQuantityDraftKey(productId, selectedReproduction = "") {
+    return `${Number(productId) || 0}::${normalizeSeedReproductionValue(selectedReproduction)}`;
+}
+
+function getQuantityDraft(productId, selectedReproduction = "") {
+    return state.catalog.quantityDrafts?.[getQuantityDraftKey(productId, selectedReproduction)] ?? "";
+}
+
+function setQuantityDraft(productId, selectedReproduction = "", value = "") {
+    const key = getQuantityDraftKey(productId, selectedReproduction);
+    state.catalog.quantityDrafts = {
+        ...(state.catalog.quantityDrafts || {}),
+        [key]: String(value ?? ""),
+    };
+}
+
+function clearQuantityDraft(productId, selectedReproduction = "") {
+    const key = getQuantityDraftKey(productId, selectedReproduction);
+    if (!state.catalog.quantityDrafts?.[key]) {
+        return;
+    }
+    const next = { ...(state.catalog.quantityDrafts || {}) };
+    delete next[key];
+    state.catalog.quantityDrafts = next;
+}
+
+function resolveQuantityInputValue(product, selectedReproduction = "", fallbackQuantity = 0) {
+    const draft = getQuantityDraft(product?.id, selectedReproduction);
+    if (draft != null && String(draft).trim() !== "") {
+        return draft;
+    }
+    return formatQuantity(fallbackQuantity || getInitialQuantity(product));
+}
+
+function getEffectiveQuantityValue(product, selectedReproduction = "", fallbackQuantity = 0) {
+    const draft = getQuantityDraft(product?.id, selectedReproduction);
+    const parsedDraft = parseOptionalNumber(draft);
+    if (parsedDraft != null) {
+        return parsedDraft;
+    }
+    const parsedFallback = parseOptionalNumber(fallbackQuantity);
+    if (parsedFallback != null) {
+        return parsedFallback;
+    }
+    return getInitialQuantity(product);
+}
+
+function commitQuantityInput(productId, selectedReproduction = "", live = false) {
+    const product = getProductById(Number(productId));
+    if (!product) {
+        return;
+    }
+    const normalizedReproduction = getSeedSelectedReproduction(product, selectedReproduction);
+    const fallbackQuantity = getCartItem(product.id, normalizedReproduction)?.quantity || getInitialQuantity(product);
+    const sanitizedQuantity = getSanitizedQuantityForProduct(
+        product,
+        getEffectiveQuantityValue(product, normalizedReproduction, fallbackQuantity)
+    );
+    if (live) {
+        setCartQuantity(product.id, sanitizedQuantity, normalizedReproduction);
+        saveCart();
+        return;
+    }
+    setQuantityDraft(product.id, normalizedReproduction, formatQuantity(sanitizedQuantity));
 }
 
 function getCartItem(productId, selectedReproduction = "") {
@@ -6651,6 +6838,12 @@ async function copyProductLink(productId) {
     const url = buildProductShareUrl(product.id);
     await copyTextToClipboard(url);
     showNotice("Ссылка на товар скопирована.");
+}
+
+async function copyReferralLink() {
+    const referralLink = state.admin.dashboard?.referralLink || state.profile?.referralLink || "";
+    await copyTextToClipboard(referralLink);
+    showNotice("Реферальная ссылка скопирована.");
 }
 
 async function copyTextToClipboard(text) {

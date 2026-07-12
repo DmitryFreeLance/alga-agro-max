@@ -830,9 +830,9 @@ img {
 .qty-stepper-card {
     grid-template-columns: 24px minmax(0, 1fr) 24px;
     min-height: 30px;
-    width: min(100%, 96px);
-    max-width: 96px;
-    flex: 0 1 96px;
+    width: min(100%, 112px);
+    max-width: 112px;
+    flex: 0 1 112px;
     justify-self: end;
 }
 
@@ -847,21 +847,92 @@ img {
     min-width: 24px;
 }
 
-.qty-stepper span {
-    min-width: 78px;
+.qty-stepper-value {
+    min-width: 0;
+    padding: 2px 4px;
+    display: grid;
+    justify-items: center;
+    gap: 1px;
+}
+
+.qty-stepper-value input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--white);
     text-align: center;
     font-size: 0.82rem;
     font-weight: 800;
-    padding: 0 6px;
+    padding: 0;
 }
 
-.qty-stepper-card span {
-    min-width: 0;
-    font-size: 0.62rem;
-    padding: 0 3px;
+.qty-stepper-value input::placeholder {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.qty-stepper-value small {
+    display: block;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.52rem;
+    line-height: 1;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+.qty-stepper-card .qty-stepper-value input {
+    font-size: 0.72rem;
+}
+
+.qty-stepper-card .qty-stepper-value small {
+    font-size: 0.48rem;
+}
+
+.card-qty-add {
+    display: flex;
+    align-items: center;
+    justify-self: end;
+    gap: 6px;
+    min-width: 0;
+}
+
+.card-qty-field {
+    min-width: 0;
+    width: 82px;
+    min-height: 34px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background: var(--green-700);
+    color: var(--white);
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 1px;
+}
+
+.card-qty-field input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    text-align: center;
+    font-size: 0.74rem;
+    font-weight: 800;
+    padding: 0;
+}
+
+.card-qty-field input::placeholder {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.card-qty-field span {
+    font-size: 0.48rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.82);
 }
 
 .admin-empty-box {

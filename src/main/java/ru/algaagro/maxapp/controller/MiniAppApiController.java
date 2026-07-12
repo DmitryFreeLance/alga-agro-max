@@ -268,7 +268,9 @@ public class MiniAppApiController {
     @GetMapping("/profile")
     public Map<String, Object> profile(@RequestParam Long maxUserId) {
         var user = userService.findByMaxUserId(maxUserId).orElse(null);
-        CatalogOrder latestOrder = orderService.listOrdersForUser(maxUserId).stream().findFirst().orElse(null);
+        List<CatalogOrder> userOrders = orderService.listOrdersForUser(maxUserId);
+        CatalogOrder latestOrder = userOrders.stream().findFirst().orElse(null);
+        String botPublicUrl = maxApiClient.getBotPublicUrl();
         Map<String, Object> draftCheckout = user == null
                 ? Map.of()
                 : jsonHelper.readMap(user.getCheckoutDraftJson());
@@ -280,7 +282,7 @@ public class MiniAppApiController {
         response.put("displayName", user == null || user.getDisplayName() == null || user.getDisplayName().isBlank() ? "Пользователь MAX" : user.getDisplayName());
         response.put("username", user == null || user.getUsername() == null ? "" : user.getUsername());
         response.put("admin", user != null && user.isAdmin());
-        response.put("ordersCount", orderService.listOrdersForUser(maxUserId).size());
+        response.put("ordersCount", userOrders.size());
         response.put("phone", latestOrder == null ? "" : latestOrder.getCustomerPhone());
         response.put("email", latestOrder == null ? "" : latestOrder.getCustomerEmail());
         response.put("farmName", latestOrder == null ? "" : latestOrder.getCustomerFarmName());
@@ -292,6 +294,10 @@ public class MiniAppApiController {
         response.put("draftCheckout", draftCheckout);
         response.put("savedCart", savedCart);
         response.put("lastSeenAt", user == null ? null : user.getLastSeenAt());
+        response.put("referralCode", userService.buildReferralCode(maxUserId));
+        response.put("referralLink", userService.buildReferralLink(maxUserId, botPublicUrl));
+        response.put("referredUsersCount", userService.countReferredUsers(maxUserId));
+        response.put("referralOrdersCount", countOrdersForReferrer(maxUserId));
         return response;
     }
 
@@ -305,11 +311,16 @@ public class MiniAppApiController {
     @GetMapping("/admin/dashboard")
     public Map<String, Object> adminDashboard(@RequestParam Long maxUserId) {
         ensureAdmin(maxUserId);
-        return orderService.buildAdminDashboard(
+        Map<String, Object> dashboard = new LinkedHashMap<>(orderService.buildAdminDashboard(
                 userService.countUsers(),
                 userService.countUsersCreatedThisMonth(),
                 productService.getActiveProducts().size()
-        );
+        ));
+        dashboard.put("referralCode", userService.buildReferralCode(maxUserId));
+        dashboard.put("referralLink", userService.buildReferralLink(maxUserId, maxApiClient.getBotPublicUrl()));
+        dashboard.put("referredUsersCount", userService.countReferredUsers(maxUserId));
+        dashboard.put("referralOrdersCount", countOrdersForReferrer(maxUserId));
+        return dashboard;
     }
 
     @GetMapping("/admin/orders")
@@ -326,9 +337,16 @@ public class MiniAppApiController {
         Map<Long, List<CatalogOrder>> ordersByUser = orderService.listOrders(0, 2000).getContent().stream()
                 .filter(order -> order.getCustomerMaxUserId() != null)
                 .collect(Collectors.groupingBy(CatalogOrder::getCustomerMaxUserId));
+        Map<Long, AppUser> usersByMaxUserId = userService.listCustomersByLastSeen().stream()
+                .collect(Collectors.toMap(AppUser::getMaxUserId, user -> user, (left, right) -> left, LinkedHashMap::new));
         return userService.listCustomersByLastSeen().stream()
                 .filter(user -> !user.isAdmin())
-                .map(user -> toAdminCustomerDto(user, ordersByUser.getOrDefault(user.getMaxUserId(), List.of())))
+                .map(user -> toAdminCustomerDto(
+                        user,
+                        ordersByUser.getOrDefault(user.getMaxUserId(), List.of()),
+                        usersByMaxUserId.get(user.getReferredByMaxUserId()),
+                        maxUserId
+                ))
                 .toList();
     }
 
@@ -411,7 +429,7 @@ public class MiniAppApiController {
         }
     }
 
-    private Map<String, Object> toAdminCustomerDto(AppUser user, List<CatalogOrder> orders) {
+    private Map<String, Object> toAdminCustomerDto(AppUser user, List<CatalogOrder> orders, AppUser referrer, Long currentAdminId) {
         Map<String, Object> draft = jsonHelper.readMap(user.getCheckoutDraftJson());
         List<Map<String, Object>> rawCartItems = jsonHelper.readValue(
                 user.getCartJson(),
@@ -479,7 +497,24 @@ public class MiniAppApiController {
                 latestOrder == null ? "" : latestOrder.getDeliveryAddress()
         ));
         response.put("abandonedDraft", hasDraftContent(draft) || !cartItems.isEmpty());
+        response.put("referredByMaxUserId", user.getReferredByMaxUserId());
+        response.put("referredAt", user.getReferredAt());
+        response.put("referredByCurrentAdmin", user.getReferredByMaxUserId() != null && Objects.equals(user.getReferredByMaxUserId(), currentAdminId));
+        response.put("referredByDisplayName", referrer == null ? "" : referrer.getDisplayName());
+        response.put("referredByUsername", referrer == null ? "" : referrer.getUsername());
         return response;
+    }
+
+    private long countOrdersForReferrer(Long referrerMaxUserId) {
+        if (referrerMaxUserId == null) {
+            return 0;
+        }
+        return userService.listReferredUsers(referrerMaxUserId).stream()
+                .map(AppUser::getMaxUserId)
+                .filter(Objects::nonNull)
+                .map(orderService::listOrdersForUser)
+                .mapToLong(List::size)
+                .sum();
     }
 
     private Map<String, Object> toAdminCartItemDto(Map<String, Object> rawItem) {
@@ -622,6 +657,7 @@ public class MiniAppApiController {
             String name,
             String description,
             String brand,
+            String agroxxiUrl,
             String category,
             String subcategory,
             String itemType,
@@ -647,6 +683,7 @@ public class MiniAppApiController {
                     name,
                     description,
                     brand,
+                    agroxxiUrl,
                     category,
                     subcategory,
                     itemType,

@@ -94,6 +94,7 @@ public class ProductResearchService {
 
     public CompletableFuture<Void> continueResearchAsync(
             Long initiatedBy,
+            boolean runToCompletion,
             Consumer<BatchReport> onBatchReady,
             Consumer<String> onCompleted,
             Consumer<String> onFailure
@@ -103,7 +104,13 @@ public class ProductResearchService {
             onFailure.accept("Нет активного research. Запустите /research заново.");
             return CompletableFuture.completedFuture(null);
         }
-        return CompletableFuture.runAsync(() -> processNextBatch(session, onBatchReady, onCompleted, onFailure), importExecutorService);
+        return CompletableFuture.runAsync(() -> {
+            if (runToCompletion) {
+                processRemainingBatches(session, onCompleted, onFailure);
+            } else {
+                processNextBatch(session, onBatchReady, onCompleted, onFailure);
+            }
+        }, importExecutorService);
     }
 
     public String stopResearch(Long initiatedBy) {
@@ -144,58 +151,9 @@ public class ProductResearchService {
                 onCompleted.accept(buildFinalSummary(session));
                 return;
             }
-
-            int start = session.processed;
-            int end = Math.min(session.targets.size(), start + RESEARCH_AI_BATCH_SIZE);
-            List<CatalogProduct> batchProducts = session.targets.subList(start, end);
-            List<ExcelImportService.ImportRow> rows = batchProducts.stream().map(this::toImportRow).toList();
-            log.info("Research AI batch started. userId={}, start={}, end={}, size={}", session.initiatedBy, start + 1, end, rows.size());
-
-            List<AiClassificationService.ClassificationResult> classified;
-            try {
-                classified = aiClassificationService.classifyCulturesByName(rows, session.knownCultures);
-            } catch (Exception error) {
-                log.warn("Research AI batch failed. userId={}, start={}, end={}, reason={}", session.initiatedBy, start + 1, end, error.getMessage());
-                classified = aiClassificationService.classifyHeuristically(rows);
-            }
-
-            List<String> lines = new ArrayList<>();
-            for (int i = 0; i < batchProducts.size(); i++) {
-                CatalogProduct product = batchProducts.get(i);
-                AiClassificationService.ClassificationResult result = classified.get(i);
-                List<String> existingCultures = normalizeValues(product.getCategory(), productService.getStringList(product.getCulturesJson()));
-                List<String> cultures = normalizeValues(product.getCategory(), result.cultures());
-                if (cultures.isEmpty()) {
-                    cultures = existingCultures;
-                }
-                boolean changed = !Objects.equals(existingCultures, cultures);
-                String productName = firstNonBlank(product.getName(), "ID " + product.getId());
-
-                if (!changed) {
-                    session.unchanged++;
-                    lines.add("• " + productName + " → " + formatCultures(cultures) + " [без изменений]");
-                    continue;
-                }
-
-                try {
-                    productService.updateProductCultures(product, cultures, false);
-                    session.updated++;
-                    session.bySection.merge(displaySection(product.getCategory()), 1, Integer::sum);
-                    lines.add("• " + productName + " → " + formatCultures(cultures) + " [обновлено]");
-                } catch (Exception e) {
-                    session.failed++;
-                    session.failedProducts.add(productName);
-                    log.warn("Research cultures update failed for product {} (id={}): {}", product.getName(), product.getId(), e.getMessage());
-                    lines.add("• " + productName + " → ошибка обновления культур");
-                }
-            }
-
-            session.processed = end;
-            boolean hasMore = end < session.targets.size() && !session.stopped;
-            onBatchReady.accept(new BatchReport(
-                    buildBatchReportText(session, start + 1, end, lines, hasMore),
-                    hasMore
-            ));
+            BatchReport report = processBatch(session);
+            boolean hasMore = report.hasMore();
+            onBatchReady.accept(report);
             if (!hasMore) {
                 sessions.remove(session.initiatedBy);
                 onCompleted.accept(buildFinalSummary(session));
@@ -208,6 +166,85 @@ public class ProductResearchService {
         }
     }
 
+    private void processRemainingBatches(
+            ResearchSession session,
+            Consumer<String> onCompleted,
+            Consumer<String> onFailure
+    ) {
+        if (!session.processing.compareAndSet(false, true)) {
+            onFailure.accept("Эта партия еще обрабатывается. Дождитесь завершения текущего шага.");
+            return;
+        }
+        try {
+            if (session.stopped) {
+                sessions.remove(session.initiatedBy);
+                onCompleted.accept("Research остановлен.");
+                return;
+            }
+            while (!session.stopped && session.processed < session.targets.size()) {
+                processBatch(session);
+            }
+            sessions.remove(session.initiatedBy);
+            onCompleted.accept(session.stopped ? "Research остановлен." : buildFinalSummary(session));
+        } catch (Exception e) {
+            sessions.remove(session.initiatedBy);
+            onFailure.accept(e.getMessage());
+        } finally {
+            session.processing.set(false);
+        }
+    }
+
+    private BatchReport processBatch(ResearchSession session) {
+        int start = session.processed;
+        int end = Math.min(session.targets.size(), start + RESEARCH_AI_BATCH_SIZE);
+        List<CatalogProduct> batchProducts = session.targets.subList(start, end);
+        List<ExcelImportService.ImportRow> rows = batchProducts.stream().map(this::toImportRow).toList();
+        log.info("Research AI batch started. userId={}, start={}, end={}, size={}", session.initiatedBy, start + 1, end, rows.size());
+
+        List<AiClassificationService.ClassificationResult> classified;
+        try {
+            classified = aiClassificationService.classifyCulturesByName(rows, session.knownCultures);
+        } catch (Exception error) {
+            log.warn("Research AI batch failed. userId={}, start={}, end={}, reason={}", session.initiatedBy, start + 1, end, error.getMessage());
+            classified = aiClassificationService.classifyHeuristically(rows);
+        }
+
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < batchProducts.size(); i++) {
+            CatalogProduct product = batchProducts.get(i);
+            AiClassificationService.ClassificationResult result = classified.get(i);
+            List<String> existingCultures = normalizeValues(product.getCategory(), productService.getStringList(product.getCulturesJson()));
+            List<String> cultures = normalizeValues(product.getCategory(), result.cultures());
+            if (cultures.isEmpty()) {
+                cultures = existingCultures;
+            }
+            boolean changed = !Objects.equals(existingCultures, cultures);
+            String productName = firstNonBlank(product.getName(), "ID " + product.getId());
+
+            if (!changed) {
+                session.unchanged++;
+                lines.add("• " + productName + " → " + formatCultures(cultures) + " [без изменений]");
+                continue;
+            }
+
+            try {
+                productService.updateProductCultures(product, cultures, false);
+                session.updated++;
+                session.bySection.merge(displaySection(product.getCategory()), 1, Integer::sum);
+                lines.add("• " + productName + " → " + formatCultures(cultures) + " [обновлено]");
+            } catch (Exception e) {
+                session.failed++;
+                session.failedProducts.add(productName);
+                log.warn("Research cultures update failed for product {} (id={}): {}", product.getName(), product.getId(), e.getMessage());
+                lines.add("• " + productName + " → ошибка обновления культур");
+            }
+        }
+
+        session.processed = end;
+        boolean hasMore = end < session.targets.size() && !session.stopped;
+        return new BatchReport(buildBatchReportText(session, start + 1, end, lines, hasMore), hasMore);
+    }
+
     private String buildBatchReportText(ResearchSession session, int start, int end, List<String> lines, boolean hasMore) {
         StringBuilder report = new StringBuilder();
         report.append("🧾 <b>Research культур</b>\n");
@@ -216,7 +253,7 @@ public class ProductResearchService {
                 .append("</b>, ошибок: <b>").append(session.failed).append("</b>\n\n");
         lines.forEach(line -> report.append(line).append("\n"));
         if (hasMore) {
-            report.append("\nНажмите <b>«Продолжить»</b> для следующей партии или <b>«Остановить»</b> для завершения.");
+            report.append("\nНажмите <b>«Продолжить до конца»</b>, чтобы обработать все оставшиеся партии без промежуточных отчетов.");
         }
         return report.toString().trim();
     }

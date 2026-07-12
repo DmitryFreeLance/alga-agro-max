@@ -477,6 +477,7 @@ public class ProductService {
         dto.put("subcategory", product.getSubcategory());
         dto.put("itemType", product.getItemType());
         dto.put("unitName", orderRules.unitName());
+        dto.put("agroxxiUrl", product.getAgroxxiUrl());
         dto.put("price", effectivePrice);
         dto.put("priceRub", basePriceMap.get("RUB"));
         dto.put("priceUsd", basePriceMap.get("USD"));
@@ -792,6 +793,19 @@ public class ProductService {
     }
 
     @Transactional
+    public CatalogProduct updateProductAgroxxiUrl(CatalogProduct product, String agroxxiUrl, boolean syncToBitrix) {
+        if (product == null || product.getId() == null) {
+            throw new IllegalArgumentException("Товар не найден");
+        }
+        product.setAgroxxiUrl(blankToNull(agroxxiUrl));
+        CatalogProduct saved = catalogProductRepository.save(product);
+        if (syncToBitrix) {
+            syncProductWithBitrix(saved.getId());
+        }
+        return saved;
+    }
+
+    @Transactional
     public void updateManufacturerName(Long productId, String manufacturerName) {
         CatalogProduct product = catalogProductRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("Товар не найден"));
@@ -867,6 +881,7 @@ public class ProductService {
         product.setName(payload.name());
         product.setDescription(payload.description());
         product.setBrand(payload.brand());
+        product.setAgroxxiUrl(blankToNull(payload.agroxxiUrl()));
         product.setCategory(normalizedCategory);
         product.setSubcategory(normalizedSubcategory);
         product.setItemType(blankToNull(firstNonBlank(normalizedSubcategory, normalizedCategory, payload.itemType())));
@@ -1875,6 +1890,7 @@ public class ProductService {
             String name,
             String description,
             String brand,
+            String agroxxiUrl,
             String category,
             String subcategory,
             String itemType,

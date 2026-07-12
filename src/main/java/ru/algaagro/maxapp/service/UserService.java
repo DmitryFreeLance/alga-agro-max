@@ -3,6 +3,7 @@ package ru.algaagro.maxapp.service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -90,6 +91,24 @@ public class UserService {
         return appUserRepository.findByMaxUserId(maxUserId).map(AppUser::isAdmin).orElse(false);
     }
 
+    @Transactional
+    public AppUser attachReferral(AppUser user, String startPayload) {
+        if (user == null || user.getMaxUserId() == null) {
+            return user;
+        }
+        Long referredBy = parseReferralOwnerId(startPayload);
+        if (referredBy == null
+                || referredBy <= 0
+                || referredBy.equals(user.getMaxUserId())
+                || user.getReferredByMaxUserId() != null) {
+            return user;
+        }
+        user.setReferredByMaxUserId(referredBy);
+        user.setReferredAt(Instant.now());
+        ensureStateDefaults(user);
+        return appUserRepository.save(user);
+    }
+
     public Page<AppUser> listUsers(int page, int size) {
         return appUserRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(Math.max(0, page), Math.max(1, size)));
     }
@@ -134,6 +153,50 @@ public class UserService {
 
     public List<AppUser> listCustomersByLastSeen() {
         return appUserRepository.findAllByOrderByLastSeenAtDesc();
+    }
+
+    public List<AppUser> listReferredUsers(Long maxUserId) {
+        if (maxUserId == null) {
+            return List.of();
+        }
+        return appUserRepository.findAllByReferredByMaxUserIdOrderByCreatedAtDesc(maxUserId);
+    }
+
+    public long countReferredUsers(Long maxUserId) {
+        if (maxUserId == null) {
+            return 0;
+        }
+        return appUserRepository.countByReferredByMaxUserId(maxUserId);
+    }
+
+    public String buildReferralCode(Long maxUserId) {
+        return maxUserId == null || maxUserId <= 0 ? "" : "ref_" + maxUserId;
+    }
+
+    public String buildReferralLink(Long maxUserId, String botPublicUrl) {
+        String baseUrl = botPublicUrl == null ? "" : botPublicUrl.trim();
+        String referralCode = buildReferralCode(maxUserId);
+        if (baseUrl.isBlank() || referralCode.isBlank()) {
+            return "";
+        }
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        return baseUrl + separator + "start=" + referralCode;
+    }
+
+    public Long parseReferralOwnerId(String startPayload) {
+        String value = startPayload == null ? "" : startPayload.trim();
+        if (value.isBlank()) {
+            return null;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (!normalized.startsWith("ref_")) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.substring(4).trim());
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private void ensureStateDefaults(AppUser user) {

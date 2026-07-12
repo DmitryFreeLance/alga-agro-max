@@ -12,5 +12,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
     Optional<AppUser> findByMaxUserId(Long maxUserId);
     Page<AppUser> findAllByOrderByCreatedAtDesc(Pageable pageable);
     List<AppUser> findAllByOrderByLastSeenAtDesc();
+    List<AppUser> findAllByReferredByMaxUserIdOrderByCreatedAtDesc(Long referredByMaxUserId);
+    long countByReferredByMaxUserId(Long referredByMaxUserId);
     long countByCreatedAtGreaterThanEqual(Instant createdAt);
 }

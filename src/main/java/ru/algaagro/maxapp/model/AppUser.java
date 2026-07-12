@@ -51,6 +51,10 @@ public class AppUser {
 
     private Instant checkoutDraftUpdatedAt;
 
+    private Long referredByMaxUserId;
+
+    private Instant referredAt;
+
     @PrePersist
     public void onCreate() {
         Instant now = Instant.now();
@@ -152,5 +156,21 @@ public class AppUser {
 
     public void setCheckoutDraftUpdatedAt(Instant checkoutDraftUpdatedAt) {
         this.checkoutDraftUpdatedAt = checkoutDraftUpdatedAt;
+    }
+
+    public Long getReferredByMaxUserId() {
+        return referredByMaxUserId;
+    }
+
+    public void setReferredByMaxUserId(Long referredByMaxUserId) {
+        this.referredByMaxUserId = referredByMaxUserId;
+    }
+
+    public Instant getReferredAt() {
+        return referredAt;
+    }
+
+    public void setReferredAt(Instant referredAt) {
+        this.referredAt = referredAt;
     }
 }

@@ -14,6 +14,8 @@ import ru.algaagro.maxapp.model.PostButton;
 @Component
 public class KeyboardFactory {
 
+    private static final String CHANNEL_URL = "https://max.ru/join/RROKM3Kboyx-q5p3j1kg68ZKY3hUw3RFZKYbZo6Yjxg";
+
     private final AppProperties appProperties;
 
     public KeyboardFactory(AppProperties appProperties) {
@@ -22,6 +24,7 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> mainMenu(Long userId, boolean admin) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
+        rows.add(List.of(linkButton("📢 Канал", CHANNEL_URL)));
         rows.add(List.of(linkButton("📋 Открыть каталог", buildMiniAppUrl(userId))));
         rows.add(List.of(messageButton("💬 Связаться с менеджером")));
         if (admin) {
@@ -99,15 +102,16 @@ public class KeyboardFactory {
         ));
     }
 
-    public List<Map<String, Object>> researchKeyboard(boolean hasMore) {
+    public List<Map<String, Object>> researchKeyboard(String scope, boolean hasMore) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
+        String normalizedScope = scope == null || scope.isBlank() ? "research:cultures" : scope.trim();
         if (hasMore) {
             rows.add(List.of(
-                    messageButton("▶️ Продолжить"),
-                    messageButton("⏹ Остановить")
+                    callbackButton("▶️ Продолжить до конца", normalizedScope + ":continue"),
+                    callbackButton("⏹ Остановить", normalizedScope + ":stop")
             ));
         } else {
-            rows.add(List.of(messageButton("⏹ Остановить")));
+            rows.add(List.of(callbackButton("⏹ Остановить", normalizedScope + ":stop")));
         }
         return inlineKeyboard(rows);
     }
