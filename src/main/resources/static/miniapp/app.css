@@ -2190,6 +2190,14 @@ img {
     font-size: 0.9rem;
 }
 
+.admin-section-head.compact {
+    margin-bottom: 0;
+}
+
+.referral-link-text {
+    overflow-wrap: anywhere;
+}
+
 .admin-primary-btn,
 .admin-outline-btn,
 .admin-table-btn {
@@ -2471,6 +2479,39 @@ button[disabled] {
 
 .admin-link-builder-grid {
     padding: 0;
+}
+
+.admin-link-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.admin-link-filter-card {
+    display: grid;
+    gap: 10px;
+    min-height: 0;
+    padding: 12px;
+    border: 1px solid rgba(31, 107, 54, 0.10);
+    border-radius: 18px;
+    background: #f8fbf7;
+}
+
+.admin-link-checkbox-list {
+    display: grid;
+    gap: 6px;
+    max-height: 220px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.admin-link-checkbox-row {
+    justify-content: flex-start;
+    gap: 10px;
+    min-height: 34px;
+    padding: 6px 8px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
 }
 
 .admin-link-preview {
@@ -3088,6 +3129,7 @@ button[disabled] {
 
     .admin-broadcast-layout,
     .admin-catalog-layout,
+    .admin-link-filter-grid,
     .admin-order-grid,
     .admin-customer-grid,
     .admin-price-grid,

@@ -313,7 +313,17 @@ const state = {
         manufacturerModal: { open: false, id: null, name: "", saving: false },
         broadcastForm: { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", imageFile: null, sending: false, uploading: false, uploadError: "" },
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
-        linkBuilder: { section: "Семена", culture: "Кукуруза", fao: "ФАО 200-250", manufacturer: "", subcategory: "", activeIngredient: "" },
+        linkBuilder: {
+            section: "Семена",
+            cultures: ["Кукуруза"],
+            subcategories: [],
+            manufacturers: [],
+            activeIngredients: [],
+            seedFaoRanges: ["ФАО 200-250"],
+            seedMaturityGroups: [],
+            seedTreatmentTechnologies: [],
+            seedReproductionValues: [],
+        },
     },
 };
 
@@ -2009,15 +2019,25 @@ function renderAdminCatalog() {
 }
 
 function renderAdminLinks() {
-    const builder = state.admin.linkBuilder || {};
+    const builder = getAdminLinkBuilder();
     const section = builder.section || "Семена";
     const sectionProducts = section
         ? state.admin.products.filter(product => getProductSectionName(product) === section)
         : state.admin.products;
-    const cultureOptions = getCultureOptionsForSection(section, sectionProducts);
-    const manufacturerOptions = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
-    const subcategoryOptions = getAdminSubcategoryOptions(section);
-    const activeIngredientOptions = uniqueValues(sectionProducts.flatMap(item => extractActiveIngredientTerms(item)).filter(Boolean));
+    const categoryOptions = getAdminLinkSubcategoryOptions(section, sectionProducts);
+    const categoryProducts = filterProductsByFilters(sectionProducts, {
+        ...emptyFilters(),
+        subcategories: builder.subcategories,
+    }, section);
+    const cultureOptions = getAdminLinkCultureOptions(section, categoryProducts);
+    const manufacturerOptions = uniqueValues(categoryProducts.map(item => item.brand).filter(Boolean));
+    const activeIngredientOptions = uniqueValues(categoryProducts.flatMap(item => extractActiveIngredientTerms(item)).filter(Boolean));
+    const seedFaoOptions = getAvailableSeedFaoRanges(categoryProducts);
+    const seedMaturityOptions = getAvailableSeedMaturityGroups(categoryProducts);
+    const seedTechnologyOptions = getAvailableSeedTechnologies(categoryProducts);
+    const seedReproductionOptions = getSeedReproductionOptions(categoryProducts);
+    const isSeedsSection = normalize(section) === normalize("Семена");
+    const isPesticidesSection = normalize(section) === normalize("Пестициды");
     const link = buildAdminCatalogLink();
     const previewCount = getAdminLinkPreviewProducts().length;
     return `
@@ -2029,42 +2049,24 @@ function renderAdminLinks() {
                 </div>
                 <button class="admin-primary-btn" data-action="copy-admin-catalog-link">Скопировать</button>
             </div>
-            ${renderDatalist("admin-link-culture-options", cultureOptions)}
-            ${renderDatalist("admin-link-manufacturer-options", manufacturerOptions)}
-            ${renderDatalist("admin-link-subcategory-options", subcategoryOptions)}
-            ${renderDatalist("admin-link-active-ingredient-options", activeIngredientOptions)}
             <div class="admin-form-grid admin-link-builder-grid">
-                <div class="admin-form-row admin-form-row-3">
+                <div class="admin-form-row admin-form-row-compact">
                     <div class="admin-field">
                         <label>Раздел</label>
                         <select data-field="admin-link-section">
                             ${renderOptions(getAdminPrimarySections().map(item => [item, getSectionDisplayName(item)]), section)}
                         </select>
                     </div>
-                    <div class="admin-field">
-                        <label>Культура</label>
-                        <input data-field="admin-link-culture" list="admin-link-culture-options" value="${escapeAttr(builder.culture || "")}" placeholder="Кукуруза">
-                    </div>
-                    <div class="admin-field">
-                        <label>ФАО</label>
-                        <select data-field="admin-link-fao">
-                            ${renderOptions([["", "Без фильтра"], ...SEED_FAO_RANGES.map(item => [item.label, item.label])], builder.fao || "")}
-                        </select>
-                    </div>
                 </div>
-                <div class="admin-form-row admin-form-row-3">
-                    <div class="admin-field">
-                        <label>Подкатегория</label>
-                        <input data-field="admin-link-subcategory" list="admin-link-subcategory-options" value="${escapeAttr(builder.subcategory || "")}" placeholder="Опционально">
-                    </div>
-                    <div class="admin-field">
-                        <label>Производитель</label>
-                        <input data-field="admin-link-manufacturer" list="admin-link-manufacturer-options" value="${escapeAttr(builder.manufacturer || "")}" placeholder="Опционально">
-                    </div>
-                    <div class="admin-field">
-                        <label>Действующее вещество</label>
-                        <input data-field="admin-link-active-ingredient" list="admin-link-active-ingredient-options" value="${escapeAttr(builder.activeIngredient || "")}" placeholder="Опционально">
-                    </div>
+                <div class="admin-link-filter-grid">
+                    ${renderAdminLinkCheckboxGroup("Категория", "subcategories", categoryOptions, builder.subcategories)}
+                    ${cultureOptions.length ? renderAdminLinkCheckboxGroup("Культура", "cultures", cultureOptions, builder.cultures) : ""}
+                    ${manufacturerOptions.length ? renderAdminLinkCheckboxGroup("Производитель", "manufacturers", manufacturerOptions, builder.manufacturers) : ""}
+                    ${isPesticidesSection && activeIngredientOptions.length ? renderAdminLinkCheckboxGroup("Действующее вещество", "activeIngredients", activeIngredientOptions, builder.activeIngredients) : ""}
+                    ${isSeedsSection && seedFaoOptions.length ? renderAdminLinkCheckboxGroup("ФАО", "seedFaoRanges", seedFaoOptions, builder.seedFaoRanges) : ""}
+                    ${isSeedsSection && seedMaturityOptions.length ? renderAdminLinkCheckboxGroup("Группа спелости", "seedMaturityGroups", seedMaturityOptions, builder.seedMaturityGroups) : ""}
+                    ${isSeedsSection && seedTechnologyOptions.length ? renderAdminLinkCheckboxGroup("Технология", "seedTreatmentTechnologies", seedTechnologyOptions, builder.seedTreatmentTechnologies) : ""}
+                    ${isSeedsSection && seedReproductionOptions.length ? renderAdminLinkCheckboxGroup("Репродукция", "seedReproductionValues", seedReproductionOptions, builder.seedReproductionValues) : ""}
                 </div>
                 <div class="admin-link-preview">
                     <div>
@@ -2073,6 +2075,32 @@ function renderAdminLinks() {
                     </div>
                     <div class="admin-visibility-pill">${previewCount} товаров</div>
                 </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminLinkCheckboxGroup(title, key, options, selectedValues = []) {
+    const safeOptions = uniqueValues((options || []).filter(Boolean));
+    if (!safeOptions.length) {
+        return "";
+    }
+    const selected = new Set(selectedValues || []);
+    return `
+        <div class="admin-link-filter-card">
+            <div class="admin-block-title">${escapeHtml(title)}</div>
+            <div class="admin-link-checkbox-list">
+                ${safeOptions.map(value => `
+                    <label class="checkbox-row admin-link-checkbox-row">
+                        <input
+                            type="checkbox"
+                            data-field="admin-link-filter"
+                            data-filter-key="${escapeAttr(key)}"
+                            value="${escapeAttr(value)}"
+                            ${selected.has(value) ? "checked" : ""}>
+                        <span>${escapeHtml(value)}</span>
+                    </label>
+                `).join("")}
             </div>
         </div>
     `;
@@ -2193,7 +2221,7 @@ function renderAdminCustomers() {
             </div>
             <div class="admin-table-wrap">
                 <table class="admin-table">
-                    <thead><tr><th>Клиент</th><th>Контакты</th><th>Корзина</th><th>Заказы</th><th>Статус</th><th>Последняя активность</th><th></th></tr></thead>
+                    <thead><tr><th>Клиент</th><th>Контакты</th><th>Корзина</th><th>Заказы</th><th>Рефералы</th><th>Статус</th><th>Последняя активность</th><th></th></tr></thead>
                     <tbody>
                         ${customers.map(customer => `
                             <tr>
@@ -2222,6 +2250,12 @@ function renderAdminCustomers() {
                                         <span class="search-muted">Оплачено: ${customer.completedOrdersCount || 0}</span>
                                     </div>
                                 </td>
+                                <td data-label="Рефералы">
+                                    <div class="admin-list-stack compact">
+                                        <strong>${customer.referredUsersCount || 0}</strong>
+                                        <span class="search-muted">Заказов: ${customer.referralOrdersCount || 0}</span>
+                                    </div>
+                                </td>
                                 <td data-label="Статус">
                                     <div class="admin-inline-badges">
                                         ${customer.draftFilled ? renderAdminStatusBadge("NEW", "Черновик") : ""}
@@ -2230,7 +2264,12 @@ function renderAdminCustomers() {
                                     </div>
                                 </td>
                                 <td data-label="Последняя активность">${formatDate(customer.lastSeenAt)}</td>
-                                <td data-label="Действие"><button class="admin-table-btn" data-action="open-admin-customer" data-max-user-id="${customer.maxUserId}">Открыть</button></td>
+                                <td data-label="Действие">
+                                    <div class="admin-row-actions">
+                                        <button class="admin-table-btn" data-action="open-admin-customer" data-max-user-id="${customer.maxUserId}">Открыть</button>
+                                        ${customer.referralLink ? `<button class="admin-table-btn" data-action="copy-customer-referral-link" data-max-user-id="${customer.maxUserId}">Ссылка</button>` : ""}
+                                    </div>
+                                </td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -3291,6 +3330,8 @@ function renderAdminCustomerModal() {
     const draft = customer.draftCheckout || {};
     const attachments = Array.isArray(draft.attachments) ? draft.attachments : [];
     const recentOrders = Array.isArray(customer.orders) ? customer.orders : [];
+    const referredUsers = Array.isArray(customer.referredUsers) ? customer.referredUsers : [];
+    const referredOrders = Array.isArray(customer.referredOrders) ? customer.referredOrders : [];
     return `
         <div class="modal">
             <div class="modal-backdrop" data-action="close-admin-customer"></div>
@@ -3320,6 +3361,7 @@ function renderAdminCustomerModal() {
                             <div class="summary-row"><span>ИНН</span><span>${escapeHtml(customer.inn || "—")}</span></div>
                             <div class="summary-row"><span>Адрес</span><span>${escapeHtml(customer.deliveryAddress || "—")}</span></div>
                             <div class="summary-row"><span>Пригласил</span><span>${escapeHtml(customer.referredByDisplayName || (customer.referredByMaxUserId ? `MAX ID ${customer.referredByMaxUserId}` : "—"))}</span></div>
+                            <div class="summary-row"><span>Реферальный код</span><span>${escapeHtml(customer.referralCode || "—")}</span></div>
                         </div>
                         <div class="summary-card">
                             <div class="admin-block-title">Корзина и заказы</div>
@@ -3329,8 +3371,20 @@ function renderAdminCustomerModal() {
                             <div class="summary-row"><span>Всего заказов</span><strong>${customer.ordersCount || 0}</strong></div>
                             <div class="summary-row"><span>Оплаченных</span><strong>${customer.completedOrdersCount || 0}</strong></div>
                             <div class="summary-row"><span>Последний заказ</span><span>${escapeHtml(customer.latestOrderCode || "—")}</span></div>
+                            <div class="summary-row"><span>Приглашено пользователей</span><strong>${customer.referredUsersCount || 0}</strong></div>
+                            <div class="summary-row"><span>Заказов приглашённых</span><strong>${customer.referralOrdersCount || 0}</strong></div>
                             <div class="summary-row"><span>Дата приглашения</span><span>${customer.referredAt ? formatDate(customer.referredAt) : "—"}</span></div>
                         </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="admin-section-head compact">
+                            <div>
+                                <div class="admin-block-title">Реферальная ссылка клиента</div>
+                                <p>Персональная ссылка этого пользователя для приглашений</p>
+                            </div>
+                            ${customer.referralLink ? `<button class="admin-table-btn" data-action="copy-customer-referral-link" data-max-user-id="${customer.maxUserId}">Скопировать</button>` : ""}
+                        </div>
+                        <div class="search-muted referral-link-text">${escapeHtml(customer.referralLink || "Ссылка станет доступна после получения публичного адреса бота")}</div>
                     </div>
                     <div class="admin-customer-grid">
                         <div class="summary-card">
@@ -3385,11 +3439,56 @@ function renderAdminCustomerModal() {
                                         <div class="admin-list-stack compact end">
                                             ${renderAdminStatusBadge(order.status, order.statusLabel)}
                                             <span class="search-muted">${formatDate(order.createdAt)}</span>
+                                            <button class="admin-table-btn" data-action="open-admin-order" data-order-id="${order.id}">Полный заказ</button>
                                         </div>
                                     </div>
                                 `).join("")}
                             </div>
                         ` : `<div class="search-muted">Пока нет оформленных заказов.</div>`}
+                    </div>
+                    <div class="admin-customer-grid">
+                        <div class="summary-card">
+                            <div class="admin-block-title">Приглашённые пользователи</div>
+                            ${referredUsers.length ? `
+                                <div class="admin-customer-order-list">
+                                    ${referredUsers.map(user => `
+                                        <div class="admin-customer-order-row">
+                                            <div>
+                                                <strong>${escapeHtml(user.displayName || "Пользователь MAX")}</strong>
+                                                <div class="search-muted">${user.username ? `@${escapeHtml(user.username)}` : `MAX ID ${user.maxUserId}`}</div>
+                                                <div class="search-muted">Приглашён: ${user.referredAt ? formatDate(user.referredAt) : "—"}</div>
+                                            </div>
+                                            <div class="admin-list-stack compact end">
+                                                <strong>${user.ordersCount || 0} заказов</strong>
+                                                <span class="search-muted">Оплачено: ${user.completedOrdersCount || 0}</span>
+                                                ${user.latestOrderCode ? `<span class="search-muted">${escapeHtml(user.latestOrderCode)}</span>` : ""}
+                                            </div>
+                                        </div>
+                                    `).join("")}
+                                </div>
+                            ` : `<div class="search-muted">Пока нет приглашённых пользователей.</div>`}
+                        </div>
+                        <div class="summary-card">
+                            <div class="admin-block-title">Заказы приглашённых</div>
+                            ${referredOrders.length ? `
+                                <div class="admin-customer-order-list">
+                                    ${referredOrders.map(order => `
+                                        <div class="admin-customer-order-row">
+                                            <div>
+                                                <strong>${escapeHtml(order.publicCode)}</strong>
+                                                <div class="search-muted">${escapeHtml(order.referredUserDisplayName || "Пользователь MAX")}${order.referredUserUsername ? ` · @${escapeHtml(order.referredUserUsername)}` : ""}</div>
+                                                <div class="search-muted">${escapeHtml(summarizeOrderItems(order.items || []))}</div>
+                                            </div>
+                                            <div class="admin-list-stack compact end">
+                                                ${renderAdminStatusBadge(order.status, order.statusLabel)}
+                                                <span class="search-muted">${formatDate(order.createdAt)}</span>
+                                                <button class="admin-table-btn" data-action="open-admin-order" data-order-id="${order.id}">Полный заказ</button>
+                                            </div>
+                                        </div>
+                                    `).join("")}
+                                </div>
+                            ` : `<div class="search-muted">Заказов от приглашённых пока нет.</div>`}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3597,6 +3696,10 @@ function handleClick(event) {
     }
     if (action === "copy-referral-link") {
         copyReferralLink().catch(handleActionError);
+        return;
+    }
+    if (action === "copy-customer-referral-link") {
+        copyCustomerReferralLink(button.dataset.maxUserId).catch(handleActionError);
         return;
     }
     if (action === "gallery-prev" || action === "gallery-next") {
@@ -3865,7 +3968,8 @@ function handleClick(event) {
         return;
     }
     if (action === "open-admin-order") {
-        state.admin.orderModal = { open: true, orderId: Number(button.dataset.orderId) };
+        openAdminOrderModal(Number(button.dataset.orderId));
+        state.admin.customerModal = { open: false, maxUserId: null };
         render();
         return;
     }
@@ -3953,26 +4057,6 @@ function handleInput(event) {
     if (field === "admin-product-search") {
         state.admin.catalogSearch = event.target.value;
         scheduleDeferredSearchRender("admin");
-        return;
-    }
-    if (field === "admin-link-culture") {
-        state.admin.linkBuilder.culture = event.target.value;
-        renderPreservingFocus();
-        return;
-    }
-    if (field === "admin-link-subcategory") {
-        state.admin.linkBuilder.subcategory = event.target.value;
-        renderPreservingFocus();
-        return;
-    }
-    if (field === "admin-link-manufacturer") {
-        state.admin.linkBuilder.manufacturer = event.target.value;
-        renderPreservingFocus();
-        return;
-    }
-    if (field === "admin-link-active-ingredient") {
-        state.admin.linkBuilder.activeIngredient = event.target.value;
-        renderPreservingFocus();
         return;
     }
     if (field === "admin-product-category") {
@@ -4186,20 +4270,42 @@ function handleChange(event) {
         render();
         return;
     }
-    if (field === "admin-link-section") {
-        state.admin.linkBuilder.section = event.target.value;
-        state.admin.linkBuilder.culture = "";
-        state.admin.linkBuilder.subcategory = "";
-        state.admin.linkBuilder.manufacturer = "";
-        state.admin.linkBuilder.activeIngredient = "";
-        if (normalize(event.target.value) !== normalize("Семена")) {
-            state.admin.linkBuilder.fao = "";
+    if (field === "admin-link-filter") {
+        const key = event.target.dataset.filterKey || "";
+        const allowedKeys = new Set([
+            "cultures",
+            "subcategories",
+            "manufacturers",
+            "activeIngredients",
+            "seedFaoRanges",
+            "seedMaturityGroups",
+            "seedTreatmentTechnologies",
+            "seedReproductionValues",
+        ]);
+        if (!allowedKeys.has(key)) {
+            return;
         }
+        const builder = getAdminLinkBuilder();
+        builder[key] = event.target.checked
+            ? uniqueValues([...(builder[key] || []), event.target.value])
+            : (builder[key] || []).filter(item => item !== event.target.value);
+        state.admin.linkBuilder = builder;
         render();
         return;
     }
-    if (field === "admin-link-fao") {
-        state.admin.linkBuilder.fao = event.target.value;
+    if (field === "admin-link-section") {
+        state.admin.linkBuilder = {
+            ...getAdminLinkBuilder(),
+            section: event.target.value,
+            cultures: [],
+            subcategories: [],
+            manufacturers: [],
+            activeIngredients: [],
+            seedFaoRanges: [],
+            seedMaturityGroups: [],
+            seedTreatmentTechnologies: [],
+            seedReproductionValues: [],
+        };
         render();
         return;
     }
@@ -7127,7 +7233,7 @@ function buildCatalogShareUrl() {
 }
 
 function buildAdminCatalogLink() {
-    const builder = state.admin.linkBuilder || {};
+    const builder = getAdminLinkBuilder();
     const baseUrl = String(
         state.meta?.miniAppUrl
         || `${window.location.origin}${window.location.pathname}`
@@ -7139,47 +7245,89 @@ function buildAdminCatalogLink() {
     if (builder.section) {
         url.searchParams.set("section", builder.section);
     }
-    if (builder.culture) {
-        url.searchParams.set("culture", builder.culture);
-    }
-    if (builder.fao) {
-        url.searchParams.set("fao", builder.fao);
-    }
-    if (builder.subcategory) {
-        url.searchParams.set("subcategory", builder.subcategory);
-    }
-    if (builder.manufacturer) {
-        url.searchParams.set("manufacturer", builder.manufacturer);
-    }
-    if (builder.activeIngredient) {
-        url.searchParams.set("activeIngredient", builder.activeIngredient);
-    }
+    appendCatalogUrlValues(url, "subcategory", builder.subcategories);
+    appendCatalogUrlValues(url, "culture", builder.cultures);
+    appendCatalogUrlValues(url, "manufacturer", builder.manufacturers);
+    appendCatalogUrlValues(url, "activeIngredient", builder.activeIngredients);
+    appendCatalogUrlValues(url, "fao", builder.seedFaoRanges);
+    appendCatalogUrlValues(url, "maturity", builder.seedMaturityGroups);
+    appendCatalogUrlValues(url, "technology", builder.seedTreatmentTechnologies);
+    appendCatalogUrlValues(url, "reproduction", builder.seedReproductionValues);
     return url.toString();
 }
 
 function getAdminLinkPreviewProducts() {
-    const builder = state.admin.linkBuilder || {};
+    const builder = getAdminLinkBuilder();
     const filters = emptyFilters();
     const section = builder.section || "";
     if (section) {
         filters.sections = [section];
     }
-    if (builder.culture) {
-        filters.cultures = [builder.culture];
-    }
-    if (builder.fao) {
-        filters.seedFaoRanges = [builder.fao];
-    }
-    if (builder.subcategory) {
-        filters.subcategories = [builder.subcategory];
-    }
-    if (builder.manufacturer) {
-        filters.manufacturers = [builder.manufacturer];
-    }
-    if (builder.activeIngredient) {
-        filters.activeIngredients = [builder.activeIngredient];
-    }
+    filters.cultures = [...builder.cultures];
+    filters.seedFaoRanges = [...builder.seedFaoRanges];
+    filters.subcategories = [...builder.subcategories];
+    filters.manufacturers = [...builder.manufacturers];
+    filters.activeIngredients = [...builder.activeIngredients];
+    filters.seedMaturityGroups = [...builder.seedMaturityGroups];
+    filters.seedTreatmentTechnologies = [...builder.seedTreatmentTechnologies];
+    filters.seedReproductionValues = [...builder.seedReproductionValues];
     return filterProductsByFilters(state.admin.products || [], filters, section);
+}
+
+function getAdminLinkBuilder() {
+    const raw = state.admin.linkBuilder || {};
+    return {
+        section: raw.section || "Семена",
+        cultures: normalizeBuilderArray(raw.cultures, raw.culture),
+        subcategories: normalizeBuilderArray(raw.subcategories, raw.subcategory),
+        manufacturers: normalizeBuilderArray(raw.manufacturers, raw.manufacturer),
+        activeIngredients: normalizeBuilderArray(raw.activeIngredients, raw.activeIngredient),
+        seedFaoRanges: normalizeBuilderArray(raw.seedFaoRanges, raw.fao),
+        seedMaturityGroups: normalizeBuilderArray(raw.seedMaturityGroups),
+        seedTreatmentTechnologies: normalizeBuilderArray(raw.seedTreatmentTechnologies),
+        seedReproductionValues: normalizeBuilderArray(raw.seedReproductionValues),
+    };
+}
+
+function normalizeBuilderArray(value, legacyValue = "") {
+    return uniqueValues([
+        ...(Array.isArray(value) ? value : []),
+        legacyValue,
+    ].map(item => String(item || "").trim()).filter(Boolean));
+}
+
+function getAdminLinkSubcategoryOptions(sectionName, products) {
+    const existing = uniqueValues((products || []).flatMap(product => getFilterSubcategoryValues(product, sectionName)).filter(Boolean));
+    return sortValuesByConfiguredOrder(sectionName, existing);
+}
+
+function getAdminLinkCultureOptions(sectionName, products) {
+    const existing = uniqueValues((products || []).flatMap(product => getFilterCultureValues(product, sectionName)).filter(Boolean));
+    const configured = normalize(sectionName) === normalize("Семена")
+        ? FIXED_SEED_CULTURE_OPTIONS.filter(option => existing.includes(option))
+        : existing;
+    return uniqueValues([...configured, ...existing]);
+}
+
+function getAvailableSeedFaoRanges(products) {
+    const values = new Set();
+    (products || []).forEach(product => {
+        const value = getSeedFaoRangeLabel(product);
+        if (value) {
+            values.add(value);
+        }
+    });
+    return SEED_FAO_RANGES.map(item => item.label).filter(label => values.has(label));
+}
+
+function getAvailableSeedMaturityGroups(products) {
+    const values = new Set((products || []).map(getSeedMaturityGroup).filter(Boolean));
+    return SEED_MATURITY_GROUPS.filter(item => values.has(item));
+}
+
+function getAvailableSeedTechnologies(products) {
+    const values = new Set((products || []).map(getSeedTreatmentTechnology).filter(Boolean));
+    return SEED_TREATMENT_TECHNOLOGIES.filter(item => values.has(item));
 }
 
 function filterProductsByFilters(products, filters, sectionName = "") {
@@ -7210,6 +7358,24 @@ function filterProductsByFilters(products, filters, sectionName = "") {
         filtered = filtered.filter(product => {
             const value = getSeedFaoRangeLabel(product);
             return value && filters.seedFaoRanges.includes(value);
+        });
+    }
+    if (filters.seedMaturityGroups?.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedMaturityGroup(product);
+            return value && filters.seedMaturityGroups.includes(value);
+        });
+    }
+    if (filters.seedTreatmentTechnologies?.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedTreatmentTechnology(product);
+            return value && filters.seedTreatmentTechnologies.includes(value);
+        });
+    }
+    if (filters.seedReproductionValues?.length) {
+        filtered = filtered.filter(product => {
+            const values = getSeedReproductionValues(product);
+            return values.some(value => filters.seedReproductionValues.includes(value));
         });
     }
     return filtered;
@@ -7247,6 +7413,44 @@ async function copyReferralLink() {
     const referralLink = state.admin.dashboard?.referralLink || state.profile?.referralLink || "";
     await copyTextToClipboard(referralLink);
     showNotice("Реферальная ссылка скопирована.");
+}
+
+async function copyCustomerReferralLink(maxUserId) {
+    const customer = state.admin.customers.find(item => String(item.maxUserId) === String(maxUserId));
+    await copyTextToClipboard(customer?.referralLink || "");
+    showNotice("Реферальная ссылка клиента скопирована.");
+}
+
+function openAdminOrderModal(orderId) {
+    const id = Number(orderId);
+    const knownOrder = findKnownAdminOrder(id);
+    if (knownOrder && !state.admin.orders.some(item => item.id === id)) {
+        state.admin.orders = [knownOrder, ...state.admin.orders];
+    }
+    state.admin.orderModal = { open: true, orderId: id };
+}
+
+function findKnownAdminOrder(orderId) {
+    const id = Number(orderId);
+    const adminOrder = state.admin.orders.find(item => item.id === id);
+    if (adminOrder) {
+        return adminOrder;
+    }
+    const dashboardOrder = (state.admin.dashboard?.latestOrders || []).find(item => item.id === id);
+    if (dashboardOrder) {
+        return dashboardOrder;
+    }
+    for (const customer of state.admin.customers || []) {
+        const directOrder = (customer.orders || []).find(item => item.id === id);
+        if (directOrder) {
+            return directOrder;
+        }
+        const referredOrder = (customer.referredOrders || []).find(item => item.id === id);
+        if (referredOrder) {
+            return referredOrder;
+        }
+    }
+    return null;
 }
 
 async function copyTextToClipboard(text) {

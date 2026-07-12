@@ -337,15 +337,21 @@ public class MiniAppApiController {
         Map<Long, List<CatalogOrder>> ordersByUser = orderService.listOrders(0, 2000).getContent().stream()
                 .filter(order -> order.getCustomerMaxUserId() != null)
                 .collect(Collectors.groupingBy(CatalogOrder::getCustomerMaxUserId));
-        Map<Long, AppUser> usersByMaxUserId = userService.listCustomersByLastSeen().stream()
+        List<AppUser> users = userService.listCustomersByLastSeen();
+        Map<Long, AppUser> usersByMaxUserId = users.stream()
                 .collect(Collectors.toMap(AppUser::getMaxUserId, user -> user, (left, right) -> left, LinkedHashMap::new));
-        return userService.listCustomersByLastSeen().stream()
+        return users.stream()
                 .filter(user -> !user.isAdmin())
                 .map(user -> toAdminCustomerDto(
                         user,
                         ordersByUser.getOrDefault(user.getMaxUserId(), List.of()),
                         usersByMaxUserId.get(user.getReferredByMaxUserId()),
-                        maxUserId
+                        maxUserId,
+                        users.stream()
+                                .filter(candidate -> Objects.equals(candidate.getReferredByMaxUserId(), user.getMaxUserId()))
+                                .toList(),
+                        ordersByUser,
+                        maxApiClient.getBotPublicUrl()
                 ))
                 .toList();
     }
@@ -429,7 +435,15 @@ public class MiniAppApiController {
         }
     }
 
-    private Map<String, Object> toAdminCustomerDto(AppUser user, List<CatalogOrder> orders, AppUser referrer, Long currentAdminId) {
+    private Map<String, Object> toAdminCustomerDto(
+            AppUser user,
+            List<CatalogOrder> orders,
+            AppUser referrer,
+            Long currentAdminId,
+            List<AppUser> referredUsers,
+            Map<Long, List<CatalogOrder>> ordersByUser,
+            String botPublicUrl
+    ) {
         Map<String, Object> draft = jsonHelper.readMap(user.getCheckoutDraftJson());
         List<Map<String, Object>> rawCartItems = jsonHelper.readValue(
                 user.getCartJson(),
@@ -502,6 +516,43 @@ public class MiniAppApiController {
         response.put("referredByCurrentAdmin", user.getReferredByMaxUserId() != null && Objects.equals(user.getReferredByMaxUserId(), currentAdminId));
         response.put("referredByDisplayName", referrer == null ? "" : referrer.getDisplayName());
         response.put("referredByUsername", referrer == null ? "" : referrer.getUsername());
+        response.put("referralCode", userService.buildReferralCode(user.getMaxUserId()));
+        response.put("referralLink", userService.buildReferralLink(user.getMaxUserId(), botPublicUrl));
+        response.put("referredUsersCount", referredUsers.size());
+        response.put("referralOrdersCount", referredUsers.stream()
+                .map(AppUser::getMaxUserId)
+                .filter(Objects::nonNull)
+                .map(ordersByUser::get)
+                .filter(Objects::nonNull)
+                .mapToLong(List::size)
+                .sum());
+        response.put("referredUsers", referredUsers.stream()
+                .map(referred -> toAdminReferredUserDto(referred, ordersByUser.getOrDefault(referred.getMaxUserId(), List.of())))
+                .toList());
+        response.put("referredOrders", referredUsers.stream()
+                .flatMap(referred -> ordersByUser.getOrDefault(referred.getMaxUserId(), List.of()).stream()
+                        .map(order -> {
+                            Map<String, Object> orderDto = new LinkedHashMap<>(orderService.toDto(order));
+                            orderDto.put("referredUserMaxUserId", referred.getMaxUserId());
+                            orderDto.put("referredUserDisplayName", referred.getDisplayName());
+                            orderDto.put("referredUserUsername", referred.getUsername());
+                            return orderDto;
+                        }))
+                .toList());
+        return response;
+    }
+
+    private Map<String, Object> toAdminReferredUserDto(AppUser user, List<CatalogOrder> orders) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("maxUserId", user.getMaxUserId());
+        response.put("displayName", user.getDisplayName());
+        response.put("username", user.getUsername());
+        response.put("createdAt", user.getCreatedAt());
+        response.put("lastSeenAt", user.getLastSeenAt());
+        response.put("referredAt", user.getReferredAt());
+        response.put("ordersCount", orders.size());
+        response.put("completedOrdersCount", orders.stream().filter(order -> "COMPLETED".equals(order.getStatus().name())).count());
+        response.put("latestOrderCode", orders.stream().findFirst().map(CatalogOrder::getPublicCode).orElse(""));
         return response;
     }
 
