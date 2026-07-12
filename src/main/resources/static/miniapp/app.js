@@ -313,6 +313,7 @@ const state = {
         manufacturerModal: { open: false, id: null, name: "", saving: false },
         broadcastForm: { text: "", imageUrl: "", imagePreviewUrl: "", imageName: "", imageFile: null, sending: false, uploading: false, uploadError: "" },
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
+        linkBuilder: { section: "Семена", culture: "Кукуруза", fao: "ФАО 200-250", manufacturer: "", subcategory: "", activeIngredient: "" },
     },
 };
 
@@ -1339,31 +1340,11 @@ function renderProductCard(product) {
                 <div class="price-line">
                     ${price}
                     ${cartItem
-                        ? renderCardCartQuantityEditor(product, cartItem.quantity, selectedReproduction)
+                        ? renderStepper(product.id, cartItem.quantity, "card", selectedReproduction)
                         : renderCardQuantityComposer(product, selectedReproduction)}
                 </div>
             </div>
         </article>
-    `;
-}
-
-function renderCardCartQuantityEditor(product, quantity, selectedReproduction = "") {
-    const reproduction = getSeedSelectedReproduction(product, selectedReproduction);
-    const unitName = getProductOrderDisplayUnit(product);
-    return `
-        <label class="card-qty-field card-qty-field-live" data-action="cart-quantity-focus">
-            <input
-                type="text"
-                inputmode="decimal"
-                data-action="cart-quantity-focus"
-                data-field="cart-quantity-input"
-                data-product-id="${product.id}"
-                data-reproduction="${escapeAttr(reproduction)}"
-                data-live="true"
-                aria-label="Количество товара"
-                value="${escapeAttr(resolveQuantityInputValue(product, reproduction, quantity))}">
-            <span>${escapeHtml(unitName)}</span>
-        </label>
     `;
 }
 
@@ -1491,15 +1472,24 @@ function formatCompactPackageDisplay(product) {
         return String(product?.packageDescription || product?.packageType || product?.unitName || "").trim();
     }
     if ((normalizedUnit === "л" || normalizedUnit.includes("лит") || normalizedUnit === "кг" || normalizedUnit.includes("кил")) && units > 1) {
-        return `${formatAdminNumber(volume)}x${formatAdminNumber(units)}`;
+        return `${formatAdminNumber(volume)} ${getCompactUnitLabel(config.unitName)} x ${formatAdminNumber(units)}`;
     }
     if (normalizedUnit === "л" || normalizedUnit.includes("лит")) {
-        return `${formatAdminNumber(volume)}л`;
+        return `${formatAdminNumber(volume)} л`;
     }
     if (normalizedUnit === "кг" || normalizedUnit.includes("кил")) {
-        return `${formatAdminNumber(volume)}кг`;
+        return `${formatAdminNumber(volume)} кг`;
     }
     return String(product?.packageDescription || "").trim();
+}
+
+function getCompactUnitLabel(unitName) {
+    const normalizedUnit = normalize(unitName || "");
+    if (normalizedUnit === "кг" || normalizedUnit.includes("кил")) return "кг";
+    if (normalizedUnit === "т" || normalizedUnit.includes("тон")) return "т";
+    if (normalizedUnit.includes("п е") || normalizedUnit.includes("пе")) return "п.е.";
+    if (normalizedUnit.startsWith("упак")) return "упак.";
+    return "л";
 }
 
 function renderProductPrice(product, selectedReproduction = "") {
@@ -1738,6 +1728,7 @@ function renderAdminPage() {
                     <div class="admin-sidebar-group">
                         <div class="admin-sidebar-label">Каталог</div>
                         ${renderAdminMenuButton("catalog", "◫", "Каталог", null)}
+                        ${renderAdminMenuButton("links", "↗", "Ссылки", null)}
                         ${renderAdminMenuButton("manufacturers", "◪", "Производители", null)}
                     </div>
                     <div class="admin-sidebar-group">
@@ -1782,6 +1773,8 @@ function getAdminPageMeta() {
     switch (state.admin.menu) {
         case "catalog":
             return { title: "Каталог", subtitle: "Структура разделов, товары и быстрые действия" };
+        case "links":
+            return { title: "Ссылки", subtitle: "Генерация ссылок на подборки товаров с фильтрами" };
         case "manufacturers":
             return { title: "Производители", subtitle: `Всего: ${state.admin.manufacturers.length} производителей` };
         case "orders":
@@ -1806,6 +1799,8 @@ function renderAdminContent() {
     switch (state.admin.menu) {
         case "catalog":
             return renderAdminCatalog();
+        case "links":
+            return renderAdminLinks();
         case "manufacturers":
             return renderAdminManufacturers();
         case "orders":
@@ -2007,6 +2002,76 @@ function renderAdminCatalog() {
                             </table>
                         </div>
                     ` : `<div class="empty-box admin-empty-box">По этому поиску товаров нет.</div>`}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminLinks() {
+    const builder = state.admin.linkBuilder || {};
+    const section = builder.section || "Семена";
+    const sectionProducts = section
+        ? state.admin.products.filter(product => getProductSectionName(product) === section)
+        : state.admin.products;
+    const cultureOptions = getCultureOptionsForSection(section, sectionProducts);
+    const manufacturerOptions = uniqueValues(sectionProducts.map(item => item.brand).filter(Boolean));
+    const subcategoryOptions = getAdminSubcategoryOptions(section);
+    const activeIngredientOptions = uniqueValues(sectionProducts.flatMap(item => extractActiveIngredientTerms(item)).filter(Boolean));
+    const link = buildAdminCatalogLink();
+    const previewCount = getAdminLinkPreviewProducts().length;
+    return `
+        <div class="admin-card admin-card-spacious admin-link-builder-card">
+            <div class="admin-section-head">
+                <div>
+                    <h3>Генератор ссылок</h3>
+                    <p>Ссылка открывает мини-апп сразу с выбранным разделом и фильтрами</p>
+                </div>
+                <button class="admin-primary-btn" data-action="copy-admin-catalog-link">Скопировать</button>
+            </div>
+            ${renderDatalist("admin-link-culture-options", cultureOptions)}
+            ${renderDatalist("admin-link-manufacturer-options", manufacturerOptions)}
+            ${renderDatalist("admin-link-subcategory-options", subcategoryOptions)}
+            ${renderDatalist("admin-link-active-ingredient-options", activeIngredientOptions)}
+            <div class="admin-form-grid admin-link-builder-grid">
+                <div class="admin-form-row admin-form-row-3">
+                    <div class="admin-field">
+                        <label>Раздел</label>
+                        <select data-field="admin-link-section">
+                            ${renderOptions(getAdminPrimarySections().map(item => [item, getSectionDisplayName(item)]), section)}
+                        </select>
+                    </div>
+                    <div class="admin-field">
+                        <label>Культура</label>
+                        <input data-field="admin-link-culture" list="admin-link-culture-options" value="${escapeAttr(builder.culture || "")}" placeholder="Кукуруза">
+                    </div>
+                    <div class="admin-field">
+                        <label>ФАО</label>
+                        <select data-field="admin-link-fao">
+                            ${renderOptions([["", "Без фильтра"], ...SEED_FAO_RANGES.map(item => [item.label, item.label])], builder.fao || "")}
+                        </select>
+                    </div>
+                </div>
+                <div class="admin-form-row admin-form-row-3">
+                    <div class="admin-field">
+                        <label>Подкатегория</label>
+                        <input data-field="admin-link-subcategory" list="admin-link-subcategory-options" value="${escapeAttr(builder.subcategory || "")}" placeholder="Опционально">
+                    </div>
+                    <div class="admin-field">
+                        <label>Производитель</label>
+                        <input data-field="admin-link-manufacturer" list="admin-link-manufacturer-options" value="${escapeAttr(builder.manufacturer || "")}" placeholder="Опционально">
+                    </div>
+                    <div class="admin-field">
+                        <label>Действующее вещество</label>
+                        <input data-field="admin-link-active-ingredient" list="admin-link-active-ingredient-options" value="${escapeAttr(builder.activeIngredient || "")}" placeholder="Опционально">
+                    </div>
+                </div>
+                <div class="admin-link-preview">
+                    <div>
+                        <div class="admin-block-title">Готовая ссылка</div>
+                        <div class="admin-link-url">${escapeHtml(link)}</div>
+                    </div>
+                    <div class="admin-visibility-pill">${previewCount} товаров</div>
                 </div>
             </div>
         </div>
@@ -3000,7 +3065,7 @@ function renderAdminProductModal() {
                             <div class="admin-field"><label>Упаковок в коробке</label><input name="unitsPerPackage" type="number" min="1" step="1" autocomplete="off" list="admin-units-per-package-options" value="${escapeAttr(orderConfig.unitsPerPackage || "")}" placeholder="2"></div>
                         </div>
                         <div class="admin-form-row admin-form-row-compact">
-                            <div class="admin-field admin-field-span-full"><label>Фасовка</label><input name="packageDescription" autocomplete="off" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "25x4" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
+                            <div class="admin-field admin-field-span-full"><label>Фасовка</label><input name="packageDescription" autocomplete="off" data-field="admin-product-package-description" data-options-id="admin-package-description-options" data-suggest-mode="single" value="${escapeAttr(packageDescriptionValue)}" placeholder="${selectedCategory === "Пестициды" ? "10 л x 2" : "Коробка 2 × 10 л"}">${renderAdminSuggestionBox("admin-product-package-description")}</div>
                         </div>
                     </div>
                     <div class="admin-form-section admin-form-section-order">
@@ -3526,6 +3591,10 @@ function handleClick(event) {
         copyCatalogLink().catch(handleActionError);
         return;
     }
+    if (action === "copy-admin-catalog-link") {
+        copyAdminCatalogLink().catch(handleActionError);
+        return;
+    }
     if (action === "copy-referral-link") {
         copyReferralLink().catch(handleActionError);
         return;
@@ -3886,6 +3955,26 @@ function handleInput(event) {
         scheduleDeferredSearchRender("admin");
         return;
     }
+    if (field === "admin-link-culture") {
+        state.admin.linkBuilder.culture = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-link-subcategory") {
+        state.admin.linkBuilder.subcategory = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-link-manufacturer") {
+        state.admin.linkBuilder.manufacturer = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
+    if (field === "admin-link-active-ingredient") {
+        state.admin.linkBuilder.activeIngredient = event.target.value;
+        renderPreservingFocus();
+        return;
+    }
     if (field === "admin-product-category") {
         state.admin.productEditor.categoryDraft = event.target.value;
         const nextOptions = getAdminSubcategoryOptions(event.target.value);
@@ -4094,6 +4183,23 @@ function handleChange(event) {
     }
     if (field === "admin-product-status") {
         state.admin.catalogStatus = event.target.value;
+        render();
+        return;
+    }
+    if (field === "admin-link-section") {
+        state.admin.linkBuilder.section = event.target.value;
+        state.admin.linkBuilder.culture = "";
+        state.admin.linkBuilder.subcategory = "";
+        state.admin.linkBuilder.manufacturer = "";
+        state.admin.linkBuilder.activeIngredient = "";
+        if (normalize(event.target.value) !== normalize("Семена")) {
+            state.admin.linkBuilder.fao = "";
+        }
+        render();
+        return;
+    }
+    if (field === "admin-link-fao") {
+        state.admin.linkBuilder.fao = event.target.value;
         render();
         return;
     }
@@ -4432,12 +4538,12 @@ async function saveAdminProduct(formData) {
         if (unitsPerPackage != null && unitsPerPackage > 1 && packageVolume != null && packageVolume > 0) {
             packageType = "коробка";
             packageDescription = hasManualPackageDescription ? packageDescriptionInput : (category === "Пестициды"
-                ? `${formatAdminNumber(packageVolume)}x${formatAdminNumber(unitsPerPackage)}`
+                ? `${formatAdminNumber(packageVolume)} ${unitName} x ${formatAdminNumber(unitsPerPackage)}`
                 : `Коробка ${formatAdminNumber(unitsPerPackage)} × ${formatAdminNumber(packageVolume)} ${unitName}`);
         } else if (packageVolume != null && packageVolume > 0) {
             packageType = "упаковка";
             packageDescription = hasManualPackageDescription ? packageDescriptionInput : (category === "Пестициды"
-                ? `${formatAdminNumber(packageVolume)}${unitName}`
+                ? `${formatAdminNumber(packageVolume)} ${unitName}`
                 : `${formatAdminNumber(packageVolume)} ${unitName}`);
         } else {
             packageDescription = hasManualPackageDescription ? packageDescriptionInput : unitName;
@@ -7020,6 +7126,95 @@ function buildCatalogShareUrl() {
     return url.toString();
 }
 
+function buildAdminCatalogLink() {
+    const builder = state.admin.linkBuilder || {};
+    const baseUrl = String(
+        state.meta?.miniAppUrl
+        || `${window.location.origin}${window.location.pathname}`
+    ).trim();
+    const url = new URL(baseUrl, window.location.href);
+    url.searchParams.delete("maxUserId");
+    url.searchParams.delete("product");
+    url.searchParams.delete("productId");
+    if (builder.section) {
+        url.searchParams.set("section", builder.section);
+    }
+    if (builder.culture) {
+        url.searchParams.set("culture", builder.culture);
+    }
+    if (builder.fao) {
+        url.searchParams.set("fao", builder.fao);
+    }
+    if (builder.subcategory) {
+        url.searchParams.set("subcategory", builder.subcategory);
+    }
+    if (builder.manufacturer) {
+        url.searchParams.set("manufacturer", builder.manufacturer);
+    }
+    if (builder.activeIngredient) {
+        url.searchParams.set("activeIngredient", builder.activeIngredient);
+    }
+    return url.toString();
+}
+
+function getAdminLinkPreviewProducts() {
+    const builder = state.admin.linkBuilder || {};
+    const filters = emptyFilters();
+    const section = builder.section || "";
+    if (section) {
+        filters.sections = [section];
+    }
+    if (builder.culture) {
+        filters.cultures = [builder.culture];
+    }
+    if (builder.fao) {
+        filters.seedFaoRanges = [builder.fao];
+    }
+    if (builder.subcategory) {
+        filters.subcategories = [builder.subcategory];
+    }
+    if (builder.manufacturer) {
+        filters.manufacturers = [builder.manufacturer];
+    }
+    if (builder.activeIngredient) {
+        filters.activeIngredients = [builder.activeIngredient];
+    }
+    return filterProductsByFilters(state.admin.products || [], filters, section);
+}
+
+function filterProductsByFilters(products, filters, sectionName = "") {
+    let filtered = [...(products || [])];
+    const effectiveSection = filters.sections?.[0] || sectionName || "";
+    if (filters.sections?.length) {
+        filtered = filtered.filter(product => filters.sections.includes(getProductSectionName(product)));
+    }
+    if (filters.cultures?.length) {
+        filtered = filtered.filter(product => getFilterCultureValues(product, effectiveSection).some(item => filters.cultures.includes(item)));
+    }
+    if (filters.manufacturers?.length) {
+        filtered = filtered.filter(product => filters.manufacturers.includes(product.brand));
+    }
+    if (filters.subcategories?.length) {
+        filtered = filtered.filter(product => {
+            const values = getFilterSubcategoryValues(product, effectiveSection);
+            return values.some(value => filters.subcategories.includes(value));
+        });
+    }
+    if (filters.activeIngredients?.length) {
+        filtered = filtered.filter(product => {
+            const terms = extractActiveIngredientTerms(product);
+            return filters.activeIngredients.some(value => terms.includes(value));
+        });
+    }
+    if (filters.seedFaoRanges?.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedFaoRangeLabel(product);
+            return value && filters.seedFaoRanges.includes(value);
+        });
+    }
+    return filtered;
+}
+
 function appendCatalogUrlValues(url, key, values) {
     uniqueValues(values || []).forEach(value => {
         if (value) {
@@ -7030,6 +7225,11 @@ function appendCatalogUrlValues(url, key, values) {
 
 async function copyCatalogLink() {
     await copyTextToClipboard(buildCatalogShareUrl());
+    showNotice("Ссылка на подборку скопирована.");
+}
+
+async function copyAdminCatalogLink() {
+    await copyTextToClipboard(buildAdminCatalogLink());
     showNotice("Ссылка на подборку скопирована.");
 }
 

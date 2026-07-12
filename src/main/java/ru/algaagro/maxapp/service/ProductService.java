@@ -38,7 +38,7 @@ public class ProductService {
     private static final BigDecimal DEFAULT_CATALOG_PRICE = new BigDecimal("10");
     private static final List<String> SUPPORTED_PRICE_CURRENCIES = List.of("RUB", "USD", "EUR");
     private static final Pattern BOX_MULTIPLIER_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
-    private static final Pattern VOLUME_X_COUNT_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов|т|тонна|тонны|п\\.?е\\.?)?\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)");
+    private static final Pattern VOLUME_X_COUNT_PATTERN = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов|т|тонна|тонны|п\\.?е\\.?|упак\\.?|упаковк[а-я]*)?\\s*[xх*]\\s*(\\d+(?:[.,]\\d+)?)");
     private static final Pattern BOX_TOTAL_PATTERN = Pattern.compile("(?i)короб[а-я]*[^\\d]{0,20}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern TOTAL_VOLUME_PATTERN = Pattern.compile("(?i)итог[ао]?[^\\d]{0,12}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
     private static final Pattern CANISTER_PATTERN = Pattern.compile("(?i)канистр[а-я]*[^\\d]{0,12}(\\d+(?:[.,]\\d+)?)\\s*(л|литр|литра|литров|кг|килограмм|килограмма|килограммов)");
@@ -1162,7 +1162,7 @@ public class ProductService {
                 minOrderQuantity = total;
                 orderStep = total;
                 packageType = "коробка";
-                packageDescription = formatQuantity(volume) + normalizeCompactPackageUnit(detectedUnit) + "x" + formatQuantity(units);
+                packageDescription = formatPackageVolumeCount(volume, detectedUnit, units);
             }
         }
 
@@ -1282,6 +1282,9 @@ public class ProductService {
         if (normalized.contains("п.е") || normalized.contains("пе")) {
             return "п.е.";
         }
+        if (normalized.startsWith("упак")) {
+            return "упак.";
+        }
         return "";
     }
 
@@ -1346,6 +1349,15 @@ public class ProductService {
         if (safe == null) {
             return null;
         }
+        Matcher volumeXCount = VOLUME_X_COUNT_PATTERN.matcher(safe);
+        if (volumeXCount.matches()) {
+            BigDecimal volume = parseFlexibleDecimal(volumeXCount.group(1));
+            BigDecimal units = parseFlexibleDecimal(volumeXCount.group(3));
+            String detectedUnit = firstNonBlank(volumeXCount.group(2), unitName);
+            if (volume != null && units != null) {
+                return formatPackageVolumeCount(volume, detectedUnit, units);
+            }
+        }
         if (containsExplicitPackageUnit(safe) || isNamedPackageDescription(safe)) {
             return safe;
         }
@@ -1353,22 +1365,22 @@ public class ProductService {
         if (compactUnit.isBlank()) {
             return safe;
         }
-        Matcher volumeXCount = VOLUME_X_COUNT_PATTERN.matcher(safe);
-        if (volumeXCount.matches()) {
-            BigDecimal volume = parseFlexibleDecimal(volumeXCount.group(1));
-            BigDecimal units = parseFlexibleDecimal(volumeXCount.group(3));
-            if (volume != null && units != null) {
-                return formatQuantity(volume) + compactUnit + "x" + formatQuantity(units);
-            }
-        }
         Matcher simpleNumber = SIMPLE_PACKAGE_NUMBER_PATTERN.matcher(safe);
         if (simpleNumber.matches()) {
             BigDecimal quantity = parseFlexibleDecimal(simpleNumber.group(1));
             if (quantity != null) {
-                return formatQuantity(quantity) + compactUnit;
+                return formatQuantity(quantity) + " " + compactUnit;
             }
         }
         return safe;
+    }
+
+    private String formatPackageVolumeCount(BigDecimal volume, String unitName, BigDecimal units) {
+        String compactUnit = normalizeCompactPackageUnit(unitName);
+        if (compactUnit.isBlank()) {
+            return formatQuantity(volume) + " x " + formatQuantity(units);
+        }
+        return formatQuantity(volume) + " " + compactUnit + " x " + formatQuantity(units);
     }
 
     private boolean containsExplicitPackageUnit(String packageDescription) {
@@ -1377,6 +1389,7 @@ public class ProductService {
                 || normalized.contains("кг")
                 || normalized.contains("кил")
                 || normalized.contains("тон")
+                || normalized.contains("упак")
                 || normalized.contains("п е")
                 || normalized.matches(".*(?:^| )л(?: |$).*")
                 || normalized.matches(".*(?:^| )т(?: |$).*")
