@@ -555,6 +555,12 @@ img {
     font-weight: 800;
 }
 
+.toolbar-icon-button {
+    width: 42px;
+    padding: 0;
+    flex: 0 0 auto;
+}
+
 .toolbar-select {
     padding: 0 12px;
     color: var(--text-700);
@@ -650,6 +656,9 @@ img {
     font-weight: 800;
     line-height: 1.25;
     min-height: 2.35em;
+    min-width: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
 }
 
 .product-card-badge-row {
@@ -758,9 +767,9 @@ img {
 
 .price-line {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
     min-width: 0;
 }
 
@@ -889,16 +898,17 @@ img {
 }
 
 .card-qty-add {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 38px;
     align-items: center;
-    justify-self: end;
+    justify-self: stretch;
     gap: 6px;
     min-width: 0;
 }
 
 .card-qty-field {
     min-width: 0;
-    width: 82px;
+    width: 100%;
     min-height: 34px;
     padding: 4px 8px;
     border-radius: 12px;
@@ -933,6 +943,10 @@ img {
     line-height: 1;
     white-space: nowrap;
     color: rgba(255, 255, 255, 0.82);
+}
+
+.card-qty-field-live {
+    justify-self: stretch;
 }
 
 .admin-empty-box {

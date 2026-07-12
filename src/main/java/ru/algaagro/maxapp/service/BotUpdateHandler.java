@@ -37,7 +37,6 @@ public class BotUpdateHandler {
     private final PostButtonService postButtonService;
     private final ExcelImportService excelImportService;
     private final ProductResearchService productResearchService;
-    private final ProductResearchLinksService productResearchLinksService;
     private final OrderService orderService;
     private final BroadcastService broadcastService;
     private final AppProperties appProperties;
@@ -50,7 +49,6 @@ public class BotUpdateHandler {
             PostButtonService postButtonService,
             ExcelImportService excelImportService,
             ProductResearchService productResearchService,
-            ProductResearchLinksService productResearchLinksService,
             OrderService orderService,
             BroadcastService broadcastService,
             AppProperties appProperties
@@ -62,7 +60,6 @@ public class BotUpdateHandler {
         this.postButtonService = postButtonService;
         this.excelImportService = excelImportService;
         this.productResearchService = productResearchService;
-        this.productResearchLinksService = productResearchLinksService;
         this.orderService = orderService;
         this.broadcastService = broadcastService;
         this.appProperties = appProperties;
@@ -142,10 +139,6 @@ public class BotUpdateHandler {
         }
         if (isManagerContactCommand(text)) {
             sendManagerContact(user.getMaxUserId(), user.isAdmin());
-            return;
-        }
-        if (user.isAdmin() && text != null && text.trim().startsWith("/researchlinks")) {
-            startProductsResearchLinks(user);
             return;
         }
         if (user.isAdmin() && text != null && text.trim().startsWith("/research")) {
@@ -336,16 +329,8 @@ public class BotUpdateHandler {
             continueProductsResearch(user, null);
             return true;
         }
-        if (normalized.equals("продолжить") && productResearchLinksService.hasResearchSession(user.getMaxUserId())) {
-            continueProductsResearchLinks(user, null);
-            return true;
-        }
         if (normalized.equals("остановить") && productResearchService.hasResearchSession(user.getMaxUserId())) {
             stopProductsResearch(user, null);
-            return true;
-        }
-        if (normalized.equals("остановить") && productResearchLinksService.hasResearchSession(user.getMaxUserId())) {
-            stopProductsResearchLinks(user, null);
             return true;
         }
         if (normalized.equals("добавить кнопку")) {
@@ -577,14 +562,6 @@ public class BotUpdateHandler {
             stopProductsResearch(user, callbackId);
             return;
         }
-        if ("research:links:continue".equals(payload) && user.isAdmin()) {
-            continueProductsResearchLinks(user, callbackId);
-            return;
-        }
-        if ("research:links:stop".equals(payload) && user.isAdmin()) {
-            stopProductsResearchLinks(user, callbackId);
-            return;
-        }
         if (payload.startsWith("admin:users:")) {
             int page = parseTailNumber(payload, "admin:users:");
             showUsers(user, page);
@@ -748,56 +725,6 @@ public class BotUpdateHandler {
         maxApiClient.sendToUser(user.getMaxUserId(), "⏹ " + message, keyboardFactory.adminMenu(), "html");
         if (callbackId != null) {
             maxApiClient.answerCallback(callbackId, "Research остановлен");
-        }
-    }
-
-    private void startProductsResearchLinks(AppUser user) {
-        maxApiClient.sendToUser(user.getMaxUserId(),
-                "🔗 Запускаю поиск ссылок AgroXXI для всех активных пестицидов. После первой партии можно сразу обработать все остальные товары одной кнопкой.",
-                null,
-                "html");
-        productResearchLinksService.startResearchAsync(
-                user.getMaxUserId(),
-                report -> maxApiClient.sendToUser(
-                        user.getMaxUserId(),
-                        report.text(),
-                        report.hasMore() ? keyboardFactory.researchKeyboard("research:links", true) : null,
-                        "html"),
-                summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
-                error -> maxApiClient.sendToUser(
-                        user.getMaxUserId(),
-                        "⚠️ Не удалось завершить researchlinks.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
-                        keyboardFactory.adminMenu(),
-                        "html")
-        );
-    }
-
-    private void continueProductsResearchLinks(AppUser user, String callbackId) {
-        if (callbackId != null) {
-            maxApiClient.answerCallback(callbackId, "Продолжаю до конца");
-        }
-        maxApiClient.sendToUser(user.getMaxUserId(),
-                "⏳ Продолжаю researchlinks до конца без промежуточных отчетов.",
-                null,
-                "html");
-        productResearchLinksService.continueResearchAsync(
-                user.getMaxUserId(),
-                true,
-                report -> { },
-                summary -> maxApiClient.sendToUser(user.getMaxUserId(), summary, keyboardFactory.adminMenu(), "html"),
-                error -> maxApiClient.sendToUser(
-                        user.getMaxUserId(),
-                        "⚠️ Не удалось продолжить researchlinks.\n\nТехническая заметка: " + TextUtils.trimTo(error, 700),
-                        keyboardFactory.adminMenu(),
-                        "html")
-        );
-    }
-
-    private void stopProductsResearchLinks(AppUser user, String callbackId) {
-        String message = productResearchLinksService.stopResearch(user.getMaxUserId());
-        maxApiClient.sendToUser(user.getMaxUserId(), "⏹ " + message, keyboardFactory.adminMenu(), "html");
-        if (callbackId != null) {
-            maxApiClient.answerCallback(callbackId, "Researchlinks остановлен");
         }
     }
 

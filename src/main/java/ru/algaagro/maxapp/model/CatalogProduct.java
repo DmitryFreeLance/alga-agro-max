@@ -39,7 +39,6 @@ public class CatalogProduct {
     private String unitName;
     private String packageType;
     private String packageDescription;
-    private String agroxxiUrl;
     private Long bitrixProductId;
     private Long bitrixPriceId;
     private String bitrixSyncHash;
@@ -202,14 +201,6 @@ public class CatalogProduct {
 
     public void setPackageDescription(String packageDescription) {
         this.packageDescription = packageDescription;
-    }
-
-    public String getAgroxxiUrl() {
-        return agroxxiUrl;
-    }
-
-    public void setAgroxxiUrl(String agroxxiUrl) {
-        this.agroxxiUrl = agroxxiUrl;
     }
 
     public Long getBitrixProductId() {

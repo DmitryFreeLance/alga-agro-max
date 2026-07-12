@@ -13,7 +13,7 @@ class KeyboardFactoryTest {
     void researchKeyboardUsesScopedCallbackButtonsForReliableContinueFlow() {
         KeyboardFactory keyboardFactory = new KeyboardFactory(new AppProperties());
 
-        List<Map<String, Object>> keyboard = keyboardFactory.researchKeyboard("research:links", true);
+        List<Map<String, Object>> keyboard = keyboardFactory.researchKeyboard("research:cultures", true);
         Map<String, Object> attachment = keyboard.get(0);
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) attachment.get("payload");
@@ -25,6 +25,6 @@ class KeyboardFactoryTest {
         assertThat(buttons.get(0)).extracting(button -> button.get("text"))
                 .containsExactly("▶️ Продолжить до конца", "⏹ Остановить");
         assertThat(buttons.get(0)).extracting(button -> button.get("payload"))
-                .containsExactly("research:links:continue", "research:links:stop");
+                .containsExactly("research:cultures:continue", "research:cultures:stop");
     }
 }

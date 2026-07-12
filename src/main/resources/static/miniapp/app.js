@@ -357,6 +357,7 @@ async function bootstrap() {
     const criticalProducts = fetchJson("/api/catalog/products?sort=name").then(products => {
         state.products = decorateProductsForUi(products);
         state.sections = getCatalogSections();
+        applyCatalogDeepLinkFromUrl();
         syncProductModalFromUrl();
         state.app.catalogLoading = false;
         render();
@@ -866,6 +867,7 @@ function renderSectionPage() {
             ${renderSectionStructure(state.catalog.section, products)}
             <div class="toolbar-row catalog-toolbar-compact" data-products-anchor="catalog-results">
                 <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Ещё фильтры</button>
+                <button type="button" class="toolbar-button toolbar-icon-button" data-action="copy-catalog-link" aria-label="Скопировать ссылку на подборку">🔗</button>
                 <select class="toolbar-select" data-field="catalog-sort">
                     ${renderSortOptions()}
                 </select>
@@ -1337,11 +1339,31 @@ function renderProductCard(product) {
                 <div class="price-line">
                     ${price}
                     ${cartItem
-                        ? renderStepper(product.id, cartItem.quantity, "card", selectedReproduction)
+                        ? renderCardCartQuantityEditor(product, cartItem.quantity, selectedReproduction)
                         : renderCardQuantityComposer(product, selectedReproduction)}
                 </div>
             </div>
         </article>
+    `;
+}
+
+function renderCardCartQuantityEditor(product, quantity, selectedReproduction = "") {
+    const reproduction = getSeedSelectedReproduction(product, selectedReproduction);
+    const unitName = getProductOrderDisplayUnit(product);
+    return `
+        <label class="card-qty-field card-qty-field-live" data-action="cart-quantity-focus">
+            <input
+                type="text"
+                inputmode="decimal"
+                data-action="cart-quantity-focus"
+                data-field="cart-quantity-input"
+                data-product-id="${product.id}"
+                data-reproduction="${escapeAttr(reproduction)}"
+                data-live="true"
+                aria-label="Количество товара"
+                value="${escapeAttr(resolveQuantityInputValue(product, reproduction, quantity))}">
+            <span>${escapeHtml(unitName)}</span>
+        </label>
     `;
 }
 
@@ -3083,11 +3105,6 @@ function renderAdminProductModal() {
                                 <span>Для теплицы</span>
                             </label>
                         </div>
-                        ${selectedCategory === "Пестициды" ? `
-                            <div class="admin-form-row admin-form-row-compact">
-                                <div class="admin-field admin-field-span-full"><label>Ссылка AgroXXI</label><input name="agroxxiUrl" type="url" value="${escapeAttr(product?.agroxxiUrl || "")}" placeholder="https://www.agroxxi.ru/goshandbook/prep/..."></div>
-                            </div>
-                        ` : ""}
                     </div>
                     <div class="admin-actions">
                         ${product ? `<button type="button" class="ghost-btn ${product.active ? "danger" : ""}" data-action="toggle-admin-product-active" data-product-id="${product.id}">${product.active ? "Скрыть" : "Показать"}</button>` : ""}
@@ -3503,6 +3520,10 @@ function handleClick(event) {
     }
     if (action === "copy-product-link") {
         copyProductLink(Number(button.dataset.productId)).catch(handleActionError);
+        return;
+    }
+    if (action === "copy-catalog-link") {
+        copyCatalogLink().catch(handleActionError);
         return;
     }
     if (action === "copy-referral-link") {
@@ -4359,7 +4380,6 @@ async function saveAdminProduct(formData) {
     const seedVegetationPeriod = String(formData.get("seedVegetationPeriod") || "").trim();
     let cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
     const seedTreatment = String(formData.get("seedTreatment") || "").trim();
-    const agroxxiUrl = String(formData.get("agroxxiUrl") || "").trim();
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproduction);
     const seedReproductionPrices = {};
     const seedReproductionCurrencyPrices = {};
@@ -4496,7 +4516,6 @@ async function saveAdminProduct(formData) {
         brand: String(formData.get("brand") || "").trim(),
         description: String(formData.get("description") || "").trim(),
         unitName,
-        agroxxiUrl,
         price: effectiveBasePrice,
         stockQuantity: existingProduct?.stockQuantity ?? null,
         packageType,
@@ -4562,7 +4581,6 @@ function buildAdminProductPayload(product, overrides = {}) {
         name: product.name || "",
         description: product.description || "",
         brand: product.brand || "",
-        agroxxiUrl: product.agroxxiUrl || "",
         category: product.category || "",
         subcategory: product.subcategory || "",
         itemType: product.itemType || "",
@@ -5686,6 +5704,7 @@ function openProductModal(productId, options = {}) {
 }
 
 function handlePopState() {
+    applyCatalogDeepLinkFromUrl();
     syncProductModalFromUrl();
     render();
 }
@@ -6803,6 +6822,128 @@ function getRequestedProductIdFromUrl() {
     }
 }
 
+function applyCatalogDeepLinkFromUrl() {
+    let url;
+    try {
+        url = new URL(window.location.href);
+    } catch (error) {
+        return;
+    }
+    if (getRequestedProductIdFromUrl()) {
+        return;
+    }
+    const params = url.searchParams;
+    const rawSection = firstUrlParam(params, ["section", "category", "cat"]);
+    const hasCatalogParams = rawSection
+        || firstUrlParam(params, ["culture", "cultures"])
+        || firstUrlParam(params, ["fao", "seedFao"])
+        || firstUrlParam(params, ["manufacturer", "brand"])
+        || firstUrlParam(params, ["subcategory", "subcat"])
+        || firstUrlParam(params, ["activeIngredient", "ingredient"])
+        || firstUrlParam(params, ["q", "query"]);
+    if (!hasCatalogParams) {
+        return;
+    }
+    const section = resolveSectionUrlParam(rawSection);
+    const nextFilters = emptyFilters();
+    if (section) {
+        nextFilters.sections = [section];
+        state.catalog.section = section;
+    }
+    nextFilters.cultures = resolveUrlFilterValues(params, ["culture", "cultures"]);
+    nextFilters.manufacturers = resolveUrlFilterValues(params, ["manufacturer", "brand"]);
+    nextFilters.subcategories = resolveUrlFilterValues(params, ["subcategory", "subcat"]);
+    nextFilters.activeIngredients = resolveUrlFilterValues(params, ["activeIngredient", "ingredient"]);
+    nextFilters.seedFaoRanges = resolveUrlFilterValues(params, ["fao", "seedFao"])
+        .map(resolveSeedFaoUrlParam)
+        .filter(Boolean);
+    nextFilters.seedMaturityGroups = resolveUrlFilterValues(params, ["maturity", "seedMaturity"]);
+    nextFilters.seedTreatmentTechnologies = resolveUrlFilterValues(params, ["technology", "seedTechnology"]);
+    nextFilters.seedReproductionValues = resolveUrlFilterValues(params, ["reproduction", "seedReproduction"])
+        .map(normalizeSeedReproductionValue)
+        .filter(Boolean);
+    nextFilters.priceMin = firstUrlParam(params, ["priceMin", "minPrice"]) || "";
+    nextFilters.priceMax = firstUrlParam(params, ["priceMax", "maxPrice"]) || "";
+    state.catalog.query = firstUrlParam(params, ["q", "query"]) || "";
+    state.catalog.applied = cloneFilters(nextFilters);
+    state.catalog.draft = cloneFilters(nextFilters);
+    state.catalog.filterPanels = defaultFilterPanels();
+    state.catalog.scrollToProductsPending = true;
+}
+
+function firstUrlParam(params, keys) {
+    for (const key of keys) {
+        const value = params.get(key);
+        if (value != null && String(value).trim() !== "") {
+            return String(value).trim();
+        }
+    }
+    return "";
+}
+
+function resolveUrlFilterValues(params, keys) {
+    const values = [];
+    keys.forEach(key => {
+        params.getAll(key).forEach(value => {
+            String(value || "")
+                .split(",")
+                .map(item => item.trim())
+                .filter(Boolean)
+                .forEach(item => values.push(item));
+        });
+    });
+    return uniqueValues(values);
+}
+
+function resolveSectionUrlParam(rawValue) {
+    const normalized = normalize(rawValue);
+    if (!normalized) {
+        return "";
+    }
+    const match = FIXED_SECTION_DEFINITIONS.find(section => {
+        const candidates = [
+            section.name,
+            section.key,
+            ...(section.aliases || []),
+        ];
+        return candidates.some(candidate => normalize(candidate) === normalized);
+    });
+    return match?.name || rawValue;
+}
+
+function resolveSeedFaoUrlParam(rawValue) {
+    const value = String(rawValue || "").trim();
+    if (!value) {
+        return "";
+    }
+    const normalized = normalize(value);
+    const direct = SEED_FAO_RANGES.find(range => normalize(range.label) === normalized);
+    if (direct) {
+        return direct.label;
+    }
+    const numericRange = normalized.match(/(\d{2,3})\D+(\d{2,3})/);
+    if (numericRange) {
+        const start = Number(numericRange[1]);
+        const end = Number(numericRange[2]);
+        const rangeMatch = SEED_FAO_RANGES.find(range => {
+            const min = range.min ?? Number.NEGATIVE_INFINITY;
+            const max = range.max ?? Number.POSITIVE_INFINITY;
+            return start >= min && end <= max + 1;
+        });
+        return rangeMatch?.label || value;
+    }
+    const numeric = Number((value.match(/\d{2,3}/) || [])[0]);
+    if (Number.isFinite(numeric)) {
+        const rangeMatch = SEED_FAO_RANGES.find(range => {
+            const min = range.min ?? Number.NEGATIVE_INFINITY;
+            const max = range.max ?? Number.POSITIVE_INFINITY;
+            return numeric >= min && numeric <= max;
+        });
+        return rangeMatch?.label || value;
+    }
+    return value.startsWith("ФАО") ? value : `ФАО ${value}`;
+}
+
 function updateBrowserProductUrl(productId) {
     if (!window.history?.replaceState) {
         return;
@@ -6828,6 +6969,68 @@ function buildProductShareUrl(productId) {
     url.searchParams.delete("product");
     url.searchParams.set("productId", String(productId));
     return url.toString();
+}
+
+function buildCatalogShareUrl() {
+    const baseUrl = String(
+        state.meta?.miniAppUrl
+        || `${window.location.origin}${window.location.pathname}`
+    ).trim();
+    const url = new URL(baseUrl, window.location.href);
+    const filters = state.catalog.applied || emptyFilters();
+    url.searchParams.delete("maxUserId");
+    url.searchParams.delete("product");
+    url.searchParams.delete("productId");
+    [
+        "section",
+        "category",
+        "culture",
+        "manufacturer",
+        "subcategory",
+        "activeIngredient",
+        "fao",
+        "maturity",
+        "technology",
+        "reproduction",
+        "priceMin",
+        "priceMax",
+        "q",
+    ].forEach(key => url.searchParams.delete(key));
+    const section = filters.sections[0] || state.catalog.section || "";
+    if (section) {
+        url.searchParams.set("section", section);
+    }
+    appendCatalogUrlValues(url, "culture", filters.cultures);
+    appendCatalogUrlValues(url, "manufacturer", filters.manufacturers);
+    appendCatalogUrlValues(url, "subcategory", filters.subcategories);
+    appendCatalogUrlValues(url, "activeIngredient", filters.activeIngredients);
+    appendCatalogUrlValues(url, "fao", filters.seedFaoRanges);
+    appendCatalogUrlValues(url, "maturity", filters.seedMaturityGroups);
+    appendCatalogUrlValues(url, "technology", filters.seedTreatmentTechnologies);
+    appendCatalogUrlValues(url, "reproduction", filters.seedReproductionValues);
+    if (filters.priceMin) {
+        url.searchParams.set("priceMin", filters.priceMin);
+    }
+    if (filters.priceMax) {
+        url.searchParams.set("priceMax", filters.priceMax);
+    }
+    if (state.catalog.query.trim()) {
+        url.searchParams.set("q", state.catalog.query.trim());
+    }
+    return url.toString();
+}
+
+function appendCatalogUrlValues(url, key, values) {
+    uniqueValues(values || []).forEach(value => {
+        if (value) {
+            url.searchParams.append(key, value);
+        }
+    });
+}
+
+async function copyCatalogLink() {
+    await copyTextToClipboard(buildCatalogShareUrl());
+    showNotice("Ссылка на подборку скопирована.");
 }
 
 async function copyProductLink(productId) {
