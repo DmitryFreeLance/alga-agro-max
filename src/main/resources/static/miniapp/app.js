@@ -1643,7 +1643,7 @@ function renderCheckoutPage() {
                     <div class="field">
                         <label>Состав заявки</label>
                         <div class="summary-card">
-                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.displayName || item.product.name)}</span><span>${formatQuantity(item.quantity)} ${escapeHtml(item.product.unitName || "ед.")}</span></div>`).join("")}
+                            ${getCartProducts().map(item => `<div class="summary-row"><span>${escapeHtml(item.displayName || item.product.name)}</span><span>${formatQuantity(item.quantity)} ${escapeHtml(getProductOrderDisplayUnit(item.product))}</span></div>`).join("")}
                             <div class="summary-row"><strong>Итого позиций</strong><strong>${getCartProducts().length}</strong></div>
                             ${renderCurrencyTotalsRows(getCartProducts(), "Итого")}
                         </div>
@@ -3008,19 +3008,19 @@ function inferAdminOrderConfig(product) {
     const preset = inferAdminOrderPreset(product);
     const description = String(product?.packageDescription || "").trim();
     const step = Number(product?.orderStep || 1);
-    const unitName = String(product?.unitName || "л").trim();
+    const unitName = getPackageUnitNameFromDescription(description) || String(product?.unitName || "л").trim();
     let packageVolume = "";
     let unitsPerPackage = "";
-    const volumeFirstBoxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:л|лит|кг|кил|т|тон|п\.?е\.?)?\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)/i);
-    const countFirstBoxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х)\s*(\d+(?:[.,]\d+)?)\s*(?:л|лит|кг|кил|т|тон|п\.?е\.?)\b/i)
+    const countFirstBoxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х|×)\s*(\d+(?:[.,]\d+)?)\s*(?:л|лит|кг|кил|т|тон|п\.?е\.?)/i)
         || description.match(/(\d+(?:[.,]\d+)?)\s*(?:шт|упаков(?:ки|ок)|канистр)[^\d]{0,12}(?:по\s*)?(\d+(?:[.,]\d+)?)/i);
-    const singleLike = description.match(/(\d+(?:[.,]\d+)?)\s*(л|лит|кг|кил|т)\b/i);
-    if (volumeFirstBoxLike) {
-        packageVolume = String(volumeFirstBoxLike[1]).replace(",", ".");
-        unitsPerPackage = String(volumeFirstBoxLike[2]).replace(",", ".");
-    } else if (countFirstBoxLike) {
+    const volumeFirstBoxLike = description.match(/(\d+(?:[.,]\d+)?)\s*(?:л|лит|кг|кил|т|тон|п\.?е\.?)?\s*(?:x|х|×)\s*(\d+(?:[.,]\d+)?)/i);
+    const singleLike = description.match(/(\d+(?:[.,]\d+)?)\s*(л|лит|кг|кил|т)/i);
+    if (countFirstBoxLike) {
         unitsPerPackage = String(countFirstBoxLike[1]).replace(",", ".");
         packageVolume = String(countFirstBoxLike[2]).replace(",", ".");
+    } else if (volumeFirstBoxLike) {
+        packageVolume = String(volumeFirstBoxLike[1]).replace(",", ".");
+        unitsPerPackage = String(volumeFirstBoxLike[2]).replace(",", ".");
     } else if (singleLike) {
         packageVolume = String(singleLike[1]).replace(",", ".");
         unitsPerPackage = "1";
@@ -3038,6 +3038,32 @@ function inferAdminOrderConfig(product) {
         packageVolume,
         unitsPerPackage,
     };
+}
+
+function getPackageUnitNameFromDescription(description) {
+    const text = String(description || "").trim();
+    if (!text) {
+        return "";
+    }
+    const unitPattern = "(п\\s*\\.?\\s*е\\.?|кг|кил(?:о|ограмм)?|лит(?:р|ра|ров|ры)?|л|тонн?[а-я]*|т)";
+    const patterns = [
+        new RegExp(`\\d+(?:[.,]\\d+)?\\s*${unitPattern}\\s*(?:x|х|×|$|\\s)`, "i"),
+        new RegExp(`(?:x|х|×)\\s*\\d+(?:[.,]\\d+)?\\s*${unitPattern}`, "i"),
+        new RegExp(`^\\s*${unitPattern}\\s*$`, "i"),
+    ];
+    const match = patterns.map(pattern => text.match(pattern)).find(Boolean);
+    return normalizeOrderUnitName(match?.[1] || "");
+}
+
+function normalizeOrderUnitName(unitName) {
+    const normalized = normalize(unitName).replace(/ё/g, "е");
+    if (!normalized) return "";
+    if (/п\s*\.?\s*е/.test(normalized) || normalized.includes("пе")) return "п.е.";
+    if (normalized === "кг" || normalized.includes("кил")) return "кг";
+    if (normalized === "т" || normalized.includes("тон")) return "т";
+    if (normalized === "л" || normalized.includes("лит")) return "л";
+    if (normalized.includes("шт")) return "шт";
+    return String(unitName || "").trim();
 }
 
 function renderAdminProductModal() {
@@ -5768,13 +5794,14 @@ function adjustCartQuantity(productId, direction, selectedReproduction = "") {
     const product = getProductById(productId);
     if (!product) return;
     const normalizedReproduction = getSeedSelectedReproduction(product, selectedReproduction);
+    const orderConfig = getProductOrderQuantityConfig(product);
     const current = getEffectiveQuantityValue(
         product,
         normalizedReproduction,
         getCartItem(productId, normalizedReproduction)?.quantity || 0
     );
-    const step = Number(product.orderStep || 1);
-    const min = Number(product.minOrderQuantity || 1);
+    const step = orderConfig.step;
+    const min = orderConfig.min;
     const next = direction > 0
         ? (current > 0 ? current + step : min)
         : current - step;
@@ -5787,15 +5814,36 @@ function adjustCartQuantity(productId, direction, selectedReproduction = "") {
 }
 
 function getSanitizedQuantityForProduct(product, quantity) {
-    const step = Math.max(0.001, Number(product.orderStep || 1));
-    const min = Math.max(0.001, Number(product.minOrderQuantity || 1));
+    const { step, min } = getProductOrderQuantityConfig(product);
     const safeQuantity = Math.max(min, Number(quantity) || min);
     if (safeQuantity <= min) return roundQuantity(min);
     return roundQuantity(min + Math.round((safeQuantity - min) / step) * step);
 }
 
 function getInitialQuantity(product) {
-    return roundQuantity(Math.max(0.001, Number(product.minOrderQuantity || 1)));
+    return getProductOrderQuantityConfig(product).min;
+}
+
+function getProductOrderQuantityConfig(product) {
+    const fallbackStep = Math.max(0.001, Number(product?.orderStep || 1));
+    const fallbackMin = Math.max(0.001, Number(product?.minOrderQuantity || fallbackStep || 1));
+    const adminConfig = inferAdminOrderConfig(product);
+    const packageVolume = parseOptionalNumber(adminConfig.packageVolume);
+    const unitName = normalizeOrderUnitName(adminConfig.unitName || product?.unitName || "");
+    if (packageVolume != null && packageVolume > 0 && shouldUsePackageVolumeForQuantity(unitName)) {
+        const step = roundQuantity(packageVolume);
+        return { min: step, step, unitName };
+    }
+    return {
+        min: roundQuantity(fallbackMin),
+        step: roundQuantity(fallbackStep),
+        unitName,
+    };
+}
+
+function shouldUsePackageVolumeForQuantity(unitName) {
+    const normalizedUnit = normalizeOrderUnitName(unitName);
+    return ["л", "кг", "т", "п.е."].includes(normalizedUnit);
 }
 
 function removeFromCart(productId, selectedReproduction = "") {
@@ -6871,8 +6919,18 @@ function formatQuantityWithUnit(value, unitName) {
 }
 
 function getProductOrderDisplayUnit(product) {
-    const unitName = String(product?.orderDisplayUnit || product?.unitName || "упак").trim() || "упак";
-    return normalize(unitName) === normalize("шт") ? "упак" : unitName;
+    const unitName = product?.orderDisplayUnit || getProductOrderQuantityConfig(product).unitName || product?.unitName || "ед.";
+    return getOrderUnitDisplayLabel(unitName);
+}
+
+function getOrderUnitDisplayLabel(unitName) {
+    const normalizedUnit = normalizeOrderUnitName(unitName);
+    if (normalizedUnit === "л") return "л";
+    if (normalizedUnit === "кг") return "кг";
+    if (normalizedUnit === "т") return "т";
+    if (normalizedUnit === "п.е.") return "п.е.";
+    if (normalizedUnit === "шт") return "шт";
+    return String(unitName || "ед.").trim() || "ед.";
 }
 
 function roundQuantity(value) {
@@ -7215,6 +7273,7 @@ function updateBrowserProductUrl(productId) {
 }
 
 function buildProductShareUrl(productId) {
+    const product = getProductById(productId);
     const baseUrl = String(
         state.meta?.miniAppUrl
         || `${window.location.origin}${window.location.pathname}`
@@ -7222,8 +7281,23 @@ function buildProductShareUrl(productId) {
     const url = new URL(baseUrl, window.location.href);
     url.searchParams.delete("maxUserId");
     url.searchParams.delete("product");
+    url.searchParams.delete("section");
+    url.searchParams.delete("subcategory");
     url.searchParams.set("productId", String(productId));
-    return url.toString();
+    if (product) {
+        const sectionName = getProductSectionName(product);
+        const subcategoryName = getAdminCatalogChildName(product);
+        if (sectionName) {
+            url.searchParams.set("section", sectionName);
+        }
+        if (subcategoryName) {
+            url.searchParams.set("subcategory", subcategoryName);
+        }
+        if (product.name) {
+            url.searchParams.set("product", product.name);
+        }
+    }
+    return formatReadableShareUrl(url);
 }
 
 function buildCatalogShareUrl() {
@@ -7272,7 +7346,7 @@ function buildCatalogShareUrl() {
     if (state.catalog.query.trim()) {
         url.searchParams.set("q", state.catalog.query.trim());
     }
-    return url.toString();
+    return formatReadableShareUrl(url);
 }
 
 function buildAdminCatalogLink() {
@@ -7296,7 +7370,27 @@ function buildAdminCatalogLink() {
     appendCatalogUrlValues(url, "maturity", builder.seedMaturityGroups);
     appendCatalogUrlValues(url, "technology", builder.seedTreatmentTechnologies);
     appendCatalogUrlValues(url, "reproduction", builder.seedReproductionValues);
-    return url.toString();
+    return formatReadableShareUrl(url);
+}
+
+function formatReadableShareUrl(url) {
+    const base = `${url.origin}${url.pathname}`;
+    const query = [...url.searchParams.entries()]
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeReadableQueryValue(value)}`)
+        .join("&");
+    return `${base}${query ? `?${query}` : ""}${url.hash || ""}`;
+}
+
+function encodeReadableQueryValue(value) {
+    return Array.from(String(value || "").trim()).map(char => {
+        if (/[A-Za-z0-9\-._~]/.test(char) || /[А-Яа-яЁё]/.test(char)) {
+            return char;
+        }
+        if (/\s/.test(char)) {
+            return "%20";
+        }
+        return encodeURIComponent(char);
+    }).join("");
 }
 
 function getAdminLinkPreviewProducts() {
