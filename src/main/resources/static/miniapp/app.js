@@ -6919,7 +6919,8 @@ function formatQuantityWithUnit(value, unitName) {
 }
 
 function getProductOrderDisplayUnit(product) {
-    const unitName = product?.orderDisplayUnit || getProductOrderQuantityConfig(product).unitName || product?.unitName || "ед.";
+    const quantityConfig = getProductOrderQuantityConfig(product);
+    const unitName = quantityConfig.unitName || product?.orderDisplayUnit || product?.unitName || "ед.";
     return getOrderUnitDisplayLabel(unitName);
 }
 
