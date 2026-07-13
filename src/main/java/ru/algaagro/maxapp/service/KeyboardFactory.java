@@ -87,8 +87,21 @@ public class KeyboardFactory {
     }
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        rows.add(List.of(callbackButton("➕ Добавить кнопку", "buttons:add")));
+        for (PostButton button : postButtons) {
+            if (button.getId() != null && !PostButtonService.DEFAULT_CATALOG_LABEL.equals(button.getLabel())) {
+                rows.add(List.of(callbackButton("🗑 Удалить #" + button.getId(), "buttons:delete:" + button.getId())));
+            }
+        }
+        rows.add(List.of(messageButton("🛠 Админка")));
+        return inlineKeyboard(rows);
+    }
+
+    public List<Map<String, Object>> buttonDraftPreviewKeyboard(String label, String url) {
         return inlineKeyboard(List.of(
-                List.of(messageButton("🛠 Админка"))
+                List.of(linkButton(label, url)),
+                List.of(callbackButton("✅ Сохранить", "buttons:save"), callbackButton("❌ Отмена", "flow:cancel"))
         ));
     }
 

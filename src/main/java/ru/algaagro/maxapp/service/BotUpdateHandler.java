@@ -21,6 +21,7 @@ import ru.algaagro.maxapp.model.BotSession;
 import ru.algaagro.maxapp.model.CatalogOrder;
 import ru.algaagro.maxapp.model.PostButton;
 import ru.algaagro.maxapp.model.SessionState;
+import ru.algaagro.maxapp.util.CatalogStructure;
 import ru.algaagro.maxapp.util.TextUtils;
 
 @Service
@@ -334,7 +335,7 @@ public class BotUpdateHandler {
             return true;
         }
         if (normalized.equals("добавить кнопку")) {
-            notifyButtonCreationDisabled(user, null);
+            startButtonFlow(user, null);
             return true;
         }
         if (normalized.equals("подтвердить импорт")) {
@@ -545,7 +546,7 @@ public class BotUpdateHandler {
             case "broadcast:publish" -> publishBroadcast(user, callbackId);
             case "post:cancel", "flow:cancel" -> cancelFlow(user, callbackId);
             case "admin:buttons" -> showButtons(user, callbackId);
-            case "buttons:add" -> notifyButtonCreationDisabled(user, callbackId);
+            case "buttons:add" -> startButtonFlow(user, callbackId);
             default -> {
                 log.info("Dispatch dynamic callback. userId={}, payload={}", user.getMaxUserId(), callbackPayload);
                 handleDynamicCallback(callbackPayload, callbackId, user, chatId);
@@ -586,6 +587,10 @@ public class BotUpdateHandler {
         }
         if (payload.startsWith("buttons:target:")) {
             applyButtonTargetSelection(user, callbackId, payload.substring("buttons:target:".length()));
+            return;
+        }
+        if ("buttons:save".equals(payload)) {
+            saveButtonDraft(user, callbackId);
             return;
         }
         if (payload.startsWith("admin:grant:")) {
@@ -912,7 +917,7 @@ public class BotUpdateHandler {
         } else {
             buttons.forEach(button -> text.append("• #").append(button.getId()).append(" — ").append(button.getLabel()).append(" — ").append(button.getUrl()).append("\n"));
         }
-        text.append("\nНовые кнопки сейчас зашиты в коде и через бота не добавляются.");
+        text.append("\nЧтобы добавить кнопку, нажмите «Добавить кнопку» ниже.");
         maxApiClient.sendToUser(user.getMaxUserId(),
                 text.toString(),
                 keyboardFactory.buttonsManagementKeyboard(buttons),
@@ -1014,16 +1019,17 @@ public class BotUpdateHandler {
     }
 
     private void sendWelcome(Long userId, boolean admin) {
+        String sections = String.join("\n", CatalogStructure.SECTIONS.stream()
+                .map(section -> "• " + section)
+                .toList());
         String text = """
                 🌱 <b>ООО Алга Агро Групп</b>
 
-                Мы предлагаем:
-                🌾 Семена — озимые и яровые культуры
-                🛡 Пестициды — защита растений по строгой структуре каталога
-                🧪 Агрохимикаты и мелиоранты
+                Разделы каталога:
+                %s
 
                 Выберите нужный раздел 👇
-                """;
+                """.formatted(sections);
         List<Map<String, Object>> attachments = new ArrayList<>();
         Map<String, Object> logoAttachment = maxApiClient.classpathImageAttachment("static/miniapp/assets/logo.png");
         if (logoAttachment != null) {
@@ -1064,8 +1070,7 @@ public class BotUpdateHandler {
 
                 Например: <code>Каталог</code>
 
-                Можно и одним сообщением:
-                <code>Каталог - https://example.com</code>
+                После этого я попрошу ссылку и покажу предпросмотр.
                 """,
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                 "html");
@@ -1080,20 +1085,8 @@ public class BotUpdateHandler {
         String pendingTitle = cleanValue(payload.get("pendingButtonTitle"));
         String pendingUrl = cleanValue(payload.get("pendingButtonUrl"));
 
-        if (draft.title() != null) {
-            pendingTitle = draft.title();
-        }
-        if (draft.url() != null) {
-            pendingUrl = draft.url();
-        }
-
-        if (pendingTitle != null && pendingUrl != null) {
-            postButtonService.createButton(pendingTitle, pendingUrl);
-            botSessionService.reset(user.getMaxUserId());
-            maxApiClient.sendToUser(user.getMaxUserId(),
-                    "✅ Кнопка добавлена.",
-                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                    "html");
+        if ("preview_waiting".equals(stage)) {
+            sendButtonDraftPreview(user, session, pendingTitle, pendingUrl);
             return;
         }
 
@@ -1106,15 +1099,40 @@ public class BotUpdateHandler {
             return;
         }
 
-        if ("url_waiting".equals(stage) && pendingTitle != null && pendingUrl == null) {
-            String normalizedUrl = normalizeButtonUrlCandidate(resolvedInput);
-            if (normalizedUrl != null) {
-                postButtonService.createButton(pendingTitle, normalizedUrl);
-                botSessionService.reset(user.getMaxUserId());
+        if ("label_waiting".equals(stage)) {
+            if (draft.title() == null) {
                 maxApiClient.sendToUser(user.getMaxUserId(),
-                        "✅ Кнопка добавлена.",
+                        "Сначала отправьте название кнопки, например:\n<code>Каталог</code>",
                         keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
                         "html");
+                return;
+            }
+            pendingTitle = draft.title();
+            pendingUrl = draft.url();
+            if (pendingUrl != null) {
+                updateButtonDraft(session, pendingTitle, pendingUrl, "preview_waiting");
+                sendButtonDraftPreview(user, session, pendingTitle, pendingUrl);
+                return;
+            }
+            updateButtonDraft(session, pendingTitle, null, "url_waiting");
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    """
+                    Шаг 2 из 2. Теперь отправьте <b>ссылку</b> для кнопки.
+
+                    Например:
+                    <code>https://max.ru/id9729390997_bot</code>
+                    <code>example.com/page</code>
+                    """,
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            return;
+        }
+
+        if (("url_waiting".equals(stage) || "target_waiting".equals(stage)) && pendingTitle != null && pendingUrl == null) {
+            String normalizedUrl = draft.url() != null ? draft.url() : normalizeButtonUrlCandidate(resolvedInput);
+            if (normalizedUrl != null) {
+                updateButtonDraft(session, pendingTitle, normalizedUrl, "preview_waiting");
+                sendButtonDraftPreview(user, session, pendingTitle, normalizedUrl);
                 return;
             }
             maxApiClient.sendToUser(user.getMaxUserId(),
@@ -1127,29 +1145,6 @@ public class BotUpdateHandler {
                     <code>id9729390997_bot</code>
                     """,
                     keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                    "html");
-            return;
-        }
-
-        if ("target_waiting".equals(stage) && pendingTitle != null && pendingUrl == null) {
-            String normalizedUrl = normalizeButtonUrlCandidate(resolvedInput);
-            if (normalizedUrl != null) {
-                postButtonService.createButton(pendingTitle, normalizedUrl);
-                botSessionService.reset(user.getMaxUserId());
-                maxApiClient.sendToUser(user.getMaxUserId(),
-                        "✅ Кнопка добавлена.",
-                        keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                        "html");
-                return;
-            }
-            maxApiClient.sendToUser(user.getMaxUserId(),
-                    """
-                    Не удалось распознать адрес.
-
-                    Выберите готовый вариант ниже или отправьте адрес в формате:
-                    <code>id9729390997_bot</code>
-                    """,
-                    keyboardFactory.buttonTargetKeyboard(),
                     "html");
             return;
         }
@@ -1204,6 +1199,60 @@ public class BotUpdateHandler {
 
     private boolean isButtonFlow(BotSession session) {
         return "button_waiting".equals(String.valueOf(botSessionService.getPayload(session).get("mode")));
+    }
+
+    private void updateButtonDraft(BotSession session, String title, String url, String stage) {
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        payload.put("mode", "button_waiting");
+        payload.put("buttonStage", stage);
+        if (title != null && !title.isBlank()) {
+            payload.put("pendingButtonTitle", title);
+        }
+        if (url != null && !url.isBlank()) {
+            payload.put("pendingButtonUrl", url);
+        } else {
+            payload.remove("pendingButtonUrl");
+        }
+        botSessionService.update(session, SessionState.IDLE, payload);
+    }
+
+    private void sendButtonDraftPreview(AppUser user, BotSession session, String title, String url) {
+        if (title == null || url == null) {
+            botSessionService.reset(user.getMaxUserId());
+            startButtonFlow(user, null);
+            return;
+        }
+        updateButtonDraft(session, title, url, "preview_waiting");
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                """
+                👀 <b>Предпросмотр кнопки</b>
+
+                Название: <b>%s</b>
+                Ссылка: <code>%s</code>
+
+                Если все верно, нажмите «Сохранить».
+                """.formatted(title, url),
+                keyboardFactory.buttonDraftPreviewKeyboard(title, url),
+                "html");
+    }
+
+    private void saveButtonDraft(AppUser user, String callbackId) {
+        BotSession session = botSessionService.getOrCreate(user.getMaxUserId());
+        Map<String, Object> payload = botSessionService.getPayload(session);
+        String title = cleanValue(payload.get("pendingButtonTitle"));
+        String url = cleanValue(payload.get("pendingButtonUrl"));
+        if (!isButtonFlow(session) || title == null || url == null) {
+            maxApiClient.answerCallback(callbackId, "Нет готовой кнопки");
+            startButtonFlow(user, null);
+            return;
+        }
+        postButtonService.createButton(title, url);
+        botSessionService.reset(user.getMaxUserId());
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                "✅ Кнопка добавлена.",
+                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+        maxApiClient.answerCallback(callbackId, "Кнопка сохранена");
     }
 
     private boolean isImportPreviewFlow(BotSession session) {
@@ -1514,6 +1563,10 @@ public class BotUpdateHandler {
         if (candidate.startsWith("@")) {
             candidate = candidate.substring(1).trim();
         }
+        String webCandidate = "https://" + candidate;
+        if (candidate.contains(".") && isValidUrl(webCandidate)) {
+            return webCandidate;
+        }
         String normalized = candidate
                 .replaceFirst("^(?i)https?://", "")
                 .replaceFirst("^(?i)max\\.ru/", "")
@@ -1577,13 +1630,9 @@ public class BotUpdateHandler {
             return;
         }
 
-        postButtonService.createButton(pendingTitle, targetUrl);
-        botSessionService.reset(user.getMaxUserId());
-        maxApiClient.sendToUser(user.getMaxUserId(),
-                "✅ Кнопка добавлена.",
-                keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
-                "html");
-        maxApiClient.answerCallback(callbackId, "Кнопка сохранена");
+        updateButtonDraft(session, pendingTitle, targetUrl, "preview_waiting");
+        sendButtonDraftPreview(user, session, pendingTitle, targetUrl);
+        maxApiClient.answerCallback(callbackId, "Показываю предпросмотр");
     }
 
     private ButtonDraft parseButtonDraft(String rawInput) {

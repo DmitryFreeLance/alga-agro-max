@@ -20,30 +20,64 @@ public class PostButtonService {
 
     @Transactional
     public List<PostButton> getActiveButtons() {
-        return List.of(ensureDefaultCatalogButton());
+        ensureDefaultCatalogButton();
+        return postButtonRepository.findAllByActiveTrueOrderBySortOrderAscIdAsc();
     }
 
     @Transactional
     public void ensureDefaultButtons() {
-        PostButton defaultButton = ensureDefaultCatalogButton();
-        postButtonRepository.findAll().forEach(button -> {
-            boolean isDefault = button.getId() != null && button.getId().equals(defaultButton.getId());
-            if (!isDefault && button.isActive()) {
-                button.setActive(false);
-                postButtonRepository.save(button);
-            }
-        });
+        ensureDefaultCatalogButton();
     }
 
     @Transactional
     public PostButton createButton(String label, String url) {
-        return ensureDefaultCatalogButton();
+        ensureDefaultCatalogButton();
+        String normalizedLabel = label == null ? "" : label.trim();
+        String normalizedUrl = url == null ? "" : url.trim();
+        if (normalizedLabel.isBlank() || normalizedUrl.isBlank()) {
+            throw new IllegalArgumentException("Button label and url are required");
+        }
+        return postButtonRepository.findFirstByLabelAndUrl(normalizedLabel, normalizedUrl)
+                .map(button -> {
+                    button.setActive(true);
+                    if (button.getSortOrder() < 1) {
+                        button.setSortOrder(nextSortOrder());
+                    }
+                    return postButtonRepository.save(button);
+                })
+                .orElseGet(() -> {
+                    PostButton button = new PostButton();
+                    button.setLabel(normalizedLabel);
+                    button.setUrl(normalizedUrl);
+                    button.setActive(true);
+                    button.setSortOrder(nextSortOrder());
+                    return postButtonRepository.save(button);
+                });
     }
 
     @Transactional
     public boolean deleteButton(Long id) {
-        ensureDefaultCatalogButton();
-        return false;
+        PostButton defaultButton = ensureDefaultCatalogButton();
+        if (id == null || defaultButton.getId().equals(id)) {
+            return false;
+        }
+        return postButtonRepository.findById(id)
+                .map(button -> {
+                    if (!button.isActive()) {
+                        return false;
+                    }
+                    button.setActive(false);
+                    postButtonRepository.save(button);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    private int nextSortOrder() {
+        return postButtonRepository.findAll().stream()
+                .mapToInt(PostButton::getSortOrder)
+                .max()
+                .orElse(0) + 1;
     }
 
     private PostButton ensureDefaultCatalogButton() {
