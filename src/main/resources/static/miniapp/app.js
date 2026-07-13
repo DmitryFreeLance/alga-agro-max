@@ -132,6 +132,30 @@ const FIXED_SECTION_DEFINITIONS = [
 const SECTION_INDEX = new Map(FIXED_SECTION_DEFINITIONS.map((section, index) => [normalize(section.name), index]));
 const SECTION_DEFINITION_MAP = new Map(FIXED_SECTION_DEFINITIONS.map(section => [normalize(section.name), section]));
 const FIXED_SEED_CULTURE_OPTIONS = FIXED_SECTION_DEFINITIONS.find(section => section.name === "Семена")?.subcategories || [];
+const SEED_SUBCATEGORY_VISUALS = new Map([
+    ["Подсолнечник", "./assets/seed-sunflower.png"],
+    ["Кукуруза", "./assets/seed-corn.png"],
+    ["Рапс", "./assets/seed-rapeseed.png"],
+    ["Сахарная свекла", "./assets/seed-sugar-beet.png"],
+    ["Горох", "./assets/seed-pea.png"],
+    ["Соя", "./assets/seed-soy.png"],
+    ["Озимая пшеница", "./assets/seed-winter-wheat.png"],
+    ["Яровая пшеница", "./assets/seed-spring-wheat.png"],
+    ["Яровой ячмень", "./assets/seed-spring-barley.png"],
+    ["Озимая рожь", "./assets/seed-winter-rye.png"],
+    ["Тритикале", "./assets/seed-triticale.png"],
+    ["Гречиха", "./assets/seed-buckwheat.png"],
+    ["Овес", "./assets/seed-oats.png"],
+    ["Бобовые травы", "./assets/seed-legume-grasses.png"],
+    ["Люцерна", "./assets/seed-alfalfa.png"],
+    ["Травосмеси", "./assets/seed-grass-mixtures.png"],
+    ["Масличные травы", "./assets/seed-oilseed-grasses.png"],
+    ["Злаковые травы", "./assets/seed-cereal-grasses.png"],
+].map(([name, icon]) => [normalize(name), {
+    key: `seed-${normalize(name).replace(/\s+/g, "-")}`,
+    icon: assetUrl(icon),
+    palette: ["#fff2b7", "#ffd681"],
+}]));
 const FIXED_PESTICIDE_CULTURE_OPTIONS = [
     "Подсолнечник",
     "Кукуруза",
@@ -1335,6 +1359,7 @@ function renderProductCard(product) {
     const visual = getProductVisual(product);
     const favorite = isFavorite(product.id);
     const isSeedCard = normalize(getProductSectionName(product)) === normalize("Семена");
+    const seedCultureLabel = isSeedCard ? getSeedCardCultureLabel(product) : "";
     const hasMultipleReproductionVariants = isSeedCard && hasMultipleSeedReproductionVariants(product);
     const selectedReproduction = hasMultipleReproductionVariants
         ? getCatalogSelectedReproduction(product)
@@ -1351,7 +1376,8 @@ function renderProductCard(product) {
             <div class="product-card-body">
                 <div class="product-card-heading ${isSeedCard ? "product-card-heading-seed" : ""}">
                     <p class="product-card-title">${escapeHtml(product.name)}</p>
-                ${isSeedCard ? "" : badge}
+                    ${isSeedCard && seedCultureLabel ? `<p class="product-card-culture">${escapeHtml(seedCultureLabel)}</p>` : ""}
+                    ${isSeedCard ? "" : badge}
                 </div>
                 ${isSeedCard ? `<div class="product-card-badge-row">${badge}</div>` : ""}
                 ${renderProductCardDetails(product)}
@@ -1421,7 +1447,6 @@ function renderProductCardDetails(product) {
         const isSunflower = primarySubcategory === normalize("Подсолнечник");
         const isRapeseed = primarySubcategory === normalize("Рапс");
         const isSugarBeet = primarySubcategory === normalize("Сахарная свекла");
-        const cultureLabel = getSeedCardCultureLabel(product);
         const technology = getSeedTechnologyDisplay(product);
         const seedTreatment = getSeedTreatmentDisplay(product);
         const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
@@ -1447,7 +1472,7 @@ function renderProductCardDetails(product) {
             `;
         }
         if (!isSunflower && !isRapeseed) {
-            return `<p class="product-card-subtitle">${escapeHtml(cultureLabel || getSeedPrimarySubcategory(product) || "Культура")}</p>`;
+            return product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : "";
         }
         return `
             ${product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : ""}
@@ -5223,7 +5248,16 @@ function compareNames(left, right) {
 }
 
 function getProductVisual(product) {
+    if (normalize(getProductSectionName(product)) === normalize("Семена")) {
+        return getSeedProductVisual(product);
+    }
     return getSectionVisual(getProductSectionName(product));
+}
+
+function getSeedProductVisual(product) {
+    const sectionVisual = getSectionVisual("Семена");
+    const seedVisual = SEED_SUBCATEGORY_VISUALS.get(normalize(getSeedPrimarySubcategory(product)));
+    return seedVisual ? { ...sectionVisual, ...seedVisual } : sectionVisual;
 }
 
 function getSectionVisual(name) {

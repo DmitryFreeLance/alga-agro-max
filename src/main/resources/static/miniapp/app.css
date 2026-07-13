@@ -661,6 +661,13 @@ img {
     overflow-wrap: anywhere;
 }
 
+.product-card-culture {
+    margin: 3px 0 0;
+    color: var(--text-500);
+    font-size: 0.76rem;
+    line-height: 1.2;
+}
+
 .product-card-badge-row {
     display: flex;
     justify-content: flex-start;
