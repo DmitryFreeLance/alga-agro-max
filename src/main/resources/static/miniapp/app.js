@@ -757,6 +757,16 @@ function renderTopbar() {
         : `<button class="topbar-action" data-action="open-manager">⋯</button>`;
     const pageHeadBackButton = sectionSelected
         ? `<button class="page-head-back-button" data-action="back">← Назад</button>`
+        : state.nav === "cart" && !state.checkout.open
+            ? `<button class="page-head-back-button" data-action="go-catalog">← В каталог</button>`
+        : "";
+    const pageHead = activeTitle.title && (activeTitle.subtitle || pageHeadBackButton)
+        ? `
+            <div class="page-head" style="margin-top:14px;">
+                <h2>${escapeHtml(activeTitle.title)}</h2>
+                ${activeTitle.subtitle ? `<p>${escapeHtml(activeTitle.subtitle)}</p>` : ""}
+                ${pageHeadBackButton}
+            </div>`
         : "";
     return `
         <header class="topbar">
@@ -768,9 +778,7 @@ function renderTopbar() {
                 </div>
                 ${topbarAction}
             </div>
-            ${activeTitle.subtitle
-                ? `<div class="page-head" style="margin-top:14px;"><h2>${escapeHtml(activeTitle.title)}</h2><p>${escapeHtml(activeTitle.subtitle)}</p>${pageHeadBackButton}</div>`
-                : ""}
+            ${pageHead}
         </header>
     `;
 }
@@ -1533,7 +1541,7 @@ function renderCartPage() {
             <div class="summary-card">
                 <div class="summary-grid">
                     <div class="summary-row"><span>Позиций</span><span>${items.length}</span></div>
-                    <div class="summary-row"><span>Единиц</span><span>${sumCartUnits()}</span></div>
+                    <div class="summary-row"><span>Количество</span><span>${sumCartUnits()}</span></div>
                     ${renderCurrencyTotalsRows(items, "Примерная сумма")}
                 </div>
                 <button class="primary-btn" data-action="open-checkout">Оформить заявку →</button>
@@ -3366,7 +3374,7 @@ function renderAdminCustomerModal() {
                         <div class="summary-card">
                             <div class="admin-block-title">Корзина и заказы</div>
                             <div class="summary-row"><span>Позиции в корзине</span><strong>${customer.cartItemsCount || 0}</strong></div>
-                            <div class="summary-row"><span>Единиц в корзине</span><strong>${customer.cartUnits || 0}</strong></div>
+                            <div class="summary-row"><span>Количество в корзине</span><strong>${customer.cartUnits || 0}</strong></div>
                             <div class="summary-row"><span>Примерная сумма</span><strong>${formatCustomerCartTotal(customer)}</strong></div>
                             <div class="summary-row"><span>Всего заказов</span><strong>${customer.ordersCount || 0}</strong></div>
                             <div class="summary-row"><span>Оплаченных</span><strong>${customer.completedOrdersCount || 0}</strong></div>
@@ -6829,7 +6837,8 @@ function formatQuantityWithUnit(value, unitName) {
 }
 
 function getProductOrderDisplayUnit(product) {
-    return String(product?.orderDisplayUnit || product?.unitName || "шт").trim() || "шт";
+    const unitName = String(product?.orderDisplayUnit || product?.unitName || "упак").trim() || "упак";
+    return normalize(unitName) === normalize("шт") ? "упак" : unitName;
 }
 
 function roundQuantity(value) {
