@@ -88,20 +88,31 @@ public class KeyboardFactory {
 
     public List<Map<String, Object>> buttonsManagementKeyboard(List<PostButton> postButtons) {
         List<List<Map<String, Object>>> rows = new ArrayList<>();
-        rows.add(List.of(callbackButton("➕ Добавить кнопку", "buttons:add")));
-        for (PostButton button : postButtons) {
-            if (button.getId() != null && !PostButtonService.DEFAULT_CATALOG_LABEL.equals(button.getLabel())) {
-                rows.add(List.of(callbackButton("🗑 Удалить #" + button.getId(), "buttons:delete:" + button.getId())));
-            }
-        }
+        rows.add(List.of(messageButton("➕ Добавить кнопку"), messageButton("🗑 Удалить кнопку")));
         rows.add(List.of(messageButton("🛠 Админка")));
         return inlineKeyboard(rows);
+    }
+
+    public List<Map<String, Object>> buttonsDeleteKeyboard(List<PostButton> postButtons) {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        for (PostButton button : postButtons) {
+            if (button.getId() != null && !isBuiltInPostButton(button)) {
+                rows.add(List.of(messageButton("🗑 Удалить кнопку " + button.getId())));
+            }
+        }
+        rows.add(List.of(messageButton("🔗 Кнопки постов"), messageButton("🛠 Админка")));
+        return inlineKeyboard(rows);
+    }
+
+    private boolean isBuiltInPostButton(PostButton button) {
+        return PostButtonService.DEFAULT_CATALOG_LABEL.equals(button.getLabel())
+                || PostButtonService.DEFAULT_SUGAR_BEET_LABEL.equals(button.getLabel());
     }
 
     public List<Map<String, Object>> buttonDraftPreviewKeyboard(String label, String url) {
         return inlineKeyboard(List.of(
                 List.of(linkButton(label, url)),
-                List.of(callbackButton("✅ Сохранить", "buttons:save"), callbackButton("❌ Отмена", "flow:cancel"))
+                List.of(messageButton("✅ Сохранить кнопку"), messageButton("❌ Отмена"))
         ));
     }
 

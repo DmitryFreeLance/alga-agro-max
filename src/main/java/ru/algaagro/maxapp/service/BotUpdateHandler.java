@@ -338,6 +338,14 @@ public class BotUpdateHandler {
             startButtonFlow(user, null);
             return true;
         }
+        if (normalized.equals("удалить кнопку")) {
+            showDeleteButtons(user);
+            return true;
+        }
+        if (normalized.equals("сохранить кнопку")) {
+            saveButtonDraft(user, null);
+            return true;
+        }
         if (normalized.equals("подтвердить импорт")) {
             if (isImportPreviewFlow(session)) {
                 confirmImportPreview(user, session);
@@ -1321,6 +1329,26 @@ public class BotUpdateHandler {
         maxApiClient.sendToUser(user.getMaxUserId(),
                 deleted ? "🗑 Кнопка удалена." : "Кнопка не найдена.",
                 keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                "html");
+    }
+
+    private void showDeleteButtons(AppUser user) {
+        List<PostButton> buttons = postButtonService.getActiveButtons().stream()
+                .filter(button -> !PostButtonService.DEFAULT_CATALOG_LABEL.equals(button.getLabel()))
+                .filter(button -> !PostButtonService.DEFAULT_SUGAR_BEET_LABEL.equals(button.getLabel()))
+                .toList();
+        if (buttons.isEmpty()) {
+            maxApiClient.sendToUser(user.getMaxUserId(),
+                    "Удаляемых кнопок сейчас нет. Зашитые кнопки «Каталог» и «Сахарная свекла» остаются постоянными.",
+                    keyboardFactory.buttonsManagementKeyboard(postButtonService.getActiveButtons()),
+                    "html");
+            return;
+        }
+        StringBuilder text = new StringBuilder("🗑 <b>Удаление кнопки постов</b>\n\nВыберите кнопку для удаления:\n");
+        buttons.forEach(button -> text.append("• #").append(button.getId()).append(" — ").append(button.getLabel()).append("\n"));
+        maxApiClient.sendToUser(user.getMaxUserId(),
+                text.toString(),
+                keyboardFactory.buttonsDeleteKeyboard(postButtonService.getActiveButtons()),
                 "html");
     }
 

@@ -11,6 +11,8 @@ public class PostButtonService {
 
     public static final String DEFAULT_CATALOG_LABEL = "\uD83D\uDED2 Каталог";
     public static final String DEFAULT_CATALOG_URL = "https://max.ru/id9729390997_bot";
+    public static final String DEFAULT_SUGAR_BEET_LABEL = "\uD83E\uDEDC Сахарная свекла";
+    public static final String DEFAULT_SUGAR_BEET_URL = "https://algaagro.ru/miniapp/?section=%D0%A1%D0%B5%D0%BC%D0%B5%D0%BD%D0%B0&subcategory=%D0%A1%D0%B0%D1%85%D0%B0%D1%80%D0%BD%D0%B0%D1%8F%20%D1%81%D0%B2%D0%B5%D0%BA%D0%BB%D0%B0&manufacturer=MariboHilleshog";
 
     private final PostButtonRepository postButtonRepository;
 
@@ -26,12 +28,12 @@ public class PostButtonService {
 
     @Transactional
     public void ensureDefaultButtons() {
-        ensureDefaultCatalogButton();
+        ensureDefaultPostButtons();
     }
 
     @Transactional
     public PostButton createButton(String label, String url) {
-        ensureDefaultCatalogButton();
+        ensureDefaultPostButtons();
         String normalizedLabel = label == null ? "" : label.trim();
         String normalizedUrl = url == null ? "" : url.trim();
         if (normalizedLabel.isBlank() || normalizedUrl.isBlank()) {
@@ -57,8 +59,8 @@ public class PostButtonService {
 
     @Transactional
     public boolean deleteButton(Long id) {
-        PostButton defaultButton = ensureDefaultCatalogButton();
-        if (id == null || defaultButton.getId().equals(id)) {
+        List<PostButton> defaultButtons = ensureDefaultPostButtons();
+        if (id == null || defaultButtons.stream().anyMatch(button -> button.getId().equals(id))) {
             return false;
         }
         return postButtonRepository.findById(id)
@@ -80,14 +82,27 @@ public class PostButtonService {
                 .orElse(0) + 1;
     }
 
+    private List<PostButton> ensureDefaultPostButtons() {
+        return List.of(
+                ensureDefaultButton(DEFAULT_CATALOG_LABEL, DEFAULT_CATALOG_URL, 0),
+                ensureDefaultButton(DEFAULT_SUGAR_BEET_LABEL, DEFAULT_SUGAR_BEET_URL, 1)
+        );
+    }
+
     private PostButton ensureDefaultCatalogButton() {
-        PostButton defaultButton = postButtonRepository.findFirstByLabelAndUrl(DEFAULT_CATALOG_LABEL, DEFAULT_CATALOG_URL)
+        ensureDefaultPostButtons();
+        return postButtonRepository.findFirstByLabelAndUrl(DEFAULT_CATALOG_LABEL, DEFAULT_CATALOG_URL)
+                .orElseThrow();
+    }
+
+    private PostButton ensureDefaultButton(String label, String url, int sortOrder) {
+        PostButton defaultButton = postButtonRepository.findFirstByLabelAndUrl(label, url)
                 .orElseGet(() -> {
                     PostButton button = new PostButton();
-                    button.setLabel(DEFAULT_CATALOG_LABEL);
-                    button.setUrl(DEFAULT_CATALOG_URL);
+                    button.setLabel(label);
+                    button.setUrl(url);
                     button.setActive(true);
-                    button.setSortOrder(0);
+                    button.setSortOrder(sortOrder);
                     return postButtonRepository.save(button);
                 });
         boolean changed = false;
@@ -95,8 +110,8 @@ public class PostButtonService {
             defaultButton.setActive(true);
             changed = true;
         }
-        if (defaultButton.getSortOrder() != 0) {
-            defaultButton.setSortOrder(0);
+        if (defaultButton.getSortOrder() != sortOrder) {
+            defaultButton.setSortOrder(sortOrder);
             changed = true;
         }
         if (changed) {
