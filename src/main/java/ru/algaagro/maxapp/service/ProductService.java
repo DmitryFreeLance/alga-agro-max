@@ -880,6 +880,9 @@ public class ProductService {
         product.setOrderStep(sanitizePositive(payload.orderStep()));
         product.setActive(payload.active() == null || payload.active());
         List<String> cultures = payload.cultures() == null ? List.of() : payload.cultures();
+        if (CatalogStructure.SEEDS.equals(normalizedCategory) && normalizedSubcategory != null && !normalizedSubcategory.isBlank()) {
+            cultures = List.of(normalizedSubcategory);
+        }
         List<String> purposes = payload.purposes() == null ? List.of() : payload.purposes();
         List<String> tags = payload.tags() == null ? List.of() : payload.tags();
         String packageType = blankToNull(payload.packageType());
@@ -930,6 +933,10 @@ public class ProductService {
         copyStructuredValue(filterMap, "seedTreatment", "treatment");
         product.setFilterMapJson(jsonHelper.writeValue(filterMap));
         Map<String, Object> rawData = payload.rawData() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload.rawData());
+        putOrRemove(rawData, "Раздел", normalizedCategory);
+        putOrRemove(rawData, "Категория", normalizedCategory);
+        putOrRemove(rawData, "Подкатегория", normalizedSubcategory);
+        putOrRemove(rawData, "Культура", CatalogStructure.SEEDS.equals(normalizedCategory) ? normalizedSubcategory : "");
         putOrRemove(rawData, "Действующее вещество", filterMap.get("activeIngredient"));
         putOrRemove(rawData, "ФАО", filterMap.get("seedFao"));
         putOrRemove(rawData, "Семян в мешке", filterMap.get("seedsPerBag"));
@@ -1055,6 +1062,10 @@ public class ProductService {
     }
 
     private String normalizeAdminSubcategory(String category, String subcategory, String name, String description) {
+        String explicit = CatalogStructure.inferSubcategory(category, subcategory);
+        if (!explicit.isBlank()) {
+            return explicit;
+        }
         String normalized = CatalogStructure.inferSubcategory(category, firstNonBlank(subcategory, name, description));
         if (!normalized.isBlank()) {
             return normalized;

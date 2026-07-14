@@ -205,6 +205,7 @@ const SEED_TREATMENT_TECHNOLOGIES = [
     "Технология Clearfield («чистое поле»)",
     "Технология Clearfield Plus",
 ];
+const RAPESEED_TYPE_OPTIONS = ["Рапс озимый", "Рапс яровой"];
 const SEED_REPRODUCTION_ORDER = [
     "ОС",
     "СЭ",
@@ -348,6 +349,10 @@ const state = {
             seedMaturityGroups: [],
             seedTreatmentTechnologies: [],
             seedReproductionValues: [],
+            seedCounts: [],
+            seedVegetationPeriods: [],
+            seedTreatments: [],
+            packageDescriptions: [],
         },
     },
 };
@@ -911,7 +916,6 @@ function renderSectionPage() {
             ${renderSectionStructure(state.catalog.section, products)}
             <div class="toolbar-row catalog-toolbar-compact" data-products-anchor="catalog-results">
                 <button type="button" class="toolbar-button" data-action="open-filters">⚙️ Ещё фильтры</button>
-                <button type="button" class="toolbar-button toolbar-icon-button" data-action="copy-catalog-link" aria-label="Скопировать ссылку на подборку">🔗</button>
                 <select class="toolbar-select" data-field="catalog-sort">
                     ${renderSortOptions()}
                 </select>
@@ -1131,12 +1135,18 @@ function getSeedPrimarySubcategory(product) {
     if (looksLikePesticideProduct(product)) {
         return "";
     }
+    const explicitSubcategory = resolveSectionSubcategory(product?.subcategory, "Семена");
+    if (explicitSubcategory && explicitSubcategory !== "Травосмеси") {
+        return explicitSubcategory;
+    }
+    const explicitItemType = resolveSectionSubcategory(product?.itemType, "Семена");
+    if (explicitItemType && explicitItemType !== "Травосмеси") {
+        return explicitItemType;
+    }
     if (isSeedMixture(product)) {
         return "Травосмеси";
     }
     const candidates = [
-        product?.subcategory,
-        product?.itemType,
         product?.name,
         product?.description,
         product?.activeIngredient,
@@ -1454,7 +1464,7 @@ function renderProductCardDetails(product) {
         const fao = isSunflower || isRapeseed ? "" : getSeedFaoDisplay(product);
         const technologyLine = [technology, fao].filter(Boolean).join(" • ");
         const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
-        const vegetation = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
+        const vegetation = isRapeseed ? getRapeseedTypeDisplay(product) : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
         if (isCorn) {
             return `
                 ${product?.brand ? `<p class="product-card-subtitle">${escapeHtml(product.brand)}</p>` : ""}
@@ -2054,7 +2064,7 @@ function renderAdminCatalog() {
 }
 
 function renderAdminLinks() {
-    const builder = getAdminLinkBuilder();
+    let builder = getAdminLinkBuilder();
     const section = builder.section || "Семена";
     const sectionProducts = section
         ? state.admin.products.filter(product => getProductSectionName(product) === section)
@@ -2067,12 +2077,34 @@ function renderAdminLinks() {
     const cultureOptions = getAdminLinkCultureOptions(section, categoryProducts);
     const manufacturerOptions = uniqueValues(categoryProducts.map(item => item.brand).filter(Boolean));
     const activeIngredientOptions = uniqueValues(categoryProducts.flatMap(item => extractActiveIngredientTerms(item)).filter(Boolean));
-    const seedFaoOptions = getAvailableSeedFaoRanges(categoryProducts);
-    const seedMaturityOptions = getAvailableSeedMaturityGroups(categoryProducts);
-    const seedTechnologyOptions = getAvailableSeedTechnologies(categoryProducts);
-    const seedReproductionOptions = getSeedReproductionOptions(categoryProducts);
     const isSeedsSection = normalize(section) === normalize("Семена");
     const isPesticidesSection = normalize(section) === normalize("Пестициды");
+    const seedFaoOptions = getAvailableSeedFaoRanges(categoryProducts);
+    const seedMaturityOptions = getAvailableSeedMaturityGroups(categoryProducts);
+    const seedTechnologyOptions = getAvailableSeedTechnologyDisplayOptions(categoryProducts);
+    const seedReproductionOptions = getSeedReproductionOptions(categoryProducts);
+    const seedCountOptions = getAvailableSeedCountOptions(categoryProducts);
+    const seedVegetationOptions = getAvailableSeedVegetationOptions(categoryProducts);
+    const seedTreatmentOptions = getAvailableSeedTreatmentOptions(categoryProducts);
+    const packageOptions = getAvailablePackageOptions(categoryProducts);
+    const sanitizedBuilder = sanitizeAdminLinkBuilder(builder, {
+        cultures: isSeedsSection ? [] : cultureOptions,
+        subcategories: categoryOptions,
+        manufacturers: manufacturerOptions,
+        activeIngredients: isPesticidesSection ? activeIngredientOptions : [],
+        seedFaoRanges: isSeedsSection ? seedFaoOptions : [],
+        seedMaturityGroups: isSeedsSection ? seedMaturityOptions : [],
+        seedTreatmentTechnologies: isSeedsSection ? seedTechnologyOptions : [],
+        seedReproductionValues: isSeedsSection ? seedReproductionOptions : [],
+        seedCounts: isSeedsSection ? seedCountOptions : [],
+        seedVegetationPeriods: isSeedsSection ? seedVegetationOptions : [],
+        seedTreatments: isSeedsSection ? seedTreatmentOptions : [],
+        packageDescriptions: packageOptions,
+    });
+    if (JSON.stringify(sanitizedBuilder) !== JSON.stringify(builder)) {
+        state.admin.linkBuilder = sanitizedBuilder;
+        builder = sanitizedBuilder;
+    }
     const link = buildAdminCatalogLink();
     const previewCount = getAdminLinkPreviewProducts().length;
     return `
@@ -2101,7 +2133,11 @@ function renderAdminLinks() {
                     ${isSeedsSection && seedFaoOptions.length ? renderAdminLinkCheckboxGroup("ФАО", "seedFaoRanges", seedFaoOptions, builder.seedFaoRanges) : ""}
                     ${isSeedsSection && seedMaturityOptions.length ? renderAdminLinkCheckboxGroup("Группа спелости", "seedMaturityGroups", seedMaturityOptions, builder.seedMaturityGroups) : ""}
                     ${isSeedsSection && seedTechnologyOptions.length ? renderAdminLinkCheckboxGroup("Технология", "seedTreatmentTechnologies", seedTechnologyOptions, builder.seedTreatmentTechnologies) : ""}
+                    ${isSeedsSection && seedCountOptions.length ? renderAdminLinkCheckboxGroup("Количество семян", "seedCounts", seedCountOptions, builder.seedCounts) : ""}
+                    ${isSeedsSection && seedVegetationOptions.length ? renderAdminLinkCheckboxGroup("Срок созревания", "seedVegetationPeriods", seedVegetationOptions, builder.seedVegetationPeriods) : ""}
+                    ${isSeedsSection && seedTreatmentOptions.length ? renderAdminLinkCheckboxGroup("Протравка", "seedTreatments", seedTreatmentOptions, builder.seedTreatments) : ""}
                     ${isSeedsSection && seedReproductionOptions.length ? renderAdminLinkCheckboxGroup("Репродукция", "seedReproductionValues", seedReproductionOptions, builder.seedReproductionValues) : ""}
+                    ${packageOptions.length ? renderAdminLinkCheckboxGroup("Фасовка", "packageDescriptions", packageOptions, builder.packageDescriptions) : ""}
                 </div>
                 <div class="admin-link-preview">
                     <div>
@@ -3000,7 +3036,7 @@ function getAdminSeedEditorProfile(subcategory) {
         showFao: isCorn,
         showSeedsPerBag: isCorn || isSunflower || isRapeseed,
         showTechnology: isSunflower || isRapeseed || isSugarBeet,
-        showVegetation: isSunflower,
+        showVegetation: isSunflower || isRapeseed,
         showReproduction: true,
         showSeedTreatment: isSugarBeet,
     };
@@ -3082,6 +3118,7 @@ function renderAdminProductModal() {
         : subcategoryOptions;
     const isSeedsCategory = normalize(selectedCategory) === normalize("Семена");
     const isSugarBeetSeed = isSeedsCategory && normalize(selectedSubcategory) === normalize("Сахарная свекла");
+    const isRapeseedSeed = isSeedsCategory && normalize(selectedSubcategory) === normalize("Рапс");
     const seedEditorProfile = getAdminSeedEditorProfile(selectedSubcategory);
     const brandOptions = getAdminBrandOptions();
     const activeIngredientOptions = getAdminFieldOptions("activeIngredient");
@@ -3206,7 +3243,10 @@ function renderAdminProductModal() {
                                     ? `<select name="cultivationTechnology">${renderOptions([["Классическая", "Классическая"], ["Конвизо", "Конвизо"]], product?.cultivationTechnology || "")}</select>`
                                     : `<input name="cultivationTechnology" value="${escapeAttr(product?.cultivationTechnology || "")}" placeholder="Clearfield">`
                                 }</div>` : `<input type="hidden" name="cultivationTechnology" value="">`}
-                                ${seedEditorProfile.showVegetation ? `<div class="admin-field"><label>Срок созревания</label><input name="seedVegetationPeriod" value="${escapeAttr(product?.seedVegetationPeriod || product?.rawData?.["Срок вегетации"] || product?.rawData?.["Срок созревания"] || product?.rawData?.["Дни вегетации"] || "")}" placeholder="105-110 дней"></div>` : `<input type="hidden" name="seedVegetationPeriod" value="">`}
+                                ${seedEditorProfile.showVegetation ? `<div class="admin-field"><label>Срок созревания</label>${isRapeseedSeed
+                                    ? `<select name="seedVegetationPeriod">${renderOptions(RAPESEED_TYPE_OPTIONS.map(value => [value, value]), getRapeseedTypeDisplay(product))}</select>`
+                                    : `<input name="seedVegetationPeriod" value="${escapeAttr(product?.seedVegetationPeriod || product?.rawData?.["Срок вегетации"] || product?.rawData?.["Срок созревания"] || product?.rawData?.["Дни вегетации"] || "")}" placeholder="105-110 дней">`
+                                }</div>` : `<input type="hidden" name="seedVegetationPeriod" value="">`}
                                 </div>
                             ` : `<input type="hidden" name="cultivationTechnology" value=""><input type="hidden" name="seedVegetationPeriod" value="">`}
                             ${isSugarBeetSeed ? `
@@ -4342,6 +4382,10 @@ function handleChange(event) {
             "seedMaturityGroups",
             "seedTreatmentTechnologies",
             "seedReproductionValues",
+            "seedCounts",
+            "seedVegetationPeriods",
+            "seedTreatments",
+            "packageDescriptions",
         ]);
         if (!allowedKeys.has(key)) {
             return;
@@ -4351,7 +4395,7 @@ function handleChange(event) {
             ? uniqueValues([...(builder[key] || []), event.target.value])
             : (builder[key] || []).filter(item => item !== event.target.value);
         state.admin.linkBuilder = builder;
-        render();
+        renderPreservingScrollPosition();
         return;
     }
     if (field === "admin-link-section") {
@@ -4366,8 +4410,12 @@ function handleChange(event) {
             seedMaturityGroups: [],
             seedTreatmentTechnologies: [],
             seedReproductionValues: [],
+            seedCounts: [],
+            seedVegetationPeriods: [],
+            seedTreatments: [],
+            packageDescriptions: [],
         };
-        render();
+        renderPreservingScrollPosition();
         return;
     }
     if (field === "admin-product-category") {
@@ -4627,9 +4675,13 @@ async function saveAdminProduct(formData) {
         throw new Error("Минимальный объем заказа обязателен.");
     }
     const orderMode = String(formData.get("orderMode") || "liters").trim();
-    let category = String(formData.get("category") || "").trim();
+    let category = String(state.admin.productEditor.categoryDraft || formData.get("category") || "").trim();
     const availableSubcategories = getAdminSubcategoryOptions(category);
-    let subcategory = String(formData.get("subcategory") || "").trim();
+    let subcategory = String(
+        state.admin.productEditor.subcategoryDraft != null
+            ? state.admin.productEditor.subcategoryDraft
+            : formData.get("subcategory") || ""
+    ).trim();
     if (availableSubcategories.length && !availableSubcategories.includes(subcategory)) {
         subcategory = availableSubcategories[0] || "";
     }
@@ -4650,7 +4702,7 @@ async function saveAdminProduct(formData) {
     const seedsPerBag = String(formData.get("seedsPerBag") || "").trim();
     const seedMaturityGroup = String(formData.get("seedMaturityGroup") || "").trim();
     const seedReproduction = String(formData.get("seedReproduction") || "").trim();
-    const seedVegetationPeriod = String(formData.get("seedVegetationPeriod") || "").trim();
+    let seedVegetationPeriod = String(formData.get("seedVegetationPeriod") || "").trim();
     let cultivationTechnology = String(formData.get("cultivationTechnology") || "").trim();
     const seedTreatment = String(formData.get("seedTreatment") || "").trim();
     const seedReproductionVariants = extractSeedReproductionValuesFromText(seedReproduction);
@@ -4680,6 +4732,9 @@ async function saveAdminProduct(formData) {
     });
     if (normalize(category) === normalize("Семена") && normalize(subcategory) === normalize("Сахарная свекла")) {
         cultivationTechnology = cultivationTechnology === "Конвизо" ? "Конвизо" : "Классическая";
+    }
+    if (normalize(category) === normalize("Семена") && normalize(subcategory) === normalize("Рапс")) {
+        seedVegetationPeriod = normalize(seedVegetationPeriod).includes("яров") ? "Рапс яровой" : "Рапс озимый";
     }
     if (forGreenhouse) {
         category = "Препараты для закрытого грунта";
@@ -5219,14 +5274,38 @@ function applyCatalogFilters(products) {
     }
     if (applied.seedTreatmentTechnologies.length) {
         filtered = filtered.filter(product => {
-            const value = getSeedTreatmentTechnology(product);
-            return value && applied.seedTreatmentTechnologies.includes(value);
+            const values = getSeedTechnologyFilterValues(product);
+            return values.some(value => applied.seedTreatmentTechnologies.includes(value));
         });
     }
     if (applied.seedReproductionValues.length) {
         filtered = filtered.filter(product => {
             const values = getSeedReproductionValues(product);
             return values.some(value => applied.seedReproductionValues.includes(value));
+        });
+    }
+    if (applied.seedCounts.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedCountFilterValue(product);
+            return value && applied.seedCounts.includes(value);
+        });
+    }
+    if (applied.seedVegetationPeriods.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedVegetationFilterValue(product);
+            return value && applied.seedVegetationPeriods.includes(value);
+        });
+    }
+    if (applied.seedTreatments.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedTreatmentDisplay(product);
+            return value && applied.seedTreatments.includes(value);
+        });
+    }
+    if (applied.packageDescriptions.length) {
+        filtered = filtered.filter(product => {
+            const value = getPackageFilterValue(product);
+            return value && applied.packageDescriptions.includes(value);
         });
     }
     if (applied.priceMin) {
@@ -5472,6 +5551,18 @@ function getSeedVegetationPeriodDisplay(product) {
     return String(rawValue || "").trim();
 }
 
+function getRapeseedTypeDisplay(product) {
+    const value = getSeedVegetationPeriodDisplay(product);
+    const normalized = normalize(value);
+    if (normalized.includes("яров")) {
+        return "Рапс яровой";
+    }
+    if (normalized.includes("озим")) {
+        return "Рапс озимый";
+    }
+    return "Рапс озимый";
+}
+
 function getSeedTreatmentDisplay(product) {
     return String(firstNonBlank(
         product?.seedTreatment,
@@ -5479,6 +5570,29 @@ function getSeedTreatmentDisplay(product) {
         getProductFilterRawValue(product, ["Протравка", "Протравитель", "seedTreatment"]),
         product?.activeIngredient
     ) || "").trim();
+}
+
+function getSeedTechnologyFilterValues(product) {
+    return uniqueValues([
+        getSeedTechnologyDisplay(product),
+        getSeedTreatmentTechnology(product),
+    ]);
+}
+
+function getSeedCountFilterValue(product) {
+    return getSeedsPerBagDisplay(product);
+}
+
+function getSeedVegetationFilterValue(product) {
+    const primarySubcategory = normalize(getSeedPrimarySubcategory(product));
+    if (primarySubcategory === normalize("Рапс")) {
+        return getRapeseedTypeDisplay(product);
+    }
+    return getSeedVegetationPeriodDisplay(product);
+}
+
+function getPackageFilterValue(product) {
+    return String(formatCompactPackageDisplay(product) || product?.packageDescription || product?.packageType || product?.unitName || "").trim();
 }
 
 function getSeedReproductionDisplay(product) {
@@ -5518,7 +5632,7 @@ function renderSeedProductSpecs(product) {
     const technologyLine = [technology, fao].filter(Boolean).join(" • ");
     const seedsPerBag = getSeedsPerBagDisplay(product) || "Количество семян";
     const vegetationLabel = "Срок созревания";
-    const vegetationValue = isRapeseed ? "Рапс озимый" : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
+    const vegetationValue = isRapeseed ? getRapeseedTypeDisplay(product) : (getSeedVegetationPeriodDisplay(product) || "Срок созревания");
     const packageDisplay = String(product?.packageDescription || "").trim();
     if (isCorn) {
         return `
@@ -6050,6 +6164,10 @@ function emptyFilters() {
         seedMaturityGroups: [],
         seedTreatmentTechnologies: [],
         seedReproductionValues: [],
+        seedCounts: [],
+        seedVegetationPeriods: [],
+        seedTreatments: [],
+        packageDescriptions: [],
         priceMin: "",
         priceMax: "",
     };
@@ -6075,6 +6193,10 @@ function cloneFilters(filters) {
         seedMaturityGroups: [...(filters.seedMaturityGroups || [])],
         seedTreatmentTechnologies: [...(filters.seedTreatmentTechnologies || [])],
         seedReproductionValues: [...(filters.seedReproductionValues || [])],
+        seedCounts: [...(filters.seedCounts || [])],
+        seedVegetationPeriods: [...(filters.seedVegetationPeriods || [])],
+        seedTreatments: [...(filters.seedTreatments || [])],
+        packageDescriptions: [...(filters.packageDescriptions || [])],
         priceMin: filters.priceMin || "",
         priceMax: filters.priceMax || "",
     };
@@ -6105,6 +6227,9 @@ function trimDraftFiltersToAvailable() {
     draft.seedMaturityGroups = [];
     draft.seedTreatmentTechnologies = [];
     draft.seedReproductionValues = [];
+    draft.seedCounts = [];
+    draft.seedVegetationPeriods = [];
+    draft.seedTreatments = [];
 }
 
 function getAvailablePesticideTargetFilterValues(products) {
@@ -7156,6 +7281,10 @@ function applyCatalogDeepLinkFromUrl() {
         || firstUrlParam(params, ["manufacturer", "brand"])
         || firstUrlParam(params, ["subcategory", "subcat"])
         || firstUrlParam(params, ["activeIngredient", "ingredient"])
+        || firstUrlParam(params, ["seedCount", "seedsPerBag"])
+        || firstUrlParam(params, ["vegetation", "seedVegetation"])
+        || firstUrlParam(params, ["seedTreatment", "treatment"])
+        || firstUrlParam(params, ["package", "packageDescription"])
         || firstUrlParam(params, ["q", "query"]);
     if (!hasCatalogParams) {
         return;
@@ -7178,6 +7307,10 @@ function applyCatalogDeepLinkFromUrl() {
     nextFilters.seedReproductionValues = resolveUrlFilterValues(params, ["reproduction", "seedReproduction"])
         .map(normalizeSeedReproductionValue)
         .filter(Boolean);
+    nextFilters.seedCounts = resolveUrlFilterValues(params, ["seedCount", "seedsPerBag"]);
+    nextFilters.seedVegetationPeriods = resolveUrlFilterValues(params, ["vegetation", "seedVegetation"]);
+    nextFilters.seedTreatments = resolveUrlFilterValues(params, ["seedTreatment", "treatment"]);
+    nextFilters.packageDescriptions = resolveUrlFilterValues(params, ["package", "packageDescription"]);
     nextFilters.priceMin = firstUrlParam(params, ["priceMin", "minPrice"]) || "";
     nextFilters.priceMax = firstUrlParam(params, ["priceMax", "maxPrice"]) || "";
     state.catalog.query = firstUrlParam(params, ["q", "query"]) || "";
@@ -7340,6 +7473,10 @@ function buildCatalogShareUrl() {
     appendCatalogUrlValues(url, "maturity", filters.seedMaturityGroups);
     appendCatalogUrlValues(url, "technology", filters.seedTreatmentTechnologies);
     appendCatalogUrlValues(url, "reproduction", filters.seedReproductionValues);
+    appendCatalogUrlValues(url, "seedCount", filters.seedCounts);
+    appendCatalogUrlValues(url, "vegetation", filters.seedVegetationPeriods);
+    appendCatalogUrlValues(url, "seedTreatment", filters.seedTreatments);
+    appendCatalogUrlValues(url, "package", filters.packageDescriptions);
     if (filters.priceMin) {
         url.searchParams.set("priceMin", filters.priceMin);
     }
@@ -7376,6 +7513,10 @@ function buildAdminCatalogLink() {
     appendCatalogUrlValues(url, "maturity", builder.seedMaturityGroups);
     appendCatalogUrlValues(url, "technology", builder.seedTreatmentTechnologies);
     appendCatalogUrlValues(url, "reproduction", builder.seedReproductionValues);
+    appendCatalogUrlValues(url, "seedCount", builder.seedCounts);
+    appendCatalogUrlValues(url, "vegetation", builder.seedVegetationPeriods);
+    appendCatalogUrlValues(url, "seedTreatment", builder.seedTreatments);
+    appendCatalogUrlValues(url, "package", builder.packageDescriptions);
     return formatReadableShareUrl(url);
 }
 
@@ -7416,6 +7557,10 @@ function getAdminLinkPreviewProducts() {
     filters.seedMaturityGroups = [...builder.seedMaturityGroups];
     filters.seedTreatmentTechnologies = [...builder.seedTreatmentTechnologies];
     filters.seedReproductionValues = [...builder.seedReproductionValues];
+    filters.seedCounts = [...builder.seedCounts];
+    filters.seedVegetationPeriods = [...builder.seedVegetationPeriods];
+    filters.seedTreatments = [...builder.seedTreatments];
+    filters.packageDescriptions = [...builder.packageDescriptions];
     return filterProductsByFilters(state.admin.products || [], filters, section);
 }
 
@@ -7431,6 +7576,10 @@ function getAdminLinkBuilder() {
         seedMaturityGroups: normalizeBuilderArray(raw.seedMaturityGroups),
         seedTreatmentTechnologies: normalizeBuilderArray(raw.seedTreatmentTechnologies),
         seedReproductionValues: normalizeBuilderArray(raw.seedReproductionValues),
+        seedCounts: normalizeBuilderArray(raw.seedCounts),
+        seedVegetationPeriods: normalizeBuilderArray(raw.seedVegetationPeriods),
+        seedTreatments: normalizeBuilderArray(raw.seedTreatments),
+        packageDescriptions: normalizeBuilderArray(raw.packageDescriptions, raw.packageDescription),
     };
 }
 
@@ -7439,6 +7588,15 @@ function normalizeBuilderArray(value, legacyValue = "") {
         ...(Array.isArray(value) ? value : []),
         legacyValue,
     ].map(item => String(item || "").trim()).filter(Boolean));
+}
+
+function sanitizeAdminLinkBuilder(builder, availableOptionsByKey) {
+    const result = { ...builder };
+    Object.entries(availableOptionsByKey).forEach(([key, options]) => {
+        const available = new Set((options || []).map(normalize));
+        result[key] = (result[key] || []).filter(value => available.has(normalize(value)));
+    });
+    return result;
 }
 
 function getAdminLinkSubcategoryOptions(sectionName, products) {
@@ -7473,6 +7631,29 @@ function getAvailableSeedMaturityGroups(products) {
 function getAvailableSeedTechnologies(products) {
     const values = new Set((products || []).map(getSeedTreatmentTechnology).filter(Boolean));
     return SEED_TREATMENT_TECHNOLOGIES.filter(item => values.has(item));
+}
+
+function getAvailableSeedTechnologyDisplayOptions(products) {
+    return uniqueValues((products || []).flatMap(getSeedTechnologyFilterValues).filter(Boolean));
+}
+
+function getAvailableSeedCountOptions(products) {
+    return uniqueValues((products || []).map(getSeedCountFilterValue).filter(Boolean));
+}
+
+function getAvailableSeedVegetationOptions(products) {
+    if ((products || []).some(product => normalize(getSeedPrimarySubcategory(product)) === normalize("Рапс"))) {
+        return RAPESEED_TYPE_OPTIONS;
+    }
+    return uniqueValues((products || []).map(getSeedVegetationFilterValue).filter(Boolean));
+}
+
+function getAvailableSeedTreatmentOptions(products) {
+    return uniqueValues((products || []).map(getSeedTreatmentDisplay).filter(Boolean));
+}
+
+function getAvailablePackageOptions(products) {
+    return uniqueValues((products || []).map(getPackageFilterValue).filter(Boolean));
 }
 
 function filterProductsByFilters(products, filters, sectionName = "") {
@@ -7513,14 +7694,38 @@ function filterProductsByFilters(products, filters, sectionName = "") {
     }
     if (filters.seedTreatmentTechnologies?.length) {
         filtered = filtered.filter(product => {
-            const value = getSeedTreatmentTechnology(product);
-            return value && filters.seedTreatmentTechnologies.includes(value);
+            const values = getSeedTechnologyFilterValues(product);
+            return values.some(value => filters.seedTreatmentTechnologies.includes(value));
         });
     }
     if (filters.seedReproductionValues?.length) {
         filtered = filtered.filter(product => {
             const values = getSeedReproductionValues(product);
             return values.some(value => filters.seedReproductionValues.includes(value));
+        });
+    }
+    if (filters.seedCounts?.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedCountFilterValue(product);
+            return value && filters.seedCounts.includes(value);
+        });
+    }
+    if (filters.seedVegetationPeriods?.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedVegetationFilterValue(product);
+            return value && filters.seedVegetationPeriods.includes(value);
+        });
+    }
+    if (filters.seedTreatments?.length) {
+        filtered = filtered.filter(product => {
+            const value = getSeedTreatmentDisplay(product);
+            return value && filters.seedTreatments.includes(value);
+        });
+    }
+    if (filters.packageDescriptions?.length) {
+        filtered = filtered.filter(product => {
+            const value = getPackageFilterValue(product);
+            return value && filters.packageDescriptions.includes(value);
         });
     }
     return filtered;
