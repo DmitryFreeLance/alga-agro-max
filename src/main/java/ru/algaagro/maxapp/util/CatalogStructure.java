@@ -67,7 +67,8 @@ public final class CatalogStructure {
     public static final List<String> SPECIAL_SUBCATEGORIES = List.of(
             "Амбарные вредители",
             "От крыс и мышей",
-            "Обработка складских помещений"
+            "Обработка складских помещений",
+            "Инокулянты"
     );
 
     private CatalogStructure() {
@@ -124,6 +125,7 @@ public final class CatalogStructure {
             return PAVS;
         }
         if (normalized.contains("роденти") || normalized.contains("репелент") || normalized.contains("амбарн")
+                || normalized.contains("инокулянт")
                 || normalized.contains("склад") || normalized.contains("мыш") || normalized.contains("крыс")) {
             return SPECIAL;
         }
@@ -131,7 +133,7 @@ public final class CatalogStructure {
             return PLANT_GLUE;
         }
         if (normalized.contains("удобр") || normalized.contains("микроудобр") || normalized.contains("биостим")
-                || normalized.contains("инокулянт") || normalized.contains("подкорм") || normalized.contains("npk")
+                || normalized.contains("подкорм") || normalized.contains("npk")
                 || normalized.contains("бор") || normalized.contains("цинк") || normalized.contains("магний")
                 || normalized.contains("сер") || normalized.contains("аминокислот")) {
             return AGROCHEMICALS;
@@ -163,6 +165,7 @@ public final class CatalogStructure {
             if (normalizedContext.contains("амбарн")) return "Амбарные вредители";
             if (normalizedContext.contains("крыс") || normalizedContext.contains("мыш") || normalizedContext.contains("роденти")) return "От крыс и мышей";
             if (normalizedContext.contains("склад") || normalizedContext.contains("помещ")) return "Обработка складских помещений";
+            if (normalizedContext.contains("инокулянт")) return "Инокулянты";
             return "";
         }
         return "";

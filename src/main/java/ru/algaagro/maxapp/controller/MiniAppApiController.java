@@ -42,6 +42,7 @@ import ru.algaagro.maxapp.model.CatalogProduct;
 import ru.algaagro.maxapp.service.BitrixSyncService;
 import ru.algaagro.maxapp.service.BroadcastService;
 import ru.algaagro.maxapp.service.FileStorageService;
+import ru.algaagro.maxapp.service.KeyboardFactory;
 import ru.algaagro.maxapp.service.ManufacturerService;
 import ru.algaagro.maxapp.service.MaxApiClient;
 import ru.algaagro.maxapp.service.OrderService;
@@ -67,6 +68,7 @@ public class MiniAppApiController {
     private final BroadcastService broadcastService;
     private final FileStorageService fileStorageService;
     private final JsonHelper jsonHelper;
+    private final KeyboardFactory keyboardFactory;
 
     public MiniAppApiController(
             ProductService productService,
@@ -78,7 +80,8 @@ public class MiniAppApiController {
             ManufacturerService manufacturerService,
             BroadcastService broadcastService,
             FileStorageService fileStorageService,
-            JsonHelper jsonHelper
+            JsonHelper jsonHelper,
+            KeyboardFactory keyboardFactory
     ) {
         this.productService = productService;
         this.orderService = orderService;
@@ -90,6 +93,7 @@ public class MiniAppApiController {
         this.broadcastService = broadcastService;
         this.fileStorageService = fileStorageService;
         this.jsonHelper = jsonHelper;
+        this.keyboardFactory = keyboardFactory;
     }
 
     @GetMapping("/meta")
@@ -162,7 +166,7 @@ public class MiniAppApiController {
                 request.items().stream().map(item -> new OrderService.CreateOrderItem(item.productId(), item.quantity(), item.selectedReproduction())).toList()
         ));
         String summary = orderService.buildAdminSummary(order);
-        userService.findAdminUserIds().forEach(adminId -> maxApiClient.sendToUser(adminId, summary, null, "html"));
+        userService.findAdminUserIds().forEach(adminId -> maxApiClient.sendToUser(adminId, summary, keyboardFactory.menuKeyboard(), "html"));
         if (order.getCustomerMaxUserId() != null) {
             userService.clearClientState(order.getCustomerMaxUserId());
             maxApiClient.sendToUser(order.getCustomerMaxUserId(), orderService.buildCustomerSummary(order), null, "html");

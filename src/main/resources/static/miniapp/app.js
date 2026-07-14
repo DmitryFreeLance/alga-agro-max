@@ -111,11 +111,12 @@ const FIXED_SECTION_DEFINITIONS = [
         icon: assetUrl("./assets/category-special-fixed.png"),
         palette: ["#ece4fd", "#ddd1f6"],
         description: "Складская защита и специальные составы",
-        aliases: ["спец", "специальн", "роденти", "репелент", "красител", "амбарн", "склад"],
+        aliases: ["спец", "специальн", "роденти", "репелент", "красител", "амбарн", "склад", "инокулянт"],
         subcategories: [
             "Амбарные вредители",
             "От крыс и мышей",
             "Обработка складских помещений",
+            "Инокулянты",
         ],
     },
     {
@@ -339,11 +340,11 @@ const state = {
         orderFilters: { search: "", status: "ALL", from: "", to: "" },
         linkBuilder: {
             section: "Семена",
-            cultures: ["Кукуруза"],
+            cultures: [],
             subcategories: [],
             manufacturers: [],
             activeIngredients: [],
-            seedFaoRanges: ["ФАО 200-250"],
+            seedFaoRanges: [],
             seedMaturityGroups: [],
             seedTreatmentTechnologies: [],
             seedReproductionValues: [],
@@ -1097,6 +1098,7 @@ function resolveSectionSubcategory(rawValue, sectionName) {
         if (normalized.includes("крыс") || normalized.includes("мыш")) return "От крыс и мышей";
         if (normalized.includes("роденти")) return "От крыс и мышей";
         if (normalized.includes("склад") || normalized.includes("помещ")) return "Обработка складских помещений";
+        if (normalized.includes("инокулянт")) return "Инокулянты";
         return "";
     }
     return "";
@@ -2093,7 +2095,7 @@ function renderAdminLinks() {
                 </div>
                 <div class="admin-link-filter-grid">
                     ${renderAdminLinkCheckboxGroup("Категория", "subcategories", categoryOptions, builder.subcategories)}
-                    ${cultureOptions.length ? renderAdminLinkCheckboxGroup("Культура", "cultures", cultureOptions, builder.cultures) : ""}
+                    ${!isSeedsSection && cultureOptions.length ? renderAdminLinkCheckboxGroup("Культура", "cultures", cultureOptions, builder.cultures) : ""}
                     ${manufacturerOptions.length ? renderAdminLinkCheckboxGroup("Производитель", "manufacturers", manufacturerOptions, builder.manufacturers) : ""}
                     ${isPesticidesSection && activeIngredientOptions.length ? renderAdminLinkCheckboxGroup("Действующее вещество", "activeIngredients", activeIngredientOptions, builder.activeIngredients) : ""}
                     ${isSeedsSection && seedFaoOptions.length ? renderAdminLinkCheckboxGroup("ФАО", "seedFaoRanges", seedFaoOptions, builder.seedFaoRanges) : ""}
@@ -5381,7 +5383,6 @@ function isAgrochemicalsSectionName(name) {
         || normalized.includes("микроудобр")
         || normalized.includes("микроэлемент")
         || normalized.includes("биостим")
-        || normalized.includes("инокулянт")
         || normalized.includes("аминокислот")
         || normalized.includes("гумат")
         || normalized.includes("листов")
@@ -5416,6 +5417,7 @@ function isSpecialSectionName(name) {
         || normalized.includes("репелент")
         || normalized.includes("красител")
         || normalized.includes("амбарн")
+        || normalized.includes("инокулянт")
         || normalized.includes("склад");
 }
 
@@ -7363,8 +7365,11 @@ function buildAdminCatalogLink() {
     if (builder.section) {
         url.searchParams.set("section", builder.section);
     }
+    const isSeedsSection = normalize(builder.section) === normalize("Семена");
     appendCatalogUrlValues(url, "subcategory", builder.subcategories);
-    appendCatalogUrlValues(url, "culture", builder.cultures);
+    if (!isSeedsSection) {
+        appendCatalogUrlValues(url, "culture", builder.cultures);
+    }
     appendCatalogUrlValues(url, "manufacturer", builder.manufacturers);
     appendCatalogUrlValues(url, "activeIngredient", builder.activeIngredients);
     appendCatalogUrlValues(url, "fao", builder.seedFaoRanges);
@@ -7401,7 +7406,9 @@ function getAdminLinkPreviewProducts() {
     if (section) {
         filters.sections = [section];
     }
-    filters.cultures = [...builder.cultures];
+    if (normalize(section) !== normalize("Семена")) {
+        filters.cultures = [...builder.cultures];
+    }
     filters.seedFaoRanges = [...builder.seedFaoRanges];
     filters.subcategories = [...builder.subcategories];
     filters.manufacturers = [...builder.manufacturers];

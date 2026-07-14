@@ -1381,7 +1381,8 @@ public class BotUpdateHandler {
         return normalized.equals("/start")
                 || normalized.startsWith("/start ")
                 || normalized.equals("start")
-                || normalized.equals("начать");
+                || normalized.equals("начать")
+                || normalized.equals("в меню");
     }
 
     private boolean isManagerContactCommand(String text) {

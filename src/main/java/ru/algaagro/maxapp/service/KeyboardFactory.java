@@ -39,9 +39,16 @@ public class KeyboardFactory {
                 List.of(messageButton("👥 Пользователи")),
                 List.of(messageButton("🧾 Заказы"), messageButton("📣 Пост")),
                 List.of(messageButton("📨 Рассылка")),
-                List.of(messageButton("🔗 Кнопки постов"))
+                List.of(messageButton("🔗 Кнопки постов")),
+                List.of(messageButton("🏠 В меню"))
         );
         return inlineKeyboard(rows);
+    }
+
+    public List<Map<String, Object>> menuKeyboard() {
+        return inlineKeyboard(List.of(
+                List.of(messageButton("🏠 В меню"))
+        ));
     }
 
     public List<Map<String, Object>> importKeyboard(String importMode) {
